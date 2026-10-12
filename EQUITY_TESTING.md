@@ -1,0 +1,50 @@
+# Equity paper trading — local test release
+
+Open http://127.0.0.1:3010/ on the computer running this project. Sign in with your own app account. This loopback link cannot be opened from a different computer.
+
+If a tab has been open since before the latest build, open http://127.0.0.1:3010/?build=1790950000000-paper-evidence once to bypass cached page code. Sign in again if needed. The app may also show **A newer version of the workspace is ready** with a **Reload app** link.
+
+The top-bar **Updates** bell opens paper-position notifications. Close it with **×**, by clicking outside, or with Escape. This menu is separate from the build-update banner.
+
+## Try this workflow
+
+0. At the top of **Equities & ETFs**, check **Market conditions**. Expect two NIFTY 50 cards for **Recent volatility** and **Recent direction**, a completed-session date, source provider, and a Refresh button. During an open NSE session the panel intentionally uses the previous completed session. Open **How these readings are calculated**. If provider history or session verification fails, expect an unavailable message instead of invented values.
+   The volatility card changes among blue (Low), teal (Typical), amber (Elevated), and magenta (Very elevated). Direction uses green (Rising), red (Falling), or violet (Mixed). Verify the text label agrees with the color; neither color is a forecast or trade instruction.
+
+1. On **Equities & ETFs**, type at least three characters into **Find your first NSE stock** below the stock picker. Choose **Save & select** on an NSE share such as RELIANCE. The stock should appear in the picker and three strategy comparisons should load. You can also use **Find stocks & manage watchlist** for broader discovery.
+2. The default allocation is ₹10,000 with ₹200 planned risk. Open a card's **Strategy details, source & statistics** for its market setting, entry, exit, stop, source and evidence limits. In **Your watchlist**, choose **View quote**; the snapshot should appear immediately below that row with bid/ask and exchange trade-time context. A saved stock remains in the picker after reload, but must be selected again.
+3. Compare observed win rate/sample size, average net result and indicative net stop/target scenarios. Observed evidence combines historical replay trades with this account's closed live-paper trades for the selected stock. Each card discloses how many closed trades came from replay and how many came from paper trading. Unavailable values and limited evidence are intentional. The three cards are the strongest available comparisons, not necessarily profitable strategies. If none has positive average net P&L, expect **No positive replay edge** or weak-evidence text explaining that waiting is valid.
+   Open **Completed-session context** to inspect the selected stock's retrospective direction, relative ATR volatility and volume. Selecting another stock or changing risk/allocation refreshes the ranking. Ranking first separates positive adequately sampled evidence, positive limited evidence, non-positive evidence and unavailable evidence; it then compares risk-normalized P&L, win rate, drawdown and market fit. It is not a buy signal, expected return or calibrated probability.
+   Expand **Browse all strategies** below the cards. Expect paper rules in a compact comparison: observed win rate and closed sample, average net per trade, modeled net at target and initial stop, and current signal. Open **Entry, exit, stop & evidence** on any row for the rule and its source. A rule outside the shortlist remains available to Apply manually in paper mode. Research-only methods are further down in this section with source-linked details; they have no Apply button or local win statistics.
+   Click **Compare market fit** above the strategy tiles. Expect the latest completed NIFTY direction and volatility, plus matching/classified/total closed-trade counts on each tile. If fewer than 20 closed trades match both conditions, expect **evidence is insufficient** in place of a matching-performance figure. The tile order and paper balance must stay the same. The comparison can also say unavailable when the data provider cannot supply verified two-year history.
+4. Choose **Apply for paper trading**, including from a rule outside the top three if desired. The page should move to **Your active strategies**, the deployment should say **WAITING FOR ENTRY**, and unreserved equity cash should decrease by the allocation. No immediate buy is expected. Only a new completed daily candle after application can provide the entry signal.
+   Only the chosen strategy card or library row should now say **Applied to this stock** and show its deployment status. Other Apply controls should say **Another strategy is active**; they remain disabled because this release allows one active paper strategy per stock. After cancelling a waiting deployment, the other Apply controls should become available within the five-second account refresh.
+5. Refresh the page or sign out and back in. **Your active strategies**, the deployment and reserved cash should remain even before reselecting that stock. During a closed session its last check should report waiting for a verified open NSE session.
+6. Choose **Cancel deployment** before entry. The allocation should return exactly once. The cancelled deployment remains in history.
+7. For a deployment you choose to keep, leave the API and worker running. Once a new daily signal and all session/quote checks pass, it enters automatically. An open position shows entry, stop, target, trailing state and timestamped net P&L. **Request exit** asks the worker to exit at the next acceptable open-market quote. After a deployment closes, the next strategy refresh should include it in the selected stock's observed strategy evidence as one closed paper trade.
+
+## Scope
+
+- Five fixed v1 daily, long-only strategies: trend continuation, volume breakout, trend pullback, mean reversion and price momentum.
+- Ten-entry catalog: five executable platform rules plus five clearly labeled research-only published methods. The UI always shows three strongest available comparisons and separately discloses whether any has positive replay evidence or qualifies under the current setup gates.
+- Separate ₹10,00,000 equity simulation balance; no money or orders sent to a broker.
+- Persistent deployments, entry/exit records and net P&L. Closed paper deployments feed the selected stock's strategy evidence and ranking on later refreshes. One trade cycle per Apply; one active deployment per stock, at most five in total.
+- Stop distance: twice 14-bar ATR with a minimum 0.5% of the signal close. Target: two initial price-risk units. Trail activates after a one-unit gain, follows the highest observed bid at a one-unit distance, and never loosens.
+- Illustrative costs: 0.10% fees and 0.05% slippage on each side. Modelled stop/target outcomes are scenarios, not forecasts.
+- Provider and instrument identity are pinned. The worker requires a scheduled NSE session and valid two-sided quotes with verified recent exchange trade timestamps; the options educational override cannot bypass this requirement.
+
+## Limitations
+
+- Daily signals, not intraday scalping. Waiting deployments expire after seven days. There may be no entry signal during a test session.
+- The local computer, API, worker, network and provider access must stay available for monitoring. Stops are simulated software checks, not broker-hosted guarantees. Gaps, wide spreads, stale data and downtime can cause losses beyond planned risk.
+- Equity positions may remain open overnight. No corporate-action reconciliation, broker settlement, financing, unified equity/options portfolio limits, partial fills or production liquidity model in this slice.
+- Replay uses at most a year of available daily candles, excludes current partial daily bars, handles ambiguous stop/target bars conservatively, and excludes unclosed trades from closed-trade statistics. Closed paper trades are added to the evidence only after they finish. The sample is not an out-of-sample validated forecasting model.
+- Live quote checks and current daily signal fit affect ranking when available. Low evidence is marked provisional. Observed win rate is not the probability of winning the next trade.
+- Selected-stock trend/volatility/volume fit is descriptive, based on completed daily candles. It has no held-out validation, no corporate-action normalization and no demonstrated power to maximize profit or minimize loss. Famous-trader methods need complete independently tested rules before paper activation; they are not part of the ranking.
+- Price charts and the existing options ticket retain their prior scope. This increment does not complete TradingView-style charts or turn the options ticket into the new equity worker.
+- Market volatility and direction predictions were added to PROJECT_PLAN.md on 2026-10-01. They are planned, not implemented or presented as current forecasts.
+- The NIFTY 50 market-conditions cards are now available, but they summarize historical completed sessions. Next-session volatility and direction predictions, calibrated probabilities and price ranges remain planned and are not presented as current forecasts.
+- The on-demand **Compare market fit** NIFTY replay comparison is descriptive and same-sample. It uses up to 900 calendar days of stock and NIFTY daily history; current conditions may have very few historical matches. That comparison does not change the separate selected-stock shortlist, claim a winning probability, or trigger paper trades. It has no corporate-action normalization or out-of-sample validation.
+- A global worker warning may concern legacy options positions. Read each equity deployment's own detail and last-check time. Do not assume a healthy global heartbeat proves an individual deployment is receiving valid quotes.
+
+The friend-testing and cumulative ZIPs were deliberately not refreshed. No background development automation is re-enabled by this release.

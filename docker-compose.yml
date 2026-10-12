@@ -42,7 +42,7 @@ services:
     volumes:
       - ./apps/web:/app
       - web-node-modules:/app/node_modules
-    command: sh -c "npm install -g pnpm@11.25.0 && pnpm install --frozen-lockfile && pnpm run dev -- --hostname 0.0.0.0"
+    command: sh -c "npm install -g pnpm@11.25.0 && pnpm install --frozen-lockfile && pnpm run dev --hostname 0.0.0.0"
     ports: ["3000:3000"]
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000

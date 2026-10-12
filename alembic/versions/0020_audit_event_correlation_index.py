@@ -2,7 +2,7 @@
 
 from alembic import op
 
-revision = "0020_audit_event_correlation_index"
+revision = "0020_audit_event_corr_idx"
 down_revision = "0019_equity_validation_dataset"
 branch_labels = None
 depends_on = None

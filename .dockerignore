@@ -11,6 +11,7 @@ dist/
 **/.ruff_cache/
 **/.next/
 **/node_modules/
+**/.pnpm-store/
 coverage.json
 .coverage*
 .git/

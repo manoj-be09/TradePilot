@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from alembic import op
 
 revision = "0021_equity_policy_trials"
-down_revision = "0020_audit_event_correlation_index"
+down_revision = "0020_audit_event_corr_idx"
 branch_labels = None
 depends_on = None
 

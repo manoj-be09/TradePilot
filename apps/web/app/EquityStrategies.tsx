@@ -417,6 +417,13 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
       {quickResults.length > 0 && <ul aria-label="Stock search results">{quickResults.map(row => <li key={row.instrument_key}><span><strong>{row.trading_symbol}</strong>{row.name ? ` · ${row.name}` : ""}</span><button className="inline-button" disabled={!!savingKey || !!applying} onClick={() => void saveQuick(row)} type="button">{savingKey === row.instrument_key ? "Saving…" : "Save & select"}</button></li>)}</ul>}
     </div>
     <p className="muted"><a href="#equity-instruments">Open watchlist, quotes and charts</a></p>
+    {!selected && <section className="strategy-library strategy-library-preview" aria-label="Available equity strategies">
+      <div className="equity-lab-heading"><h3>Equity strategy library</h3><small>Select a saved stock to rank these by current market fit</small></div>
+      <p className="muted">These paper-ready strategies are available for Equity &amp; ETF instruments. Historical win rates, profit estimates and Apply actions appear after you select a stock.</p>
+      <div className="strategy-library-list">{catalog.filter(entry => entry.status === "PAPER_READY").map(entry => <details key={entry.key}><summary>{entry.name}<small>{entry.trader_or_source}</small></summary><CatalogDetails entry={entry} /></details>)}</div>
+      {catalog.length === 0 && !catalogError && <p className="muted">Loading the strategy library…</p>}
+      {catalogError && <p className="error-banner" role="alert">{catalogError}</p>}
+    </section>}
     {error && <p className="error-banner" role="alert">{error}</p>}
     {pollError && <p className="error-banner" role="alert">Deployment status could not refresh: {pollError}</p>}
     {notice && <p className="equity-notice" role="status">{notice}</p>}

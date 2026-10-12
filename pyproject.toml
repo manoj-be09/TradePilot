@@ -41,6 +41,8 @@ pythonpath = ["."]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# protoc output is regenerated, not hand-maintained application code.
+extend-exclude = ["packages/market_data/upstox_v3_pb2.py", "packages/market_data/upstox_v3_pb2.pyi"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]

@@ -562,6 +562,18 @@ Acceptance for this extension requires a reproducible candidate/failure ledger, 
 3. **For expired NIFTY index options**, use the final NIFTY 50 index close on the contract's actual last trading day, with date, official source/report URL or file and any published correction retained. NSE describes index-option final exercise settlement on the underlying index's closing value; NSE Indices provides historical index closes. Compare it with the app's read-only provider daily candle, preview all leg cash flows, then let the account owner record the operator-reviewed value. A daily broker candle alone cannot be silently promoted to final settlement evidence. For unattended settlement, obtain a licensed machine-readable official index close/settlement feed with correction handling and provenance. [NSE settlement price](https://www.nseindia.com/static/products-services/equity-derivatives-settlement-price), [NSE Indices historical reports](https://www.niftyindices.com/reports).
 4. **Acceptance before a 100% claim:** ingest the new provider through the existing adapter interface; prove time, spread, size, source switching and stale/reconnect fail-closed behavior for Equity and each F&O leg; replay recorded messages in tests; reconcile a complete real-session entry, stop move and exit against audit and wallet; reconcile expiry from the official value; then complete frozen policy-matched chronological validation. Keep live broker orders disabled throughout.
 
-### Current incremental slice (2026-10-10)
+### Current incremental slice (2026-10-12)
+
+GitHub checkout is now the development source of truth; use Graphify with commit-freshness checks and Git for changes. Startup fixes and the migration chain have been verified against PostgreSQL in isolated schemas. The read-only feed probe is tracked at `scripts/probe-upstox-v3-feed.py` and packaged into the API image. See BUILD_PROGRESS.md for exact test counts and runtime limitations.
+
+Next acceptance steps:
+
+1. Rebuild the API image to include the portable probe; follow GITHUB_SETUP.md without deleting database volumes. Check API and worker readiness.
+2. Synchronize/recheck local clock skew before comparing receive and provider timestamps. Run the bounded probe only when the provider reports NORMAL_OPEN. Keep unknown exchange book timing explicitly unknown.
+3. Verify an actual equity and an F&O paper lifecycle (entry, stop movement, exit) against saved observations, decisions and each wallet's reconciliation. Indicative outcomes cannot count as verified execution evidence.
+4. Confirm an actual expired position against official settlement evidence and its ledger preview. Do not fabricate a position or cash change to satisfy this gate.
+5. Complete policy-matched historical validation, retaining separate replay and qualified forward-paper evidence. No 100% readiness or calibrated next-trade probability claim until these gates pass.
+
+### Prior UI slice (2026-10-10)
 
 The dashboard now exposes a compact paper-readiness summary using the existing account, identity, chain-quality and live-order flags. This improves operator clarity without changing execution policy. Next priority remains evidence, not UI: obtain/validate exchange-timed executable quotes, reconcile the expired F&O position from official settlement data, and complete a real-session paper entry/stop/exit plus ledger check. No claim of 100% readiness is made until those gates pass.

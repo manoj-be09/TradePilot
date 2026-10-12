@@ -1,12 +1,13 @@
 """The live-feed probe separates observed changes from exchange-time claims."""
 
+import asyncio
 from pathlib import Path
 from runpy import run_path
 from types import SimpleNamespace
 
 
 def _helpers():
-    script = run_path(str(Path("work/probe-upstox-v3-feed.py")))
+    script = run_path(str(Path("scripts/probe-upstox-v3-feed.py")))
     return script["observation_changes"], script["probe_conclusion"], script["clock_offset_seconds"]
 
 
@@ -43,3 +44,43 @@ def test_clock_offset_uses_http_date_midpoint_and_rejects_invalid_input():
     after = datetime(2026, 10, 9, 7, 0, 2, tzinfo=timezone.utc)
     assert offset("Fri, 09 Oct 2026 07:00:00 GMT", before, after) == 1
     assert offset("not-a-date", before, after) is None
+
+
+def test_closed_session_never_subscribes(capsys):
+    script = run_path(str(Path("scripts/probe-upstox-v3-feed.py")))
+
+    async def clock():
+        return None
+
+    class ClosedProvider:
+        provider_id = "upstox"
+
+        async def _get(self, path):
+            return {"status": "NORMAL_CLOSE"}
+
+        def subscribe(self, instruments):
+            raise AssertionError("A closed session must not subscribe")
+
+    script["main"].__globals__["estimate_provider_clock_offset"] = clock
+    asyncio.run(script["main"](ClosedProvider()))
+    assert "no live-update probe attempted" in capsys.readouterr().out
+
+
+def test_probe_failure_does_not_expose_credentials(capsys):
+    script = run_path(str(Path("scripts/probe-upstox-v3-feed.py")))
+
+    async def clock():
+        return None
+
+    class FailedProvider:
+        provider_id = "upstox"
+
+        async def _get(self, path):
+            raise ValueError("wss://private.example/?token=must-stay-private")
+
+    script["main"].__globals__["estimate_provider_clock_offset"] = clock
+    asyncio.run(script["main"](FailedProvider()))
+    output = capsys.readouterr().out
+    assert "Probe failed (ValueError)" in output
+    assert "must-stay-private" not in output
+    assert "private.example" not in output

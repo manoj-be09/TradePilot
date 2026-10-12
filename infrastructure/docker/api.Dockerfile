@@ -5,6 +5,7 @@ COPY alembic.ini ./
 COPY alembic ./alembic
 COPY apps ./apps
 COPY packages ./packages
+COPY scripts ./scripts
 RUN pip install --no-cache-dir --no-deps -r requirements.lock \
     && pip install --no-cache-dir --no-build-isolation --no-deps . \
     && pip check

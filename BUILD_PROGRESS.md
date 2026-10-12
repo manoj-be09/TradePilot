@@ -1,4 +1,14 @@
-# Build progress — updated 2026-10-09
+# Build progress — updated 2026-10-12
+
+## 2026-10-12 — GitHub installation validation and portable feed probe
+
+- Development now uses `manoj-be09/TradePilot` and the `TradePilot-GitHub` checkout. Graphify was queried at indexed commit `a6fc594`; local changes were inspected with Git. The scheduled continuation now targets this checkout and the tracked probe path.
+- Validated the recent migration-ID and pnpm argument fixes. Added a migration graph check enforcing Alembic's 32-character version limit. PostgreSQL clean-install, existing-schema upgrade and concurrent account operations passed in temporary isolated schemas (11 tests); the running database is at `0023_equity_cash_journal`. User database volumes were not reset.
+- Restored the bounded Upstox probe from the excluded local work folder into `scripts/probe-upstox-v3-feed.py`, removed its machine-specific dependency path, included scripts in the API Docker image and updated tests. Added checks for closed-session refusal and credential-safe failures. Excluded generated pnpm caches from Git/build context and protoc-generated files from source linting.
+- Validation: full backend suite **334 passed, 6 skipped** (the PostgreSQL cases were then exercised separately); probe/migration checks including two new cases **6 passed**; Ruff passed; mypy passed for 76 source files; frontend TypeScript passed using existing local dependencies and a temporary config; chart tests **2 passed**. This used the available local runtime, not a rebuilt Docker test image. Existing Starlette/Alembic deprecation warnings remain.
+- Running stack checks returned ready for API and paper-worker, and HTTP 200 for the web page. The read-only probe reported `CLOSING_END` and did not subscribe. Approximate local-minus-provider HTTP Date offset was +45.93 seconds; this is a clock-skew diagnostic, not measured feed latency. No current open-session feed claim is made.
+- User test: Equity & ETF → Algo Trading should show the source/rule library before selecting a stock. Save/select an NSE equity to request its ranking; missing data must not become an invented probability. Run the bounded probe from the Docker command in GITHUB_SETUP.md during the next provider-confirmed NORMAL_OPEN session. Exchange book provenance, complete real-session entry/trailing/exit and official expiry evidence remain open gates.
+- Docker engine control remains denied to this agent, so the new Docker image has not been rebuilt here. No real orders, new user deployments, wallet changes or friend-testing ZIP updates were made. Live execution stays hard-disabled by Settings.effective_live_trading_enabled.
 
 ## 2026-10-09 — Expiry settlement regression verification, stage BP
 

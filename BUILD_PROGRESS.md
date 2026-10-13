@@ -6,6 +6,12 @@
 - User test: run `docker compose up -d --build`, then `docker compose ps`. `paper-worker` should become `healthy` after its first successful cycle. If it is `unhealthy`, inspect `docker compose logs --tail=100 paper-worker` and `/ready/paper-worker`; do not delete database volumes.
 - Limitation: the healthcheck confirms freshness and lease state only. It does not prove market-data entitlement, exchange book timestamp provenance, or profitable strategies.
 
+## 2026-10-13 — Priority 2 simulated lifecycle gate
+
+- The disposable test container ran the equity deployment, F&O deployment, paper worker, exit, trailing-stop, expiry-settlement and reconciliation integration suites: **85 passed, 1 existing Starlette/httpx deprecation warning**.
+- The first run showed four relative-path failures because the container working directory was `/tmp`; rerunning from `/src` passed all tests. No application code, database volume, orders or balances changed.
+- Remaining Priority 2 gate: observe a real NSE-session equity and F&O paper lifecycle and reconcile saved decisions, orders, P&L and wallet ledger. Simulated tests do not establish exchange-timed executable-book evidence.
+
 ## 2026-10-13 — Graphify refresh workflow gate
 
 - Added the development rule to `PROJECT_PLAN.md`: refresh Graphify after a meaningful batch, before a larger refactor, or when its indexed commit noticeably trails Git. Small isolated edits do not require an index refresh.

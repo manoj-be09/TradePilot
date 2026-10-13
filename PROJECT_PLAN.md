@@ -1,5 +1,7 @@
 # Algorithmic Trading Platform — Revised Project Plan
 
+Priority 2 simulated lifecycle gate completed on 2026-10-13: the disposable `/src` test container passed 85 equity/F&O deployment, worker, exit, expiry and reconciliation integration tests. The next acceptance step is a real NSE-session paper round trip with saved decision, order, P&L and wallet-ledger reconciliation. Keep live trading disabled.
+
 2026-10-09 settlement regression verification: official expiry preview, archive fingerprint, account-scoping, ledger arithmetic and confirmation tests pass together (10 tests). The settlement path remains fail-closed and idempotent; normal-host operator review and a real-session paper round trip remain required.
 
 2026-10-09 regression pass: the focused F&O deployment, paper-trading, shared-feed and Upstox probe suites pass together (**36 tests**); Ruff passes. The next evidence step remains a complete normal-session paper round trip with verified executable-book timing and ledger reconciliation.

@@ -418,9 +418,13 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
     </div>
     <p className="muted"><a href="#equity-instruments">Open watchlist, quotes and charts</a></p>
     {!selected && <section className="strategy-library strategy-library-preview" aria-label="Available equity strategies">
-      <div className="equity-lab-heading"><h3>Equity strategy library</h3><small>Select a saved stock to rank these by current market fit</small></div>
-      <p className="muted">These paper-ready strategies are available for Equity &amp; ETF instruments. Historical win rates, profit estimates and Apply actions appear after you select a stock.</p>
-      <div className="strategy-library-list">{catalog.filter(entry => entry.status === "PAPER_READY").map(entry => <details key={entry.key}><summary>{entry.name}<small>{entry.trader_or_source}</small></summary><CatalogDetails entry={entry} /></details>)}</div>
+      <div className="equity-lab-heading"><div><h3>Equity &amp; ETF strategies</h3><small>Paper-ready rules, grouped like the AlgoCrab strategy board</small></div><span className="paper-mode-badge">RANK AFTER STOCK SELECTION</span></div>
+      <p className="muted">Choose a saved stock to calculate market fit, historical ranking, and the Apply action. The strategy cards stay visible here so you can browse the rules before choosing an instrument.</p>
+      <div className="equity-preview-grid">{catalog.filter(entry => entry.status === "PAPER_READY").map((entry, index) => <article className={`equity-preview-card equity-preview-card--${index % 3}`} key={entry.key}>
+        <div className="equity-preview-card-heading"><span aria-hidden="true">↗</span><strong>{entry.name}</strong><span className="equity-preview-status">PAPER READY</span></div>
+        <small>{entry.trader_or_source}</small><p>{entry.market_conditions}</p>
+        <details><summary>Entry, exit &amp; risk</summary><CatalogDetails entry={entry} /></details>
+      </article>)}</div>
       {catalog.length === 0 && !catalogError && <p className="muted">Loading the strategy library…</p>}
       {catalogError && <p className="error-banner" role="alert">{catalogError}</p>}
     </section>}
@@ -505,7 +509,7 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
       <details className="equity-method"><summary>How ranking, estimates and stops work</summary><p>{research.ranking}</p><p>These are fixed v1 rules, not optimized or validated predictions. The displayed replay win estimate is sample-size smoothed and cannot be used as a calibrated chance that the next trade wins. No claimed maximum profit. The planned risk is not a maximum loss: gaps, stale prices and downtime can exceed it.</p><p>Daily replay uses next-bar entries, stop-first handling for ambiguous bars, and next-bar activation of trailing adjustments. Historical OHLC cannot reproduce the live bid/ask path. Each side includes illustrative 0.10% fees and 0.05% slippage; these are not your broker’s exact charges. Open replay trades are excluded from closed-trade statistics.</p><p>Ranking uses one year of provider history without corporate-action normalization or out-of-sample calibration. The separate on-demand chronological check can expose later-window results, but never changes rank or parameters. Live quote checks require a verified exchange trade within 60 seconds and a spread no greater than 0.5%. Entries more than 2% from the signal close are blocked.</p></details>
       {shadow?.status === "ready" && <details className="equity-method"><summary>About the market comparison</summary><p>{shadow.method}</p><p>It uses up to 900 calendar days of stock and NIFTY history. A trade matches when NIFTY direction and relative volatility at the signal close equal the latest completed NIFTY session. Missing benchmark sessions are excluded. This is descriptive, subject to provider and corporate-action data quality, and has no out-of-sample validation.</p></details>}
     </>}
-    <details className="equity-history"><summary>Deployments &amp; trade history ({account?.deployments.length ?? 0})</summary>
+    <details className="equity-history" open={activeDeployments.length > 0}><summary>Logs &amp; order history ({account?.deployments.length ?? 0})</summary>
     <p className="muted">Refreshes every 5 seconds · latest 200</p>
     <p className="muted">Waiting deployments expire after seven days. Cancel releases unused allocation. For an open position, Request exit waits for a fresh quote in an open NSE session. Positions can remain open overnight.</p>
     {!account?.deployments.length && <p className="muted">No equity deployments yet.</p>}

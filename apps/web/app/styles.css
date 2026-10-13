@@ -745,6 +745,20 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
 .strategy-library h4 { margin: 0; }
 .strategy-library-heading small { color: #64748b; }
 .strategy-library-list { display: grid; gap: 10px; }
+.equity-preview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 16px; }
+.equity-preview-card { padding: 14px; border-radius: 8px; border: 1px solid #d8e5dc; background: #f0f8f2; min-height: 150px; }
+.equity-preview-card--1 { background: #fff1f1; border-color: #f0d4d4; }
+.equity-preview-card--2 { background: #f4efff; border-color: #dfd2f4; }
+.equity-preview-card-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.equity-preview-card-heading > span:first-child { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #277b58; color: #fff; }
+.equity-preview-card--1 .equity-preview-card-heading > span:first-child { background: #bb6868; }
+.equity-preview-card--2 .equity-preview-card-heading > span:first-child { background: #9a72c6; }
+.equity-preview-card-heading strong { flex: 1; font-size: 14px; }
+.equity-preview-status { color: #527363; font-size: 9px; letter-spacing: .08em; }
+.equity-preview-card small { color: #64748b; }
+.equity-preview-card p { margin: 12px 0; color: #334155; font-size: 12px; line-height: 1.5; }
+.equity-preview-card details { border-top: 1px solid #d8e5dc; padding-top: 8px; font-size: 12px; }
+.equity-preview-card summary { cursor: pointer; color: #245cae; font-weight: 600; }
 .strategy-library-row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 3fr) auto; align-items: center; gap: 8px 16px; padding: 14px; border: 1px solid var(--equity-border); border-radius: 8px; background: #fff; }
 .strategy-library-title, .strategy-library-metrics > span { display: grid; gap: 4px; }
 .strategy-library-title > small, .strategy-library-metrics small { color: #64748b; font-size: 11px; }

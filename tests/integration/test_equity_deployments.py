@@ -403,6 +403,29 @@ def test_validation_attempts_retain_insufficient_and_failed_runs_without_paper_c
         assert list(session.scalars(select(EquityValidationStudy))) == []
 
 
+def test_missing_calculation_source_records_failure_without_freezing(client, setup, monkeypatch):
+    headers, body, provider, factory = setup
+    long_validation_history(provider)
+
+    def missing_source():
+        raise OSError("private-path-or-provider-secret-must-not-leak")
+
+    monkeypatch.setattr("apps.api.equity_routes.research_code_digest", missing_source)
+    request = {key: body[key] for key in ("watchlist_id", "budget", "risk_budget")}
+    response = client.post("/equity/chronological-validation", json=request, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "unavailable"
+    assert response.json()["frozen"] is False
+    assert "source identity" in response.json()["reason"]
+    history = client.get("/equity/validation-attempts", headers=headers)
+    assert len(history.json()) == 1
+    assert history.json()[0]["status"] == "unavailable"
+    assert "private-path-or-provider-secret" not in response.text + history.text
+    with factory() as session:
+        assert list(session.scalars(select(EquityValidationStudy))) == []
+        assert list(session.scalars(select(EquityDeployment))) == []
+
+
 def test_reviewable_study_freezes_once_and_survives_provider_outage(client, setup, monkeypatch):
     from packages.regime.chronological_validation import review_fixed_equity_rules
 

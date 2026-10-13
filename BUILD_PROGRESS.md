@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-12
 
+## 2026-10-13 — Graphify refresh workflow gate
+
+- Added the development rule to `PROJECT_PLAN.md`: refresh Graphify after a meaningful batch, before a larger refactor, or when its indexed commit noticeably trails Git. Small isolated edits do not require an index refresh.
+- Between refreshes, Graphify is used for navigation only; Git, tests and the running checkout remain authoritative for current code.
+
 ## 2026-10-13 — Equity Algo Trading presentation update
 
 - Equity & ETF → Algo Trading now shows paper-ready strategy cards before a stock is selected, with color grouping, source/market-condition labels and expandable entry, exit and risk details. Selecting a saved stock still enables the existing historical ranking, market-fit evidence and Apply flow; strategy logic and API contracts are unchanged.

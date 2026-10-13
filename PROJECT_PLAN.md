@@ -66,6 +66,10 @@ Revision: 2026-10-01. Replaces the previous three-phase feature list as the deli
 
 ## 1. Decision and scope
 
+### Development workflow gate
+
+After a meaningful batch of changes, before a larger refactor, or when the Graphify indexed commit is noticeably behind the current Git commit, refresh the Graphify index. Use Graphify for navigation and impact analysis between refreshes; use the current Git checkout, tests and running app as the source of truth for unindexed changes.
+
 **Continue the existing repository with a staged refactor. Do not start over.** Keep the FastAPI/Next.js foundation and reusable analytics, contracts, authentication, migrations, and tests. Extract trading orchestration from API routes and build the missing strategy runtime, simulation engine, and order management behind explicit interfaces. The current software is a research and manual paper-trading prototype; it is not yet an unattended algorithmic trading platform.
 
 The owner confirmed **personal trading first, commercial expansion later**, and clarified that options are only one part of the intended product. The target is a complete trading platform across major instrument classes, with shared data, strategy, risk, execution, accounting, and monitoring services. NIFTY options and Upstox are the first vertical slice used to prove those services, not the platform boundary. Add equities, ETFs and futures through the same core after data, calendar, cost, margin and settlement rules for each are validated. Additional brokers and markets follow explicit adapter and operational gates. Multi-user distribution remains later scope.

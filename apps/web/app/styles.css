@@ -706,14 +706,25 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
 .equity-market-context strong, .equity-market-context small { flex-basis: 100%; }
 .equity-market-context small { color: #64748b; }
 .equity-active-note { margin: 12px 0 16px; padding: 10px 14px; border: 1px solid #b7d3c3; border-radius: 8px; background: #eef8f1; color: #1e5136; font-size: 13px; }
-.equity-pinned { margin: 20px 0; padding: 16px; border: 1px solid #8bbca5; border-radius: 8px; background: #f1f8f4; scroll-margin-top: 20px; }
+.equity-pinned { margin: 20px 0; padding: 18px; border: 1px solid #d7e5da; border-radius: 12px; background: #f8fbf8; scroll-margin-top: 20px; }
 .equity-pinned:focus-visible { outline: 2px solid #3179ed; outline-offset: 3px; }
 .equity-pinned-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 12px; }
-.equity-pinned article { padding: 14px; border: 1px solid #c5ded0; border-radius: 10px; background: #fff; }
+.equity-pinned article { padding: 16px; border: 1px solid #e1e9e2; border-radius: 12px; background: #fff; box-shadow: 0 4px 14px #1b2b1f08; }
 .equity-pinned article p { font-size: 13px; line-height: 1.5; }
 .equity-deployment-rules { margin: 10px 0; padding: 8px 12px; border-left: 3px solid #8bbca5; background: #f6faf7; }
 .equity-deployment-rules p { margin: 7px 0; font-size: 12px; line-height: 1.45; }
 .equity-pinned article small { display: block; margin: 8px 0; font-size: 11px; color: #526158; }
+.equity-entry-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+.equity-entry-comparison > div { display: grid; gap: 5px; min-height: 70px; padding: 11px 12px; border: 1px solid #e6eee7; border-radius: 9px; background: #f8fbf8; }
+.equity-entry-comparison span { color: #526158; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.equity-entry-comparison strong { color: #173c2a; font-size: 17px; letter-spacing: -.02em; }
+.equity-entry-comparison small { margin: 0 !important; font-size: 10px !important; }
+.equity-deployment-status { margin: 6px 0 !important; color: #526158; font-size: 12px !important; }
+.equity-position-strip { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.equity-position-strip span { flex: 1 1 90px; padding: 9px 10px; border: 1px solid #e6eee7; border-radius: 8px; background: #f8fbf8; color: #526158; font-size: 10px; }
+.equity-position-strip b { display: block; margin-top: 3px; color: #173c2a; font-size: 13px; }
+.equity-card-details { margin: 8px 0; border-top: 1px solid #edf1ed; padding-top: 8px; }
+.equity-card-details > summary { cursor: pointer; color: #21784c; font-size: 11px; font-weight: 800; }
 .equity-pinned article button { margin-top: 10px; }
 .equity-ranking-note { padding: 12px 14px; border-radius: 8px; background: #eef4fb; color: #244b6b; font-size: 13px; line-height: 1.5; }
 .equity-ranking-caution { background: #fff8e8; color: #75541b; }
@@ -741,8 +752,8 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
 .equity-card dt { color: #64748b; font-size: 11px; }
 .equity-card dd { margin: 4px 0 0; font-size: 15px; font-weight: 600; }
 .equity-card button { margin-top: auto; }
-.equity-card-details { margin: 18px 0; font-size: 13px; }
-.equity-card-details summary { cursor: pointer; color: #245cae; }
+.equity-card-details { margin: 8px 0; border-top: 1px solid #edf1ed; padding-top: 8px; font-size: 12px; }
+.equity-card-details summary { cursor: pointer; color: #21784c; font-size: 11px; font-weight: 800; }
 .strategy-catalog-details { line-height: 1.55; }
 .strategy-catalog-details p { margin: 9px 0; }
 .strategy-library { margin: 24px 0; padding: 18px; border: 1px solid var(--equity-border); border-radius: 8px; background: #fbfcfa; }
@@ -791,7 +802,7 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
 .equity-deployments .inline-button { margin-top: 12px; }
 .equity-deployment-heading span { font-size: 12px; padding: 6px 10px; border-radius: 6px; background: #f1f5f9; }
 @media (max-width: 800px) { .equity-controls { grid-template-columns: 1fr 1fr; } .equity-lab { padding: 16px; } }
-@media (max-width: 480px) { .equity-controls { grid-template-columns: 1fr; } }
+@media (max-width: 480px) { .equity-controls { grid-template-columns: 1fr; } .equity-entry-comparison { grid-template-columns: 1fr; } }
 
 /* Performance stays on demand; source buttons are keyboard accessible native buttons. */
 .strategy-performance { margin: 12px 0; width: 100%; min-width: 0; }

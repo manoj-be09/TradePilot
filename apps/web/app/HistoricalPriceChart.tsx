@@ -179,7 +179,8 @@ export function HistoricalPriceChart({
   ]).join(" ");
   const quoteTime = liveQuote ? Date.parse(liveQuote.timestamp) : NaN;
   const quoteBasis = liveQuote?.timestamp_basis === "exchange" ? "exchange timestamp" :
-    liveQuote?.timestamp_basis === "provider_response" ? "provider response time, not an exchange quote update" : "timestamp unverified";
+    liveQuote?.timestamp_basis === "provider_response" ? "provider response time, not an exchange quote update" :
+      liveQuote?.timestamp_basis === "provider_tick" ? "provider tick time, not an exchange book update" : "timestamp unverified";
   const quoteAge = Number.isFinite(quoteTime) ? Math.max(0, Date.now() - quoteTime) : Infinity;
 
   return <section className="historical-price" aria-label={`${symbol} historical price view`}>

@@ -2034,11 +2034,11 @@ export default function Home() {
         </button>
       </section>}
       <header className="topbar">
-        <a className="brand" href="/" aria-label="Market Systems home">
-          <span className="brand-mark">N</span>
+        <a className="brand" href="/" aria-label="TradingPilot home">
+          <span className="brand-mark">TP</span>
           <span className="brand-copy">
-            <strong>Market Systems</strong>
-            <small>RESEARCH CONSOLE</small>
+            <strong>TradingPilot</strong>
+            <small>PAPER TRADING CONSOLE</small>
           </span>
         </a>
         <div className="topbar-right">
@@ -2124,8 +2124,8 @@ export default function Home() {
         <>
           <aside className="dashboard-sidebar" aria-label="Main navigation">
             <div className="dashboard-sidebar-brand">
-              <span className="brand-mark">N</span>
-              <strong>Market Systems</strong>
+              <span className="brand-mark">TP</span>
+              <strong>TradingPilot</strong>
             </div>
             <label className="sidebar-market-switch">
               <span>Market</span>

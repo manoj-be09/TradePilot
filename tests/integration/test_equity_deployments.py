@@ -18,6 +18,7 @@ from packages.database.models import (
 from packages.market_data.contracts import ExchangeSession, HistoricalBar, Quote
 from packages.paper_trading.equity import (
     completed_bars,
+    entry_threshold,
     exit_reason,
     open_position,
     replay,
@@ -51,6 +52,7 @@ class Provider:
         self.response_lag_seconds = 0
         self.bid_quantity = 1000
         self.ask_quantity = 1000
+        self.quote_requests = 0
 
     async def get_historical(self, key, start, end, interval):
         assert interval == "1d"
@@ -69,6 +71,7 @@ class Provider:
         ]
 
     async def get_quote(self, key):
+        self.quote_requests += 1
         return Quote(
             instrument_token="wrong" if self.bad_key else key,
             timestamp=Clock.instant - timedelta(seconds=self.response_lag_seconds),
@@ -139,6 +142,69 @@ def cycle(provider, factory):
 
 def account(client, headers):
     return client.get("/equity/deployments", headers=headers).json()
+
+
+def test_bollinger_reference_is_not_a_complete_entry_signal():
+    provider = Provider()
+    bars = asyncio.run(provider.get_historical(
+        "NSE_EQ|TEST", provider.day - timedelta(days=60), provider.day, "1d",
+    ))
+    assert bars[-1].close > entry_threshold("band_reclaim", bars)
+    assert signal("band_reclaim", bars) is False
+
+
+def test_closed_session_restores_reference_for_older_deployment(client, setup):
+    headers, body, provider, factory = setup
+    provider.closed = True
+    applied = client.post("/equity/deployments", json=body, headers=headers).json()
+    assert Decimal(applied["state"]["entry_threshold_price"]) > 0
+    with factory() as session:
+        row = session.get(EquityDeployment, UUID(applied["id"]))
+        state = dict(row.state)
+        for field in (
+            "entry_threshold_price", "latest_daily_signal_date",
+            "latest_daily_signal_met", "latest_daily_signal_after_apply",
+        ):
+            state.pop(field, None)
+        row.state = state
+        session.commit()
+    cycle(provider, factory)
+    waiting = account(client, headers)["deployments"][0]
+    assert waiting["status"] == "WAITING_FOR_ENTRY"
+    assert Decimal(waiting["state"]["entry_threshold_price"]) > 0
+    assert waiting["state"]["latest_daily_signal_date"] == applied["state"]["signal_after"]
+    assert "open NSE session" in waiting["state"]["detail"]
+
+
+def test_equity_worker_shares_quote_once_per_symbol_in_a_cycle(client, setup):
+    headers, body, provider, factory = setup
+    first = client.post("/equity/deployments", json=body, headers=headers)
+    assert first.status_code == 201, first.text
+    second_auth = client.post(
+        "/auth/register",
+        json={"email": "second-equity@example.com", "password": "test-strong-password"},
+    )
+    other_headers = {"Authorization": "Bearer " + second_auth.json()["access_token"]}
+    with factory() as session:
+        other = session.scalar(select(User).where(User.email == "second-equity@example.com"))
+        item = WatchlistItem(
+            user_id=other.id, provider=provider.provider_id,
+            instrument_key="NSE_EQ|TEST", trading_symbol="TEST", exchange="NSE",
+            segment="NSE_EQ", instrument_type="EQ",
+        )
+        session.add(item)
+        session.commit()
+        other_item_id = str(item.id)
+    second = client.post(
+        "/equity/deployments",
+        json={**body, "watchlist_id": other_item_id, "command_key": str(uuid4())},
+        headers=other_headers,
+    )
+    assert second.status_code == 201, second.text
+    cycle(provider, factory)
+    assert provider.quote_requests == 1
+    assert account(client, headers)["deployments"][0]["status"] == "WAITING_FOR_ENTRY"
+    assert account(client, other_headers)["deployments"][0]["status"] == "WAITING_FOR_ENTRY"
 
 
 def test_equity_ledger_reconciles_lifecycle_and_detects_saved_fill_corruption(
@@ -562,6 +628,11 @@ def test_deploy_wait_enter_trail_close_persists_and_accounts_for_costs(client, s
     assert response.json()["status"] == "WAITING_FOR_ENTRY"
     assert response.json()["provider"] == provider.provider_id
     assert response.json()["instrument_key"] == "NSE_EQ|TEST"
+    initial_state = response.json()["state"]
+    assert Decimal(initial_state["entry_threshold_price"]) > 0
+    assert initial_state["latest_daily_signal_date"] == initial_state["signal_after"]
+    assert initial_state["latest_daily_signal_after_apply"] is False
+    assert isinstance(initial_state["latest_daily_signal_met"], bool)
     assert account(client, headers)["cash"] == "990000.00"
     cycle(provider, factory)
     assert account(client, headers)["deployments"][0]["status"] == "WAITING_FOR_ENTRY"
@@ -774,6 +845,9 @@ def test_response_timestamp_cannot_authorize_equity_entry_or_exit(client, setup)
     waiting = account(client, headers)["deployments"][0]
     assert waiting["status"] == "WAITING_FOR_ENTRY"
     assert "exchange-timestamped bid/ask book" in waiting["state"]["detail"]
+    assert Decimal(waiting["state"]["entry_threshold_price"]) > 0
+    assert isinstance(waiting["state"]["latest_daily_signal_met"], bool)
+    assert waiting["state"]["latest_daily_signal_date"]
     last_open = waiting["state"]["last_entry_check"]
     assert "exchange-timestamped bid/ask book" in last_open["detail"]
     provider.closed = True

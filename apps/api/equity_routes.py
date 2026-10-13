@@ -43,6 +43,7 @@ from packages.paper_trading.equity import (
     ZONE,
     average_true_range,
     completed_bars,
+    entry_threshold,
     money,
     open_position,
     proceeds,
@@ -1014,6 +1015,17 @@ async def deploy(body: DeployRequest, user: CurrentUser, session: SessionDep) ->
         )
     if (now.astimezone(ZONE).date() - baseline).days > 4:
         raise HTTPException(422, "Daily history is stale; deployment blocked")
+    threshold = entry_threshold(body.strategy, bars)
+    initial_state = {
+        "signal_after": baseline.isoformat(),
+        "quote_mode": "INDICATIVE" if body.indicative_quotes else "VERIFIED",
+        "detail": "Deployed; waiting for a new completed daily candle",
+        "latest_daily_signal_date": baseline.isoformat(),
+        "latest_daily_signal_met": signal(body.strategy, bars),
+        "latest_daily_signal_after_apply": False,
+    }
+    if threshold is not None:
+        initial_state["entry_threshold_price"] = str(money(threshold))
     try:
         wallet = lock_wallet(session, uid)
     except EquityCashJournalMismatch as error:
@@ -1054,11 +1066,7 @@ async def deploy(body: DeployRequest, user: CurrentUser, session: SessionDep) ->
         status="WAITING_FOR_ENTRY",
         created_at=now,
         updated_at=now,
-        state={
-            "signal_after": baseline.isoformat(),
-            "quote_mode": "INDICATIVE" if body.indicative_quotes else "VERIFIED",
-            "detail": "Deployed; waiting for a new completed daily candle",
-        },
+        state=initial_state,
     )
     wallet.cash -= body.budget
     session.add(row)

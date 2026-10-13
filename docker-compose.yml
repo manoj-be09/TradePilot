@@ -42,10 +42,22 @@ services:
     volumes:
       - ./apps/web:/app
       - web-node-modules:/app/node_modules
-    command: sh -c "npm install -g pnpm@11.25.0 && pnpm install --frozen-lockfile && pnpm run dev --hostname 0.0.0.0"
+    # The source tree is bind-mounted so the container always runs this checkout.
+    # Clear Next's host cache on container creation and invoke Next directly so
+    # CLI flags are passed to Next (pnpm run can otherwise treat them as script args).
+    command: sh -c "rm -rf .next && npm install -g pnpm@11.25.0 && pnpm install --frozen-lockfile && pnpm exec next dev --hostname 0.0.0.0"
     ports: ["3000:3000"]
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_TELEMETRY_DISABLED: "1"
+      # Docker Desktop's Windows bind mount may not forward file-change events.
+      WATCHPACK_POLLING: "1000"
+    healthcheck:
+      # Fail visibly if the web process did not serve the current branded app.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ | grep -q TradingPilot"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
     depends_on:
       api: { condition: service_healthy }
   paper-worker:

@@ -90,7 +90,7 @@ function DashboardWatchlist({ apiUrl, token, onExploreSymbols }: { apiUrl: strin
         : <ul>{items.slice(0, 20).map(item => <li key={item.id}>
           <button aria-expanded={selected === item.id} onClick={() => void inspect(item)} type="button"><strong>{item.trading_symbol}</strong><small>{item.exchange} · {item.instrument_type}</small><span>{selected === item.id && quoteBusy ? "Loading…" : "View quote"}</span></button>
           {selected === item.id && (quote || quoteError) ? <div className="trading-dashboard-watch-quote">
-            {quote ? <><strong>{money(quote.last_price)}</strong><small>{quote.timestamp_basis === "exchange" ? "Exchange time" : quote.timestamp_basis === "provider_response" ? "Provider response time" : "Timestamp source unverified"} · {time(quote.timestamp)}</small><small>{quote.last_trade_time ? `Last trade ${time(quote.last_trade_time)}` : "Last trade time unavailable"}</small></> : <small role="alert">{quoteError}</small>}
+            {quote ? <><strong>{money(quote.last_price)}</strong><small>{quote.timestamp_basis === "exchange" ? "Exchange time" : quote.timestamp_basis === "provider_response" ? "Provider response time" : quote.timestamp_basis === "provider_tick" ? "Provider tick time" : "Timestamp source unverified"} · {time(quote.timestamp)}</small><small>{quote.last_trade_time ? `Last trade ${time(quote.last_trade_time)}` : "Last trade time unavailable"}</small></> : <small role="alert">{quoteError}</small>}
           </div> : null}
         </li>)}</ul>}
     {items && items.length > 20 && <p className="trading-dashboard-watchlist-empty">Showing 20 of {items.length} saved symbols. Open the instrument explorer for the full list.</p>}

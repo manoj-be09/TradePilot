@@ -142,11 +142,14 @@ def test_v3_full_feed_decodes_initial_and_live_quotes_without_exchange_book_clai
     assert [quote.last_price for quote in quotes] == [100, 101]
     assert quotes[0].bid_quantity == 20
     assert quotes[0].ask_quantity == 25
-    assert quotes[0].timestamp_basis == "provider_response"
+    assert quotes[0].timestamp_basis == "provider_tick"
     assert quotes[0].book_as_of is None
     assert quotes[0].book_timestamp_basis == "unknown"
     assert quote_problem(quotes[0], key, quotes[0].timestamp) == (
         "Waiting for an exchange-timestamped bid/ask book"
+    )
+    assert quote_problem(quotes[0], key, quotes[0].timestamp, indicative=True) == (
+        "Indicative paper fill needs a provider response timestamp"
     )
     assert isinstance(socket.sent, bytes)
     request = json.loads(socket.sent)

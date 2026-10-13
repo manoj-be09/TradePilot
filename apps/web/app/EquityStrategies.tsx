@@ -19,7 +19,7 @@ type ChronologicalValidation = { status: "ready" | "unavailable"; reason: string
 type PolicyTrialRow = { policy_version: string; target_r: string; status: "insufficient" | "reviewable"; training_trades: number; validation_trades: number; boundary_trades_excluded: number; training_win_pct: number | null; validation_win_pct: number | null; training_average_r: number | null; validation_average_r: number | null; validation_average_net_pnl: number | null };
 type PolicyComparison = { status: "ready" | "unavailable"; reason: string | null; strategy: string; trial_id: string | null; frozen_at: string | null; comparison_digest: string | null; reserved_from: string | null; rows: PolicyTrialRow[]; method: string; holdout_evaluated: boolean; ranking_changed: boolean; parameters_changed: boolean };
 type OutcomeEvidence = { strategy_version: string; entry_quote_at: string | null; exit_quote_at: string; entry_signal_date: string | null; entry_market_context: MarketContext | null; initial_stop: string; final_stop: string; initial_risk: string; net_pnl: string; exit_reason: string };
-type Deployment = { id: string; provider: string; instrument_key: string; symbol: string; strategy: string; version: string; status: string; budget: string; risk_budget: string; created_at: string; updated_at: string; state: { detail: string; quote_mode?: "VERIFIED" | "INDICATIVE"; last_entry_check?: { at: string; detail: string }; position?: Position; realized_pnl?: string; marked_pnl?: string; quote_at?: string; entry_at?: string; exit_at?: string; exit_reason?: string; exit_price?: string; outcome_evidence?: OutcomeEvidence } };
+type Deployment = { id: string; provider: string; instrument_key: string; symbol: string; strategy: string; version: string; status: string; budget: string; risk_budget: string; created_at: string; updated_at: string; state: { detail: string; quote_mode?: "VERIFIED" | "INDICATIVE"; current_price?: string; current_price_at?: string; current_price_basis?: string; entry_reference_price?: string; entry_threshold_price?: string; latest_daily_signal_date?: string; latest_daily_signal_met?: boolean; latest_daily_signal_after_apply?: boolean; planned_entry_price?: string; last_entry_check?: { at: string; detail: string }; position?: Position; realized_pnl?: string; marked_pnl?: string; quote_at?: string; entry_at?: string; exit_at?: string; exit_reason?: string; exit_price?: string; outcome_evidence?: OutcomeEvidence } };
 type DecisionEvent = { id: string; event_type: string; created_at: string; details: Record<string, string | number> };
 type Account = { cash: string; initial_cash: string; deployments: Deployment[] };
 
@@ -379,6 +379,22 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
   const appliedName = research?.strategies.find(row => row.key === activeDeployment?.strategy)?.name ?? activeDeployment?.strategy;
   const activeDeployments = account?.deployments.filter(row => active.includes(row.status)) ?? [];
   const strategyName = (key: string) => catalog.find(entry => entry.implementation_key === key)?.name ?? research?.strategies.find(row => row.key === key)?.name ?? key;
+  const entryZone = (row: Deployment) => {
+    const reference = Number(row.state.entry_reference_price);
+    if (!Number.isFinite(reference) || reference <= 0) return null;
+    return { low: reference * 0.98, high: reference * 1.02 };
+  };
+  const dailySetupNote = (row: Deployment) => {
+    const state = row.state;
+    if (state.latest_daily_signal_met === false) return `Daily pattern not met on ${state.latest_daily_signal_date ?? "last candle"}`;
+    if (state.latest_daily_signal_met === true && !state.latest_daily_signal_after_apply) return "Pattern met before Apply; a new daily candle is required";
+    if (state.latest_daily_signal_met === true) return `Daily pattern met on ${state.latest_daily_signal_date ?? "last candle"}; quote checks still apply`;
+    return state.entry_threshold_price ? "Last completed candle reference; other rule checks apply" : "New daily signal required";
+  };
+  const quoteTimeLabel = (basis?: string) => basis === "exchange" ? "Exchange time" :
+    basis === "provider_response" ? "Provider response" :
+      basis === "provider_tick" ? "Provider tick" :
+        basis === "api_response_received" ? "API receipt" : "Time source unverified";
 
   return <section className="equity-lab" aria-label="Equity paper strategies">
     <div className="equity-lab-heading"><div><div className="panel-kicker">EQUITY STRATEGIES</div><h3>Choose a stock. Apply a strategy.</h3></div><span className="paper-mode-badge">PAPER ONLY · DAILY</span></div>
@@ -387,13 +403,13 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
       <div className="equity-lab-heading"><h3>Your active strategies</h3><small>Paper mode · stays visible after reload</small></div>
       <div className="equity-pinned-grid">{activeDeployments.map(row => <article key={row.id}>
         <div className="equity-deployment-heading"><strong>{row.symbol} · {strategyName(row.strategy)}</strong><span>{row.status.replaceAll("_", " ").toLowerCase()}</span></div>
-        <p>{row.state.detail}</p>
-        <DeploymentRules row={row} entry={catalog.find(entry => entry.implementation_key === row.strategy)} />
-        <small>Allocated {rupees(row.budget)} · planned risk {rupees(row.risk_budget)}</small>
-        {row.status === "WAITING_FOR_ENTRY" && <small>Applied {date(row.created_at)} · seven-day deadline {date(new Date(new Date(row.created_at).getTime() + 7 * 86_400_000).toISOString())}; the worker expires it on a later check if no entry occurs.</small>}
-        {row.state.quote_mode === "INDICATIVE" && <small className="equity-evidence-label">Indicative fills · bid/ask book time unverified · excluded from verified strategy feedback</small>}
-        {row.state.position && <><p>Entry {rupees(row.state.position.entry_price)} · current stop {rupees(row.state.position.stop)} · target {rupees(row.state.position.target)}</p><strong>Last marked net P&amp;L {rupees(row.state.marked_pnl)}</strong><small>Trailing stop {row.state.position.trailing_active ? "active" : "awaiting +1R"}{row.state.quote_at ? ` · Quote ${date(row.state.quote_at)}` : ""}</small></>}
-        <small>Last checked {date(row.updated_at)}</small>
+        <p className="equity-deployment-status">{row.state.detail}</p>
+        <div className="equity-entry-comparison" aria-label="Entry plan compared with current market price">
+          <div><span>{row.state.position ? "Entry price" : "Daily close reference"}</span><strong>{row.state.position ? rupees(row.state.position.entry_price) : row.state.entry_threshold_price ? `Above ${rupees(row.state.entry_threshold_price)}` : entryZone(row) ? `${rupees(entryZone(row)!.low)} – ${rupees(entryZone(row)!.high)}` : "Waiting for signal"}</strong><small>{row.state.position ? "Filled entry" : dailySetupNote(row)}</small></div>
+          <div><span>Current price</span><strong>{row.state.current_price ? rupees(row.state.current_price) : "Unavailable"}</strong><small>{row.state.current_price_at ? `${quoteTimeLabel(row.state.current_price_basis)} · ${date(row.state.current_price_at)}` : "Waiting for quote"}</small></div>
+        </div>
+        {row.state.position ? <div className="equity-position-strip"><span>Stop <b>{rupees(row.state.position.stop)}</b></span><span>Target <b>{rupees(row.state.position.target)}</b></span><span>Marked P&amp;L <b>{rupees(row.state.marked_pnl)}</b></span></div> : null}
+        <details className="equity-card-details"><summary>＋ Details</summary><DeploymentRules row={row} entry={catalog.find(entry => entry.implementation_key === row.strategy)} /><small>Allocated {rupees(row.budget)} · planned risk {rupees(row.risk_budget)} · last checked {date(row.updated_at)}</small>{row.status === "WAITING_FOR_ENTRY" && <small>Applied {date(row.created_at)} · deadline {date(new Date(new Date(row.created_at).getTime() + 7 * 86_400_000).toISOString())}</small>}{row.state.quote_mode === "INDICATIVE" && <small className="equity-evidence-label">Indicative fill · book time unverified · excluded from verified feedback</small>}</details>
         <DecisionHistory deploymentId={row.id} apiUrl={apiUrl} token={token} />
         <button className="inline-button" type="button" disabled={!!applying || row.status === "EXIT_REQUESTED"} onClick={() => void stop(row.id)}>{row.status === "WAITING_FOR_ENTRY" ? "Cancel deployment" : row.status === "EXIT_REQUESTED" ? "Exit requested" : "Request exit"}</button>
       </article>)}</div>

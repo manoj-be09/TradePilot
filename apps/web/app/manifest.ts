@@ -4,8 +4,8 @@ export const dynamic = "force-static";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Market Systems Trading Platform",
-    short_name: "Market Systems",
+    name: "TradingPilot",
+    short_name: "TradingPilot",
     description: "Trading research platform, starting with NIFTY options",
     start_url: "/",
     display: "standalone",

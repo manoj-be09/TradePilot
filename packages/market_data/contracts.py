@@ -11,7 +11,7 @@ class Quote(BaseModel):
     instrument_token: str
     timestamp: datetime
     timestamp_basis: Literal[
-        "exchange", "provider_response", "api_response_received", "unknown"
+        "exchange", "provider_response", "provider_tick", "api_response_received", "unknown"
     ] = "unknown"
     book_as_of: datetime | None = None
     book_timestamp_basis: Literal[

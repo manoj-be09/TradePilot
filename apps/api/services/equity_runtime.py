@@ -21,6 +21,7 @@ from packages.paper_trading.equity import (
     VERSION,
     ZONE,
     completed_bars,
+    entry_threshold,
     exit_reason,
     money,
     open_position,
@@ -211,6 +212,7 @@ async def process_equities(
     evaluated = closed = 0
     warnings: list[str] = []
     cached_bars: dict[str, list[HistoricalBar]] = {}
+    cached_quotes: dict[str, Quote] = {}
     for deployment_id, user_id in ids:
         with factory() as session:
             snapshot = session.get(EquityDeployment, deployment_id)
@@ -219,6 +221,9 @@ async def process_equities(
             key, source, status = snapshot.instrument_key, snapshot.provider, snapshot.status
             indicative = snapshot.state.get("quote_mode") == "INDICATIVE"
             size = held_quantity(snapshot.state) if status != "WAITING_FOR_ENTRY" else 1
+            missing_reference = status == "WAITING_FOR_ENTRY" and not snapshot.state.get(
+                "entry_threshold_price"
+            )
         quote: Quote | None = None
         bars: list[HistoricalBar] = []
         issue = None
@@ -228,18 +233,28 @@ async def process_equities(
             issue = "Deployment provider is not the active provider"
         else:
             try:
-                quote = await provider.get_quote(key)
+                if key not in cached_quotes:
+                    cached_quotes[key] = await provider.get_quote(key)
+                quote = cached_quotes[key].model_copy(deep=True)
                 issue = quote_problem(
                     quote, key, datetime.now(timezone.utc), indicative=indicative,
                     side="BUY" if status == "WAITING_FOR_ENTRY" else "SELL",
                     quantity=size,
                 )
-                if issue is None and status == "WAITING_FOR_ENTRY":
-                    if key not in cached_bars:
-                        cached_bars[key] = await history(provider, key, now)
-                    bars = cached_bars[key]
             except Exception:
                 issue = "Market data unavailable; no fill made"
+        # A daily reference remains useful outside market hours, including for
+        # deployments saved before Apply started recording it.
+        if status == "WAITING_FOR_ENTRY" and source == provider.provider_id and (
+            market_open or missing_reference
+        ):
+            try:
+                if key not in cached_bars:
+                    cached_bars[key] = await history(provider, key, now)
+                bars = cached_bars[key]
+            except Exception:
+                if market_open and issue is None:
+                    issue = "Daily history unavailable; no fill made"
         with factory() as session:
             try:
                 wallet = lock_wallet(session, user_id)
@@ -256,6 +271,22 @@ async def process_equities(
             now = datetime.now(timezone.utc)
             state = dict(row.state)
             row.updated_at = now
+            if quote is not None:
+                state.update(
+                    current_price=str(quote.last_price),
+                    current_price_at=quote.timestamp.isoformat(),
+                    current_price_basis=quote.timestamp_basis,
+                )
+            if row.status == "WAITING_FOR_ENTRY" and bars:
+                threshold = entry_threshold(row.strategy, bars)
+                if threshold is not None:
+                    state["entry_threshold_price"] = str(money(threshold))
+                day = bars[-1].timestamp.astimezone(ZONE).date()
+                state["latest_daily_signal_date"] = day.isoformat()
+                state["latest_daily_signal_met"] = signal(row.strategy, bars)
+                state["latest_daily_signal_after_apply"] = (
+                    day > datetime.fromisoformat(state["signal_after"]).date()
+                )
             if row.version != VERSION:
                 issue = "Unsupported strategy version; manual review required"
             if row.status == "WAITING_FOR_ENTRY" and now >= utc(row.created_at) + timedelta(days=7):
@@ -299,6 +330,8 @@ async def process_equities(
                     if not bars:
                         state["detail"] = "Waiting for completed candle history"
                     else:
+                        state["entry_reference_price"] = str(bars[-1].close)
+                        state["planned_entry_price"] = str(quote.ask)
                         day = bars[-1].timestamp.astimezone(ZONE).date()
                         baseline = datetime.fromisoformat(state["signal_after"]).date()
                         if day <= baseline:

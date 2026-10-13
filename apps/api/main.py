@@ -3323,7 +3323,7 @@ def paper_worker_readiness(session: SessionDep, response: Response) -> dict[str,
     healthy_cycle = (
         lease is not None
         and heartbeat is not None
-        and lease.status == "HEALTHY"
+        and lease.status in {"HEALTHY", "DEGRADED"}
         and (now - heartbeat).total_seconds() <= max_age
     )
     lease_until = lease.lease_until if lease is not None else None

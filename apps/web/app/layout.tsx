@@ -8,9 +8,9 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Market Systems Trading Platform",
+  title: "TradingPilot",
   description: "Trading research platform, starting with NIFTY options",
-  applicationName: "Market Systems",
+  applicationName: "TradingPilot",
   icons: { icon: "/icon.svg" },
 };
 

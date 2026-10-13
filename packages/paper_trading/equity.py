@@ -214,6 +214,42 @@ def signal(key: str, bars: list[HistoricalBar]) -> bool:
             and last > mean20 - 2 * current_std and last > previous)
 
 
+def entry_threshold(key: str, bars: list[HistoricalBar]) -> Decimal | None:
+    """Return the latest close threshold used by a long entry rule, when defined.
+
+    This is explanatory state for the paper UI; it does not change signal
+    evaluation or make an entry eligible.
+    """
+    if key not in STRATEGIES or len(bars) < MINIMUM_BARS[key]:
+        return None
+    closes = [bar.close for bar in bars]
+    previous = closes[-2]
+    mean20 = sum(closes[-20:], Decimal(0)) / 20
+    mean50 = sum(closes[-50:], Decimal(0)) / 50
+    if key == "trend":
+        return mean20
+    if key == "breakout":
+        return max(bar.high for bar in bars[-21:-1])
+    if key == "pullback":
+        return max(mean50, sum(closes[-6:-1], Decimal(0)) / 5)
+    if key == "reversion":
+        window = closes[-21:-1]
+        avg = sum(window, Decimal(0)) / 20
+        deviation = (sum(((x - avg) ** 2 for x in window), Decimal(0)) / 20).sqrt()
+        return max(previous, avg - 2 * deviation)
+    if key == "momentum":
+        return max(closes[-11] * Decimal("1.03"), max(closes[-11:-1]))
+    if key in {"channel20", "channel55"}:
+        lookback = 20 if key == "channel20" else 55
+        return max(bar.high for bar in bars[-lookback - 1:-1])
+    if key == "connors_r2":
+        return sum(closes[-200:], Decimal(0)) / 200
+    if key == "sma_cross":
+        return mean20
+    current_std = (sum(((x - mean20) ** 2 for x in closes[-20:]), Decimal(0)) / 20).sqrt()
+    return max(previous, mean20 - 2 * current_std)
+
+
 def average_true_range(bars: list[HistoricalBar]) -> Decimal:
     if len(bars) < 15:
         raise ValueError("14 true ranges require at least 15 candles")

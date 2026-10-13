@@ -26,7 +26,7 @@ type DiscoveredInstrument = {
 type MarketQuote = {
   instrument_token: string;
   timestamp: string;
-  timestamp_basis: "exchange" | "provider_response" | "api_response_received" | "unknown";
+  timestamp_basis: "exchange" | "provider_response" | "provider_tick" | "api_response_received" | "unknown";
   last_trade_time: string | null;
   last_price: string;
   bid: string | null;
@@ -38,6 +38,7 @@ type WatchlistItem = DiscoveredInstrument & { id: string; provider: string };
 const quoteTimeLabels: Record<MarketQuote["timestamp_basis"], string> = {
   exchange: "Exchange time",
   provider_response: "Provider response",
+  provider_tick: "Provider tick",
   api_response_received: "API receipt",
   unknown: "Time source unknown",
 };

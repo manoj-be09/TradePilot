@@ -1,5 +1,12 @@
 # Build progress — updated 2026-10-12
 
+## 2026-10-13 — Equity Algo Trading presentation update
+
+- Equity & ETF → Algo Trading now shows paper-ready strategy cards before a stock is selected, with color grouping, source/market-condition labels and expandable entry, exit and risk details. Selecting a saved stock still enables the existing historical ranking, market-fit evidence and Apply flow; strategy logic and API contracts are unchanged.
+- The existing deployment decision trail and trade history are surfaced as **Logs & order history** and open automatically when active deployments exist.
+- Validation: frontend TypeScript check passed; commit `86be3ec`. Graphify remains indexed at `a6fc594`, older than this checkout, so its results were used for navigation only.
+- User test: refresh `http://localhost:3000`, choose Equity & ETFs → Algo Trading, confirm the colored cards, expand Entry, exit & risk, then save/select an NSE stock and confirm ranked candidates and Apply actions. Limitation: ranking still requires stock history and no strategy is auto-applied.
+
 ## 2026-10-12 — GitHub installation validation and portable feed probe
 
 - Development now uses `manoj-be09/TradePilot` and the `TradePilot-GitHub` checkout. Graphify was queried at indexed commit `a6fc594`; local changes were inspected with Git. The scheduled continuation now targets this checkout and the tracked probe path.

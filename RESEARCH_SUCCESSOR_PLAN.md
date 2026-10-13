@@ -1,6 +1,6 @@
 # Controlled successors for frozen equity research
 
-Implementation target for priority 2. This is a design, not implemented behavior.
+Implementation target for priority 2. Schema and API are implemented locally and tested; PostgreSQL/runtime verification and frontend controls remain pending. This plan defines acceptance, not a claim of production readiness.
 
 ## Problem verified in current code
 

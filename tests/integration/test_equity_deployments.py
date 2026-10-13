@@ -498,6 +498,100 @@ def test_reviewable_study_freezes_once_and_survives_provider_outage(client, setu
     assert other_result.json()["status"] == "unavailable"
 
 
+@pytest.mark.parametrize("mode", ["ready", "insufficient", "boundary"])
+def test_source_successor_preserves_original_and_reserved_window(client, setup, monkeypatch, mode):
+    from packages.regime.chronological_validation import review_fixed_equity_rules
+
+    headers, body, provider, factory = setup
+    long_validation_history(provider)
+
+    def reviewable(*args, **kwargs):
+        report = review_fixed_equity_rules(*args, **kwargs)
+        return report.model_copy(update={"rows": [
+            report.rows[0].model_copy(update={"status": "reviewable"}), *report.rows[1:],
+        ]})
+
+    monkeypatch.setattr("apps.api.equity_routes.review_fixed_equity_rules", reviewable)
+    request = {key: body[key] for key in ("watchlist_id", "budget", "risk_budget")}
+    original = client.post("/equity/chronological-validation", json=request, headers=headers).json()
+    path = f"/equity/validation-studies/{original['study_id']}/successor"
+    note = {"reason": "Reviewed calculation source update"}
+    assert client.post(path, json=note).status_code == 401
+    assert client.post(path, json=note, headers=headers).status_code == 409
+    monkeypatch.setattr("apps.api.equity_routes.research_code_digest", lambda: "c" * 64)
+
+    async def forbidden_provider_call(*_args):
+        raise AssertionError("Successor must use saved data, not provider history")
+
+    provider.get_historical = forbidden_provider_call
+    if mode != "ready":
+        def changed_review(*args, **kwargs):
+            report = reviewable(*args, **kwargs)
+            if mode == "boundary":
+                return report.model_copy(update={
+                    "reserved_from": report.reserved_from + timedelta(days=1),
+                })
+            return report.model_copy(update={"rows": [
+                row.model_copy(update={"status": "insufficient"}) for row in report.rows
+            ]})
+
+        monkeypatch.setattr("apps.api.equity_routes.review_fixed_equity_rules", changed_review)
+    result = client.post(path, json=note, headers=headers)
+    if mode != "ready":
+        assert result.status_code == (409 if mode == "boundary" else 200)
+        if mode == "insufficient":
+            assert result.json()["frozen"] is False and result.json()["generation"] == 2
+        with factory() as session:
+            assert len(list(session.scalars(select(EquityValidationStudy)))) == 1
+            assert list(session.scalars(select(EquityDeployment))) == []
+            attempts = list(session.scalars(select(AuditEvent).where(
+                AuditEvent.event_type == "equity.validation.successor_attempt",
+            )))
+            assert len(attempts) == 1
+            if mode == "boundary":
+                assert attempts[0].details["status"] == "boundary_rejected"
+        return
+    assert result.status_code == 200, result.text
+    successor = result.json()
+    assert successor["frozen"] and successor["generation"] == 2
+    assert successor["parent_study_id"] == original["study_id"]
+    for key in ("training_from", "training_to", "validation_from", "validation_to",
+                "reserved_from", "reserved_to", "reserved_bars"):
+        assert successor[key] == original[key]
+    for key in ("allocation", "planned_risk"):
+        assert Decimal(successor[key]) == Decimal(original[key])
+    assert client.post(path, json=note, headers=headers).json() == successor
+    read_path = f"/equity/validation-studies/{successor['study_id']}"
+    assert client.get(read_path, headers=headers).json() == successor
+    assert client.get(read_path).status_code == 401
+    comparison = client.post("/equity/exit-policy-comparison", headers=headers, json={
+        "watchlist_id": body["watchlist_id"], "strategy": "trend",
+        "study_id": successor["study_id"],
+    })
+    assert comparison.status_code == 200, comparison.text
+    assert comparison.json()["study_id"] == successor["study_id"]
+    assert comparison.json()["holdout_evaluated"] is False
+    assert client.post(
+        "/equity/chronological-validation", json=request, headers=headers,
+    ).json() == original
+    other_token = client.post("/auth/register", json={
+        "email": "successor-isolation@example.com", "password": "another-strong-password",
+    }).json()["access_token"]
+    assert client.post(path, json=note, headers={
+        "Authorization": f"Bearer {other_token}",
+    }).status_code == 404
+    assert client.get(read_path, headers={
+        "Authorization": f"Bearer {other_token}",
+    }).status_code == 404
+    with factory() as session:
+        studies = list(session.scalars(select(EquityValidationStudy)))
+        assert len(studies) == 2
+        parent = next(study for study in studies if study.generation == 1)
+        child = next(study for study in studies if study.generation == 2)
+        assert parent.dataset_manifest["bars"] == child.dataset_manifest["bars"]
+        assert list(session.scalars(select(EquityDeployment))) == []
+
+
 def test_policy_trials_freeze_from_owned_study_without_touching_holdout_or_paper(
     client, setup, monkeypatch,
 ):

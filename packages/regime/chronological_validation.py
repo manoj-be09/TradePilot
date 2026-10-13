@@ -40,6 +40,8 @@ class ChronologicalValidation(BaseModel):
     version: str = VERSION
     rule_version: str | None = None
     study_id: UUID | None = None
+    generation: int = Field(default=1, ge=1)
+    parent_study_id: UUID | None = None
     frozen_at: datetime | None = None
     frozen: bool = False
     dataset_digest: str | None = None

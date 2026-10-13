@@ -137,6 +137,8 @@ def _frozen_study(study: EquityValidationStudy) -> ChronologicalValidation:
         raise HTTPException(409, "Frozen validation evidence is invalid") from error
     if (
         result.study_id != study.id
+        or result.generation != study.generation
+        or result.parent_study_id != study.parent_study_id
         or not result.frozen
         or result.dataset_digest != study.dataset_digest
         or result.rule_version != study.rule_version
@@ -232,6 +234,7 @@ class DeployRequest(ResearchRequest):
 
 
 class PolicyTrialRequest(BaseModel):
+    study_id: UUID | None = None
     model_config = ConfigDict(extra="forbid")
     watchlist_id: UUID
     strategy: str
@@ -750,6 +753,126 @@ async def _chronological_validation(
     return report
 
 
+class SuccessorRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    reason: str = Field(min_length=8, max_length=200)
+
+
+@router.get("/validation-studies/{study_id}", response_model=ChronologicalValidation)
+def read_validation_study(
+    study_id: UUID, user: CurrentUser, session: SessionDep, response: Response,
+) -> ChronologicalValidation:
+    response.headers["Cache-Control"] = "no-store"
+    study = session.scalar(select(EquityValidationStudy).where(
+        EquityValidationStudy.id == study_id, EquityValidationStudy.user_id == user.id,
+    ))
+    if study is None:
+        raise HTTPException(404, "Validation study not found")
+    return _frozen_study(study)
+
+
+@router.post("/validation-studies/{study_id}/successor", response_model=ChronologicalValidation)
+def create_validation_successor(
+    study_id: UUID, body: SuccessorRequest, user: CurrentUser,
+    session: SessionDep, response: Response,
+) -> ChronologicalValidation:
+    """Explicit source-update review on the parent's exact candles and reserved window."""
+    response.headers["Cache-Control"] = "no-store"
+    parent = session.scalar(select(EquityValidationStudy).where(
+        EquityValidationStudy.id == study_id, EquityValidationStudy.user_id == user.id,
+    ))
+    if parent is None:
+        raise HTTPException(404, "Validation study not found")
+    baseline = _frozen_study(parent)
+    child = session.scalar(select(EquityValidationStudy).where(
+        EquityValidationStudy.parent_study_id == parent.id,
+        EquityValidationStudy.user_id == user.id,
+    ))
+    if child is not None:
+        return _frozen_study(child)
+    manifest = parent.dataset_manifest
+    if manifest is None or any(field not in manifest for field in (
+        "fee_per_side", "slippage_per_side", "calculation_version", "exit_policy_version",
+    )):
+        raise HTTPException(409, "Parent study lacks explicit calculation assumptions")
+    if (
+        manifest["fee_per_side"] != str(FEE)
+        or manifest["slippage_per_side"] != str(SLIPPAGE)
+        or manifest["exit_policy_version"] != DEFAULT_EXIT_POLICY.version
+        or manifest["calculation_version"] != CALCULATION_VERSION
+    ):
+        raise HTTPException(409, "Successor must preserve the parent's cost and exit assumptions")
+    try:
+        code_digest = research_code_digest()
+        bars = [HistoricalBar(
+            timestamp=row[0], open=row[1], high=row[2], low=row[3], close=row[4], volume=row[5],
+        ) for row in manifest["bars"]]
+    except (OSError, KeyError, TypeError, ValueError, IndexError):
+        raise HTTPException(409, "Parent candles or calculation source are unavailable") from None
+    if manifest.get("calculation_source_digest") == code_digest:
+        raise HTTPException(409, "Calculation source is unchanged; reuse the original study")
+    report = review_fixed_equity_rules(
+        bars, provider=parent.provider, symbol=parent.symbol,
+        budget=parent.allocation, risk_budget=parent.risk_budget,
+    )
+    boundaries_changed = report.status == "ready" and any(
+        getattr(report, field) != getattr(baseline, field) for field in (
+            "bars", "training_from", "training_to", "validation_from", "validation_to",
+            "reserved_from", "reserved_to", "reserved_bars",
+        )
+    )
+    report = report.model_copy(update={
+        "generation": parent.generation + 1, "parent_study_id": parent.id,
+    })
+    session.add(AuditEvent(
+        actor_user_id=user.id, event_type="equity.validation.successor_attempt",
+        correlation_id=str(parent.id), details={
+            "parent_study_id": str(parent.id), "reason": body.reason,
+            "calculation_source_digest": code_digest,
+            "status": "boundary_rejected" if boundaries_changed else report.status,
+            "report_digest": _canonical_hash(report.model_dump(mode="json")),
+        },
+    ))
+    if boundaries_changed:
+        session.commit()
+        raise HTTPException(409, "Successor would change the parent's research boundaries")
+    if report.status != "ready" or not any(row.status == "reviewable" for row in report.rows):
+        session.commit()
+        return report
+    successor_id, frozen_at = uuid4(), datetime.now(timezone.utc)
+    successor_manifest = {
+        **manifest, "calculation_source_digest": code_digest, "rule_version": report.rule_version,
+    }
+    digest = _canonical_hash(successor_manifest)
+    report = report.model_copy(update={
+        "study_id": successor_id, "generation": parent.generation + 1,
+        "parent_study_id": parent.id, "dataset_digest": digest,
+        "frozen": True, "frozen_at": frozen_at,
+    })
+    report_data = report.model_dump(mode="json")
+    session.add(EquityValidationStudy(
+        id=successor_id, user_id=user.id, provider=parent.provider,
+        instrument_key=parent.instrument_key, symbol=parent.symbol,
+        rule_version=report.rule_version, allocation=parent.allocation,
+        risk_budget=parent.risk_budget,
+        generation=parent.generation + 1, parent_study_id=parent.id,
+        dataset_digest=digest, dataset_manifest=successor_manifest,
+        report_digest=_canonical_hash(report_data), report=report_data, frozen_at=frozen_at,
+    ))
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        child = session.scalar(select(EquityValidationStudy).where(
+            EquityValidationStudy.parent_study_id == study_id,
+            EquityValidationStudy.user_id == user.id,
+        ))
+        if child is None:
+            raise HTTPException(409, "Successor could not be frozen") from None
+        return _frozen_study(child)
+    return report
+
+
 @router.post("/exit-policy-comparison", response_model=PolicyComparison)
 def exit_policy_comparison(
     body: PolicyTrialRequest, user: CurrentUser, session: SessionDep, response: Response,
@@ -760,12 +883,15 @@ def exit_policy_comparison(
     if body.strategy not in STRATEGIES:
         raise HTTPException(422, "Unknown paper strategy")
     study = session.scalar(select(EquityValidationStudy).where(
-        EquityValidationStudy.generation == 1,
+        (EquityValidationStudy.id == body.study_id if body.study_id is not None
+         else EquityValidationStudy.generation == 1),
         EquityValidationStudy.user_id == user.id,
         EquityValidationStudy.provider == item.provider,
         EquityValidationStudy.instrument_key == item.instrument_key,
     ))
     if study is None:
+        if body.study_id is not None:
+            raise HTTPException(404, "Validation study not found for this instrument")
         return PolicyComparison(
             status="unavailable", provider=item.provider, symbol=item.trading_symbol,
             strategy=body.strategy,

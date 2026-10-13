@@ -70,6 +70,7 @@ from packages.regime.equity_policy_trials import (
     compare_exit_policies,
 )
 from packages.regime.outlook import describe_market
+from packages.regime.research_identity import research_code_digest
 from packages.regime.shadow_fit import ShadowFitResult, compare_shadow_fit, unavailable_fit
 from packages.regime.strategy_fit import describe_stock_context, fit_for_strategy
 from packages.regime.strategy_ranking import RANKING_METHOD, RANKING_VERSION, profit_review
@@ -675,6 +676,13 @@ async def _chronological_validation(
         )
     if report.status != "ready":
         return report
+    try:
+        code_digest = research_code_digest()
+    except OSError:
+        return unavailable_validation(
+            provider.provider_id, item.trading_symbol,
+            "Calculation source identity could not be verified.",
+        )
     manifest = {
         "provider": item.provider,
         "instrument_key": item.instrument_key,
@@ -685,6 +693,7 @@ async def _chronological_validation(
         "fee_per_side": str(FEE),
         "slippage_per_side": str(SLIPPAGE),
         "planned_risk": str(body.risk_budget),
+        "calculation_source_digest": code_digest,
         "bars": [
             [bar.timestamp.isoformat(), str(bar.open), str(bar.high),
              str(bar.low), str(bar.close), bar.volume]
@@ -773,6 +782,18 @@ def exit_policy_comparison(
             strategy=body.strategy,
             reason="This older study has no preserved fee and slippage assumptions.",
         )
+    if "calculation_source_digest" not in manifest:
+        return PolicyComparison(
+            status="unavailable", provider=item.provider, symbol=item.trading_symbol,
+            strategy=body.strategy,
+            reason="This older study has no preserved calculation source identity.",
+        )
+    try:
+        code_digest = research_code_digest()
+    except OSError:
+        raise HTTPException(409, "Calculation source identity could not be verified") from None
+    if manifest["calculation_source_digest"] != code_digest:
+        raise HTTPException(409, "Frozen study uses different calculation source")
     if (
         manifest.get("fee_per_side") != str(FEE)
         or manifest.get("slippage_per_side") != str(SLIPPAGE)
@@ -801,6 +822,7 @@ def exit_policy_comparison(
     except (KeyError, IndexError, TypeError, ValueError, AttributeError) as error:
         raise HTTPException(409, "Frozen study candles are invalid") from error
     trial_manifest = {
+        "calculation_source_digest": code_digest,
         "study_id": str(study.id),
         "dataset_digest": study.dataset_digest,
         "study_report_digest": study.report_digest,

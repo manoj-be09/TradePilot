@@ -581,3 +581,7 @@ Next acceptance steps:
 ### Prior UI slice (2026-10-10)
 
 The dashboard now exposes a compact paper-readiness summary using the existing account, identity, chain-quality and live-order flags. This improves operator clarity without changing execution policy. Next priority remains evidence, not UI: obtain/validate exchange-timed executable quotes, reconcile the expired F&O position from official settlement data, and complete a real-session paper entry/stop/exit plus ledger check. No claim of 100% readiness is made until those gates pass.
+## Priority 1 status — runtime reliability
+
+The paper worker now has a Docker healthcheck backed by `/ready/paper-worker`. Complete this priority by rebuilding the stack, confirming API and worker readiness, and investigating any unhealthy result from worker logs without deleting database volumes. After that, proceed to the real-session evidence gates.
+

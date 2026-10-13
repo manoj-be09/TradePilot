@@ -55,6 +55,12 @@ services:
     env_file: .env
     command: python -m apps.paper_worker.main
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://api:8000/ready/paper-worker', timeout=2).read()"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
     depends_on:
       api: { condition: service_healthy }
       postgres: { condition: service_healthy }

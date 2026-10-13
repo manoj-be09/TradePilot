@@ -1,5 +1,11 @@
 # Build progress — updated 2026-10-12
 
+## 2026-10-13 — Priority 1 worker health signal
+
+- Added a Docker healthcheck for `paper-worker` using the existing `/ready/paper-worker` endpoint. Docker now distinguishes a running container from a worker that has stopped producing healthy cycles; the check is delayed during startup and does not expose account data or enable live orders.
+- User test: run `docker compose up -d --build`, then `docker compose ps`. `paper-worker` should become `healthy` after its first successful cycle. If it is `unhealthy`, inspect `docker compose logs --tail=100 paper-worker` and `/ready/paper-worker`; do not delete database volumes.
+- Limitation: the healthcheck confirms freshness and lease state only. It does not prove market-data entitlement, exchange book timestamp provenance, or profitable strategies.
+
 ## 2026-10-13 — Graphify refresh workflow gate
 
 - Added the development rule to `PROJECT_PLAN.md`: refresh Graphify after a meaningful batch, before a larger refactor, or when its indexed commit noticeably trails Git. Small isolated edits do not require an index refresh.

@@ -682,6 +682,8 @@ async def _chronological_validation(
         "calculation_version": CALCULATION_VERSION,
         "exit_policy_version": DEFAULT_EXIT_POLICY.version,
         "allocation": str(body.budget),
+        "fee_per_side": str(FEE),
+        "slippage_per_side": str(SLIPPAGE),
         "planned_risk": str(body.risk_budget),
         "bars": [
             [bar.timestamp.isoformat(), str(bar.open), str(bar.high),
@@ -765,8 +767,16 @@ def exit_policy_comparison(
             strategy=body.strategy,
             reason="This older study has no preserved candles for a policy comparison.",
         )
+    if "fee_per_side" not in manifest or "slippage_per_side" not in manifest:
+        return PolicyComparison(
+            status="unavailable", provider=item.provider, symbol=item.trading_symbol,
+            strategy=body.strategy,
+            reason="This older study has no preserved fee and slippage assumptions.",
+        )
     if (
-        manifest.get("calculation_version") != CALCULATION_VERSION
+        manifest.get("fee_per_side") != str(FEE)
+        or manifest.get("slippage_per_side") != str(SLIPPAGE)
+        or manifest.get("calculation_version") != CALCULATION_VERSION
         or manifest.get("exit_policy_version", DEFAULT_EXIT_POLICY.version)
         != DEFAULT_EXIT_POLICY.version
     ):

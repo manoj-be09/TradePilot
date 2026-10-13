@@ -540,6 +540,54 @@ def test_policy_trials_freeze_from_owned_study_without_touching_holdout_or_paper
     ).status_code == 404
 
 
+@pytest.mark.parametrize("changed_cost", ["FEE", "SLIPPAGE", "legacy"])
+def test_policy_comparison_rejects_cost_drift(client, setup, monkeypatch, changed_cost):
+    from packages.regime.chronological_validation import review_fixed_equity_rules
+
+    headers, body, provider, factory = setup
+    long_validation_history(provider)
+
+    def reviewable(*args, **kwargs):
+        report = review_fixed_equity_rules(*args, **kwargs)
+        return report.model_copy(update={"rows": [
+            report.rows[0].model_copy(update={"status": "reviewable"}),
+            *report.rows[1:],
+        ]})
+
+    monkeypatch.setattr("apps.api.equity_routes.review_fixed_equity_rules", reviewable)
+    request = {key: body[key] for key in ("watchlist_id", "budget", "risk_budget")}
+    frozen = client.post("/equity/chronological-validation", json=request, headers=headers)
+    assert frozen.status_code == 200 and frozen.json()["frozen"]
+    with factory() as session:
+        study = session.scalar(select(EquityValidationStudy))
+        assert Decimal(study.dataset_manifest["fee_per_side"]) > 0
+        assert Decimal(study.dataset_manifest["slippage_per_side"]) > 0
+    if changed_cost == "legacy":
+        from apps.api.equity_routes import _canonical_hash
+
+        with factory() as session:
+            study = session.scalar(select(EquityValidationStudy))
+            study.dataset_manifest = {
+                key: value for key, value in study.dataset_manifest.items()
+                if key not in {"fee_per_side", "slippage_per_side"}
+            }
+            study.dataset_digest = _canonical_hash(study.dataset_manifest)
+            study.report = {**study.report, "dataset_digest": study.dataset_digest}
+            study.report_digest = _canonical_hash(study.report)
+            session.commit()
+    else:
+        monkeypatch.setattr(f"apps.api.equity_routes.{changed_cost}", Decimal("0.9"))
+    result = client.post("/equity/exit-policy-comparison", headers=headers,
+                         json={"watchlist_id": body["watchlist_id"], "strategy": "trend"})
+    assert result.status_code == (200 if changed_cost == "legacy" else 409)
+    if changed_cost == "legacy":
+        assert result.json()["status"] == "unavailable"
+        assert "fee and slippage" in result.json()["reason"]
+    with factory() as session:
+        assert list(session.scalars(select(EquityPolicyTrial))) == []
+        assert list(session.scalars(select(EquityDeployment))) == []
+
+
 def test_tampered_policy_trial_is_rejected(client, setup, monkeypatch):
     from packages.regime.chronological_validation import review_fixed_equity_rules
 

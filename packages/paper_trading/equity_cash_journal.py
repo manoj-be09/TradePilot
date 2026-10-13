@@ -87,6 +87,7 @@ def reconcile_equity_cash_journal(
         flag("Journal opening type is invalid.")
     balance = money(first.cash_after)
     by_id = {row.id: row for row in deployments if row.user_id == user_id}
+    movements: dict[UUID, list[str]] = {}
     for event in events[1:]:
         if event.user_id != user_id:
             flag("Journal contains another account's cash entry.")
@@ -101,6 +102,7 @@ def reconcile_equity_cash_journal(
         if row is None:
             flag(f"Journal entry {event.id} has no saved deployment.")
         else:
+            movements.setdefault(row.id, []).append(event.kind)
             expected_delta: Decimal | None = None
             if event.kind == "RESERVE":
                 expected_delta = -row.budget
@@ -117,6 +119,16 @@ def reconcile_equity_cash_journal(
         balance = money(balance + event.delta)
         if balance != event.cash_after:
             flag(f"Journal entry {event.id} does not match its running balance.")
+    if first.kind == "INITIAL_FUNDING":
+        # Every deployment of a new wallet must have its full cash lifecycle.
+        for row in by_id.values():
+            expected = ["RESERVE"]
+            if row.status in {"CANCELLED", "EXPIRED"}:
+                expected.append("RELEASE")
+            elif row.status == "CLOSED":
+                expected.append("CLOSE")
+            if movements.get(row.id, []) != expected:
+                flag(f"Deployment {row.id} has an incomplete cash journal.")
     if balance != money(recorded_cash):
         flag("Journal ending cash differs from the saved equity wallet.")
     status: Literal["MATCHED", "LEGACY_CHECKPOINT", "NOT_STARTED", "MISMATCH"] = (

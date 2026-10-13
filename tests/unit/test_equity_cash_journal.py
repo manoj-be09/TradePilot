@@ -93,6 +93,25 @@ def test_wallet_lock_rejects_unjournaled_cash_change():
     engine.dispose()
 
 
+def test_new_wallet_rejects_closed_deployment_with_missing_cash_events():
+    owner = uuid4()
+    opening = EquityCashEvent(
+        user_id=owner, event_key="opening", kind="INITIAL_FUNDING",
+        delta=Decimal("1000"), cash_after=Decimal("1000"),
+    )
+    closed = EquityDeployment(
+        id=uuid4(), user_id=owner, budget=Decimal("100"),
+        risk_budget=Decimal("10"), status="CLOSED",
+        state={"realized_pnl": "0.00"},
+    )
+    report = reconcile_equity_cash_journal(
+        user_id=owner, initial_cash=Decimal("1000"),
+        recorded_cash=Decimal("1000"), events=[opening], deployments=[closed],
+    )
+    assert report.status == "MISMATCH"
+    assert "incomplete cash journal" in report.issues[0]
+
+
 def test_legacy_checkpoint_cannot_hide_existing_wallet_mismatch():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)

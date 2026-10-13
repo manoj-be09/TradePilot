@@ -16,6 +16,11 @@ Invoke-RestMethod http://localhost:8000/ready/paper-worker
 
 Both readiness requests should return `ready`. This proves dependency/worker health,
 not that a strategy has entered a trade or that paper results predict profit.
+
+To run the deterministic paper lifecycle checks without changing the running database,
+use `./scripts/run-paper-lifecycle-tests.ps1` from PowerShell. It uses a disposable
+container and SQLite; the expected result is 85 passing integration tests plus the
+existing Starlette/httpx deprecation warning.
 Open `http://localhost:3000` and select **Equity & ETF → Algo Trading**. Before
 selecting a stock, expand a strategy in the library to see its source and rules.
 Save and select an NSE share to load that stock's replay and top three candidates.

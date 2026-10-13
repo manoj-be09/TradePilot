@@ -18,6 +18,11 @@
 - This confirms changing provider updates, but every sampled quote still reports `book_basis=unknown`; exchange-origin executable-book timing remains unverified. Strict F&O paper fills stay blocked by policy. No orders or database writes were made.
 - Next test: run one equity paper deployment during an open session and reconcile its saved entry/exit observations and ledger. Keep F&O strategies waiting when book provenance is unknown.
 
+## 2026-10-13 — Repeatable lifecycle validation command
+
+- Added `scripts/run-paper-lifecycle-tests.ps1`, which fixes the Docker working directory at `/src` and runs the 85-test equity/F&O lifecycle suite against disposable SQLite state. This prevents the earlier false migration failures caused by running pytest from `/tmp`.
+- The script keeps `LIVE_TRADING_ENABLED=false` and mounts the repository read-only; it cannot alter the running PostgreSQL volume.
+
 ## 2026-10-13 — Graphify refresh workflow gate
 
 - Added the development rule to `PROJECT_PLAN.md`: refresh Graphify after a meaningful batch, before a larger refactor, or when its indexed commit noticeably trails Git. Small isolated edits do not require an index refresh.

@@ -24,6 +24,11 @@
 - The script keeps `LIVE_TRADING_ENABLED=false` and mounts the repository read-only; it cannot alter the running PostgreSQL volume.
 - The script also runs chronological-validation, bounded policy-trial and historical replay unit tests so reserved holdout windows and replay provenance are checked with the lifecycle suite.
 
+## 2026-10-13 — Historical validation regression pass
+
+- The expanded disposable runner passed **94 tests** covering chronological validation, reserved holdout protection, bounded policy trials, historical replay, equity/F&O lifecycle, worker behavior, expiry handling and ledger reconciliation. One existing Starlette/httpx deprecation warning remains.
+- This completes the software-side historical regression gate. It does not replace a real-session paper round trip or exchange-origin book timestamp evidence.
+
 ## 2026-10-13 — Graphify refresh workflow gate
 
 - Added the development rule to `PROJECT_PLAN.md`: refresh Graphify after a meaningful batch, before a larger refactor, or when its indexed commit noticeably trails Git. Small isolated edits do not require an index refresh.

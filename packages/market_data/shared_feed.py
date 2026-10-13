@@ -8,6 +8,7 @@ import asyncio
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from math import isfinite
 from time import monotonic
 
 from packages.market_data.contracts import MarketDataProvider, Quote
@@ -42,8 +43,10 @@ class SharedQuoteFeed:
         keys = list(dict.fromkeys(instrument_tokens))
         if not keys or len(keys) > 100 or any(not key.strip() for key in keys):
             raise ValueError("A shared feed needs 1–100 nonempty instrument keys")
-        if max_age_seconds <= 0 or reconnect_delay_seconds <= 0:
-            raise ValueError("Feed freshness and reconnect delay must be positive")
+        if any(not isfinite(value) or value <= 0 for value in (
+            max_age_seconds, reconnect_delay_seconds,
+        )):
+            raise ValueError("Feed freshness and reconnect delay must be finite and positive")
         self._provider = provider
         self._keys = keys
         self._max_age = max_age_seconds

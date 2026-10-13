@@ -2,8 +2,17 @@ import asyncio
 from datetime import datetime, timezone
 from decimal import Decimal
 
+import pytest
+
 from packages.market_data.contracts import Quote
 from packages.market_data.shared_feed import SharedQuoteFeed
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf"), 0, -1])
+@pytest.mark.parametrize("setting", ["max_age_seconds", "reconnect_delay_seconds"])
+def test_invalid_timing_cannot_disable_expiry_or_reconnect_bounds(setting, value):
+    with pytest.raises(ValueError, match="finite and positive"):
+        SharedQuoteFeed(ControlledProvider(), ["NSE_EQ|RELIANCE"], **{setting: value})
 
 
 class ControlledProvider:

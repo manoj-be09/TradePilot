@@ -374,12 +374,18 @@ def quote_problem(
         return "Waiting for an exchange-timestamped bid/ask book"
     if not verified_book and quote.timestamp_basis != "provider_response":
         return "Indicative paper fill needs a provider response timestamp"
-    stamps = (quote.timestamp, quote.book_as_of, quote.last_trade_time) if verified_book else (
-        quote.timestamp, quote.last_trade_time,
-    )
-    for stamp in stamps:
+    # Keep each failed clock distinct: a stale response is not a stale trade.
+    stamps = [
+        (quote.timestamp, "Waiting for a valid quote timestamp within 60 seconds"),
+        (quote.last_trade_time, "Waiting for a verified exchange trade within 60 seconds"),
+    ]
+    if verified_book:
+        stamps.insert(1, (
+            quote.book_as_of, "Waiting for an exchange-timestamped book within 60 seconds",
+        ))
+    for stamp, problem in stamps:
         if stamp is None or stamp.tzinfo is None or not -5 <= (now - stamp).total_seconds() <= 60:
-            return "Waiting for a verified exchange trade within 60 seconds"
+            return problem
     if not verified_book and not -5 <= (now - quote.timestamp).total_seconds() <= 5:
         return "Indicative paper fill needs a provider response within 5 seconds"
     if quote.bid is None or quote.ask is None or not 0 < quote.bid <= quote.ask:

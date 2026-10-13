@@ -153,7 +153,10 @@ def test_bollinger_reference_is_not_a_complete_entry_signal():
     assert signal("band_reclaim", bars) is False
 
 
-def test_closed_session_restores_reference_for_older_deployment(client, setup):
+@pytest.mark.parametrize("keep_threshold", [False, True])
+def test_closed_session_restores_daily_state_for_older_deployment(
+    client, setup, keep_threshold
+):
     headers, body, provider, factory = setup
     provider.closed = True
     applied = client.post("/equity/deployments", json=body, headers=headers).json()
@@ -161,10 +164,13 @@ def test_closed_session_restores_reference_for_older_deployment(client, setup):
     with factory() as session:
         row = session.get(EquityDeployment, UUID(applied["id"]))
         state = dict(row.state)
-        for field in (
-            "entry_threshold_price", "latest_daily_signal_date",
-            "latest_daily_signal_met", "latest_daily_signal_after_apply",
-        ):
+        fields = [
+            "latest_daily_signal_date", "latest_daily_signal_met",
+            "latest_daily_signal_after_apply",
+        ]
+        if not keep_threshold:
+            fields.append("entry_threshold_price")
+        for field in fields:
             state.pop(field, None)
         row.state = state
         session.commit()
@@ -173,6 +179,8 @@ def test_closed_session_restores_reference_for_older_deployment(client, setup):
     assert waiting["status"] == "WAITING_FOR_ENTRY"
     assert Decimal(waiting["state"]["entry_threshold_price"]) > 0
     assert waiting["state"]["latest_daily_signal_date"] == applied["state"]["signal_after"]
+    assert isinstance(waiting["state"]["latest_daily_signal_met"], bool)
+    assert waiting["state"]["latest_daily_signal_after_apply"] is False
     assert "open NSE session" in waiting["state"]["detail"]
 
 

@@ -221,8 +221,11 @@ async def process_equities(
             key, source, status = snapshot.instrument_key, snapshot.provider, snapshot.status
             indicative = snapshot.state.get("quote_mode") == "INDICATIVE"
             size = held_quantity(snapshot.state) if status != "WAITING_FOR_ENTRY" else 1
-            missing_reference = status == "WAITING_FOR_ENTRY" and not snapshot.state.get(
-                "entry_threshold_price"
+            missing_daily_state = status == "WAITING_FOR_ENTRY" and (
+                not snapshot.state.get("entry_threshold_price")
+                or not snapshot.state.get("latest_daily_signal_date")
+                or "latest_daily_signal_met" not in snapshot.state
+                or "latest_daily_signal_after_apply" not in snapshot.state
             )
         quote: Quote | None = None
         bars: list[HistoricalBar] = []
@@ -246,7 +249,7 @@ async def process_equities(
         # A daily reference remains useful outside market hours, including for
         # deployments saved before Apply started recording it.
         if status == "WAITING_FOR_ENTRY" and source == provider.provider_id and (
-            market_open or missing_reference
+            market_open or missing_daily_state
         ):
             try:
                 if key not in cached_bars:

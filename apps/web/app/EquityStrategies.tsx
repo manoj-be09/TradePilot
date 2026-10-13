@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { StrategyPerformance, type StrategyPerformanceData } from "./StrategyPerformance";
 import { ValidationAttemptHistory } from "./ValidationAttemptHistory";
+import { StudySuccessorControl } from "./StudySuccessorControl";
 
 type Instrument = { id: string; instrument_key: string; trading_symbol: string; exchange: string; instrument_type: string; provider: string };
 type FoundInstrument = { instrument_key: string; trading_symbol: string; name: string | null; exchange: string; segment: string; instrument_type: string };
@@ -16,7 +17,7 @@ type CatalogEntry = { key: string; name: string; status: "PAPER_READY" | "RESEAR
 type ShadowRow = { strategy: string; total_closed_trades: number; classified_trades: number; matching_trades: number; minimum_matching_trades: number; status: "insufficient" | "exploratory"; matching_average_net_pnl: string | null };
 type ShadowFit = { status: "ready" | "unavailable"; reason: string | null; symbol: string; benchmark_session: string | null; recent_direction: string | null; relative_volatility_label: string | null; stock_history_from: string | null; stock_history_to: string | null; rows: ShadowRow[]; ranking_changed: boolean; out_of_sample_validated: boolean; method: string };
 type ValidationRow = { strategy: string; name: string; status: "insufficient" | "reviewable"; training_trades: number; validation_trades: number; boundary_trades_excluded: number; training_smoothed_win_pct: number | null; validation_win_pct: number | null; validation_average_net_pnl: number | null; validation_brier: number | null };
-type ChronologicalValidation = { status: "ready" | "unavailable"; reason: string | null; symbol: string; history_from: string | null; history_to: string | null; training_from: string | null; training_to: string | null; validation_from: string | null; validation_to: string | null; reserved_from: string | null; reserved_to: string | null; reserved_bars: number; rows: ValidationRow[]; ranking_changed: boolean; parameters_changed: boolean; method: string; rule_version: string | null; study_id: string | null; frozen_at: string | null; frozen: boolean; dataset_digest: string | null; allocation: string | null; planned_risk: string | null };
+export type ChronologicalValidation = { generation?: number; parent_study_id?: string | null; status: "ready" | "unavailable"; reason: string | null; symbol: string; history_from: string | null; history_to: string | null; training_from: string | null; training_to: string | null; validation_from: string | null; validation_to: string | null; reserved_from: string | null; reserved_to: string | null; reserved_bars: number; rows: ValidationRow[]; ranking_changed: boolean; parameters_changed: boolean; method: string; rule_version: string | null; study_id: string | null; frozen_at: string | null; frozen: boolean; dataset_digest: string | null; allocation: string | null; planned_risk: string | null };
 type PolicyTrialRow = { policy_version: string; target_r: string; status: "insufficient" | "reviewable"; training_trades: number; validation_trades: number; boundary_trades_excluded: number; training_win_pct: number | null; validation_win_pct: number | null; training_average_r: number | null; validation_average_r: number | null; validation_average_net_pnl: number | null };
 type PolicyComparison = { status: "ready" | "unavailable"; reason: string | null; strategy: string; trial_id: string | null; frozen_at: string | null; comparison_digest: string | null; reserved_from: string | null; rows: PolicyTrialRow[]; method: string; holdout_evaluated: boolean; ranking_changed: boolean; parameters_changed: boolean };
 type OutcomeEvidence = { strategy_version: string; entry_quote_at: string | null; exit_quote_at: string; entry_signal_date: string | null; entry_market_context: MarketContext | null; initial_stop: string; final_stop: string; initial_risk: string; net_pnl: string; exit_reason: string };
@@ -333,7 +334,9 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
     setTrialBusy(true); setTrialError(""); setTrial(null);
     try {
       const result = await read<PolicyComparison>("/equity/exit-policy-comparison", {
-        method: "POST", body: JSON.stringify({ watchlist_id: selected, strategy: trialStrategy }),
+        method: "POST", body: JSON.stringify({ watchlist_id: selected, strategy: trialStrategy,
+          study_id: validation?.frozen && (validation.generation ?? 1) > 1
+            ? validation.study_id : undefined }),
       });
       if (current === trialGeneration.current) setTrial(result);
     } catch (cause) {
@@ -474,6 +477,11 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
       {validationError && <p className="error-banner" role="alert">{validationError}</p>}
       {validation?.status === "unavailable" && <p className="muted" role="status">Chronological check unavailable: {validation.reason}</p>}
       {validation?.status === "ready" && <>
+        {validation.frozen && validation.study_id && validation.generation != null && <StudySuccessorControl study={validation} apiUrl={apiUrl} token={token} onUpdated={report => {
+          ++validationGeneration.current; ++trialGeneration.current;
+          setValidationBusy(false); setTrialBusy(false);
+          setValidation(report); setValidationError(""); setTrial(null); setTrialError("");
+        }} />}
         <p className="equity-shadow-summary" role="status">Training {validation.training_from} to {validation.training_to} · later check {validation.validation_from} to {validation.validation_to}. Latest {validation.reserved_bars} sessions ({validation.reserved_from} to {validation.reserved_to}) remain reserved.</p>
         <p className="muted">{validation.frozen ? `Study frozen ${validation.frozen_at ? date(validation.frozen_at) : ""} under ${validation.rule_version}; future checks return this saved evidence.` : "Exploratory sample: no rule has 20 trades in both earlier windows, so this window is not frozen yet."} Allocation {rupees(validation.allocation)} · planned risk {rupees(validation.planned_risk)}.</p>
         <div className="strategy-library-list">{validation.rows.map(row => <div className="equity-shadow-card" key={row.strategy}><strong>{row.name}</strong><small>{row.training_trades} training trades · {row.validation_trades} later trades{row.boundary_trades_excluded ? ` · ${row.boundary_trades_excluded} crossing boundary excluded` : ""}</small><span>{row.status === "reviewable" ? `Earlier smoothed wins ${row.training_smoothed_win_pct?.toFixed(1)}% · later observed wins ${row.validation_win_pct?.toFixed(1)}% · later net average ${rupees(row.validation_average_net_pnl)}` : "Insufficient closed trades to compare rates (20 required in each window)."}</span></div>)}</div>

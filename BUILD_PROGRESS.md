@@ -12,6 +12,12 @@
 - The first run showed four relative-path failures because the container working directory was `/tmp`; rerunning from `/src` passed all tests. No application code, database volume, orders or balances changed.
 - Remaining Priority 2 gate: observe a real NSE-session equity and F&O paper lifecycle and reconcile saved decisions, orders, P&L and wallet ledger. Simulated tests do not establish exchange-timed executable-book evidence.
 
+## 2026-10-13 — Upstox V3 open-session measurement
+
+- The bounded read-only probe ran while NSE reported `NORMAL_OPEN`: 77 usable RELIANCE quotes, 37 price changes, 39 bid/ask/depth changes, 44.11 seconds of observed span and a 2.38-second largest receive gap. The provider remained `NORMAL_OPEN` after the probe.
+- This confirms changing provider updates, but every sampled quote still reports `book_basis=unknown`; exchange-origin executable-book timing remains unverified. Strict F&O paper fills stay blocked by policy. No orders or database writes were made.
+- Next test: run one equity paper deployment during an open session and reconcile its saved entry/exit observations and ledger. Keep F&O strategies waiting when book provenance is unknown.
+
 ## 2026-10-13 — Graphify refresh workflow gate
 
 - Added the development rule to `PROJECT_PLAN.md`: refresh Graphify after a meaningful batch, before a larger refactor, or when its indexed commit noticeably trails Git. Small isolated edits do not require an index refresh.

@@ -2,6 +2,8 @@
 
 Priority 2 simulated lifecycle gate completed on 2026-10-13: the disposable `/src` test container passed 85 equity/F&O deployment, worker, exit, expiry and reconciliation integration tests. The next acceptance step is a real NSE-session paper round trip with saved decision, order, P&L and wallet-ledger reconciliation. Keep live trading disabled.
 
+The first real `NORMAL_OPEN` Upstox V3 measurement on 2026-10-13 observed 77 usable quotes, 37 price changes and 39 depth changes over 44.11 seconds, with a 2.38-second largest receive gap. The provider still reports unknown book timestamp basis, so this supports changing-data observation and the equity evidence path but does not satisfy strict F&O executable-book evidence.
+
 2026-10-09 settlement regression verification: official expiry preview, archive fingerprint, account-scoping, ledger arithmetic and confirmation tests pass together (10 tests). The settlement path remains fail-closed and idempotent; normal-host operator review and a real-session paper round trip remain required.
 
 2026-10-09 regression pass: the focused F&O deployment, paper-trading, shared-feed and Upstox probe suites pass together (**36 tests**); Ruff passes. The next evidence step remains a complete normal-session paper round trip with verified executable-book timing and ledger reconciliation.

@@ -498,6 +498,43 @@ def test_reviewable_study_freezes_once_and_survives_provider_outage(client, setu
     assert other_result.json()["status"] == "unavailable"
 
 
+def test_study_provenance_is_owned_integrity_checked_and_omits_candles(client, setup, monkeypatch):
+    from packages.regime.chronological_validation import review_fixed_equity_rules
+
+    headers, body, provider, factory = setup
+    long_validation_history(provider)
+
+    def reviewable(*args, **kwargs):
+        report = review_fixed_equity_rules(*args, **kwargs)
+        return report.model_copy(update={"rows": [
+            report.rows[0].model_copy(update={"status": "reviewable"}), *report.rows[1:],
+        ]})
+
+    monkeypatch.setattr("apps.api.equity_routes.review_fixed_equity_rules", reviewable)
+    report = client.post("/equity/chronological-validation", headers=headers, json={
+        key: body[key] for key in ("watchlist_id", "budget", "risk_budget")
+    }).json()
+    path = f"/equity/validation-studies/{report['study_id']}/provenance"
+    assert client.get(path).status_code == 401
+    result = client.get(path, headers=headers)
+    assert result.status_code == 200
+    assert result.headers["cache-control"] == "no-store"
+    data = result.json()
+    assert data["dataset_digest"] == report["dataset_digest"]
+    assert data["missing_assumptions"] == []
+    assert "calculation_environment" in data["assumptions"]
+    assert "bars" not in result.text and "reserved" not in data
+    other = client.post("/auth/register", json={
+        "email": "provenance-other@example.com", "password": "another-strong-password",
+    }).json()["access_token"]
+    assert client.get(path, headers={"Authorization": f"Bearer {other}"}).status_code == 404
+    with factory() as session:
+        study = session.get(EquityValidationStudy, UUID(report["study_id"]))
+        study.dataset_manifest = {**study.dataset_manifest, "fee_per_side": "0.9"}
+        session.commit()
+    assert client.get(path, headers=headers).status_code == 409
+
+
 @pytest.mark.parametrize("mode", ["ready", "insufficient", "boundary"])
 def test_source_successor_preserves_original_and_reserved_window(client, setup, monkeypatch, mode):
     from packages.regime.chronological_validation import review_fixed_equity_rules

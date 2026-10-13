@@ -776,6 +776,33 @@ def read_validation_study(
     return _frozen_study(study)
 
 
+@router.get("/validation-studies/{study_id}/provenance")
+def read_validation_provenance(
+    study_id: UUID, user: CurrentUser, session: SessionDep, response: Response,
+) -> dict[str, Any]:
+    """Inspect preserved assumptions without releasing candles or holdout outcomes."""
+    response.headers["Cache-Control"] = "no-store"
+    study = session.scalar(select(EquityValidationStudy).where(
+        EquityValidationStudy.id == study_id, EquityValidationStudy.user_id == user.id,
+    ))
+    if study is None:
+        raise HTTPException(404, "Validation study not found")
+    _frozen_study(study)
+    manifest = study.dataset_manifest or {}
+    fields = (
+        "calculation_version", "calculation_source_digest", "calculation_environment",
+        "fee_per_side", "slippage_per_side", "exit_policy_version",
+    )
+    return {
+        "study_id": study.id, "generation": study.generation,
+        "parent_study_id": study.parent_study_id,
+        "dataset_digest": study.dataset_digest, "report_digest": study.report_digest,
+        "assumptions": {field: manifest[field] for field in fields if field in manifest},
+        "missing_assumptions": [field for field in fields if field not in manifest],
+        "scope": "Declared calculation subset; candles and holdout outcomes omitted",
+    }
+
+
 @router.post("/validation-studies/{study_id}/successor", response_model=ChronologicalValidation)
 def create_validation_successor(
     study_id: UUID, body: SuccessorRequest, user: CurrentUser,

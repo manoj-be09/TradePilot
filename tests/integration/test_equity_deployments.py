@@ -594,7 +594,10 @@ def test_policy_comparison_rejects_cost_drift(client, setup, monkeypatch, change
         assert list(session.scalars(select(EquityDeployment))) == []
 
 
-def test_tampered_policy_trial_is_rejected(client, setup, monkeypatch):
+@pytest.mark.parametrize("field", [
+    "result", "fee_per_side", "slippage_per_side", "calculation_source_digest",
+])
+def test_tampered_policy_trial_is_rejected(client, setup, monkeypatch, field):
     from packages.regime.chronological_validation import review_fixed_equity_rules
 
     headers, body, provider, factory = setup
@@ -617,13 +620,20 @@ def test_tampered_policy_trial_is_rejected(client, setup, monkeypatch):
     ).status_code == 200
     with factory() as session:
         trial = session.scalar(select(EquityPolicyTrial))
-        trial.result = {**trial.result, "parameters_changed": True}
+        if field == "result":
+            trial.result = {**trial.result, "parameters_changed": True}
+        else:
+            from apps.api.equity_routes import _canonical_hash
+
+            trial.trial_manifest = {**trial.trial_manifest, field: "mismatched"}
+            # A self-consistent trial hash still cannot contradict its parent study.
+            trial.manifest_digest = _canonical_hash(trial.trial_manifest)
         session.commit()
     rejected = client.post(
         "/equity/exit-policy-comparison", json=request, headers=headers
     )
     assert rejected.status_code == 409
-    assert "integrity" in rejected.json()["detail"]
+    assert ("integrity" if field == "result" else "does not match") in rejected.json()["detail"]
 
 
 def test_policy_trial_migration_keeps_existing_validation_studies(tmp_path):

@@ -159,6 +159,13 @@ def _saved_policy_trial(
         result = PolicyComparison.model_validate(trial.result)
     except ValueError as error:
         raise HTTPException(409, "Frozen policy comparison is invalid") from error
+    if study.dataset_manifest is not None:
+        for field in ("fee_per_side", "slippage_per_side", "calculation_source_digest"):
+            if (
+                field in study.dataset_manifest
+                and trial.trial_manifest.get(field) != study.dataset_manifest[field]
+            ):
+                raise HTTPException(409, "Frozen policy comparison does not match its study")
     if (
         trial.user_id != study.user_id or trial.study_id != study.id
         or trial.registry_version != REGISTRY_VERSION

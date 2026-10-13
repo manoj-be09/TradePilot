@@ -646,6 +646,7 @@ async def _chronological_validation(
     response.headers["Cache-Control"] = "no-store"
     item = instrument(body, user.id, session)
     existing = session.scalar(select(EquityValidationStudy).where(
+        EquityValidationStudy.generation == 1,
         EquityValidationStudy.user_id == user.id,
         EquityValidationStudy.provider == item.provider,
         EquityValidationStudy.instrument_key == item.instrument_key,
@@ -738,6 +739,7 @@ async def _chronological_validation(
     except IntegrityError:
         session.rollback()
         winner = session.scalar(select(EquityValidationStudy).where(
+            EquityValidationStudy.generation == 1,
             EquityValidationStudy.user_id == user.id,
             EquityValidationStudy.provider == item.provider,
             EquityValidationStudy.instrument_key == item.instrument_key,
@@ -758,6 +760,7 @@ def exit_policy_comparison(
     if body.strategy not in STRATEGIES:
         raise HTTPException(422, "Unknown paper strategy")
     study = session.scalar(select(EquityValidationStudy).where(
+        EquityValidationStudy.generation == 1,
         EquityValidationStudy.user_id == user.id,
         EquityValidationStudy.provider == item.provider,
         EquityValidationStudy.instrument_key == item.instrument_key,

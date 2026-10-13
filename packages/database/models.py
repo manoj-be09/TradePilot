@@ -382,16 +382,23 @@ class EquityDeployment(Base):
 
 
 class EquityValidationStudy(Base):
-    """One frozen, account-scoped validation window per equity instrument."""
+    """Immutable account-scoped generations of equity validation evidence."""
 
     __tablename__ = "equity_validation_studies"
     __table_args__ = (
         UniqueConstraint(
-            "user_id", "provider", "instrument_key", name="uq_equity_validation_scope"
+            "user_id", "provider", "instrument_key", "generation",
+            name="uq_equity_validation_generation",
         ),
+        UniqueConstraint("parent_study_id", name="uq_equity_validation_parent"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    generation: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    parent_study_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("equity_validation_studies.id", name="fk_equity_validation_parent"),
+        nullable=True,
+    )
     user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
     provider: Mapped[str] = mapped_column(String(32))
     instrument_key: Mapped[str] = mapped_column(String(160))

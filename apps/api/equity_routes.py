@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -587,6 +587,48 @@ async def strategy_fit_shadow(
 
 @router.post("/chronological-validation", response_model=ChronologicalValidation)
 async def chronological_validation(
+    body: ResearchRequest, user: CurrentUser, session: SessionDep, response: Response
+) -> ChronologicalValidation:
+    result = await _chronological_validation(body, user, session, response)
+    # Keep unsuccessful diagnostics visible without making them frozen evidence.
+    session.add(AuditEvent(
+        actor_user_id=user.id, event_type="equity.validation.attempt",
+        correlation_id=str(body.watchlist_id),
+        details={
+            "provider": result.provider, "symbol": result.symbol,
+            "requested_allocation": str(body.budget),
+            "requested_risk": str(body.risk_budget),
+            "status": result.status, "reason": result.reason,
+            "frozen": result.frozen,
+            "study_id": str(result.study_id) if result.study_id else None,
+            "dataset_digest": result.dataset_digest,
+            "rule_version": result.rule_version,
+            "validation_version": result.version,
+            "bars": result.bars,
+            "reviewable_strategies": sum(row.status == "reviewable" for row in result.rows),
+            "strategies_reviewed": len(result.rows),
+        },
+    ))
+    session.commit()
+    return result
+
+
+@router.get("/validation-attempts")
+def validation_attempts(
+    user: CurrentUser, session: SessionDep, response: Response,
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[dict[str, Any]]:
+    """Account-scoped request history; attempts are not independent frozen studies."""
+    response.headers["Cache-Control"] = "no-store"
+    events = session.scalars(select(AuditEvent).where(
+        AuditEvent.actor_user_id == user.id,
+        AuditEvent.event_type == "equity.validation.attempt",
+    ).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()).limit(limit))
+    return [{"id": str(event.id), "created_at": event.created_at,
+             "watchlist_id": event.correlation_id, **event.details} for event in events]
+
+
+async def _chronological_validation(
     body: ResearchRequest, user: CurrentUser, session: SessionDep, response: Response
 ) -> ChronologicalValidation:
     """Review fixed equity rules on earlier windows without opening the reserved holdout."""

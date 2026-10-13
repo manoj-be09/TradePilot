@@ -365,6 +365,44 @@ def test_chronological_validation_is_read_only_and_reserves_latest_window(client
         assert list(session.scalars(select(EquityValidationStudy))) == []
 
 
+def test_validation_attempts_retain_insufficient_and_failed_runs_without_paper_changes(
+    client, setup,
+):
+    headers, body, provider, factory = setup
+    request = {key: body[key] for key in ("watchlist_id", "budget", "risk_budget")}
+    long_validation_history(provider)
+    first = client.post("/equity/chronological-validation", json=request, headers=headers)
+    assert first.status_code == 200 and first.json()["frozen"] is False
+
+    async def failure(*_args):
+        raise RuntimeError("sensitive-provider-error-must-not-be-recorded")
+
+    provider.get_historical = failure
+    second = client.post("/equity/chronological-validation", json=request, headers=headers)
+    assert second.status_code == 200 and second.json()["status"] == "unavailable"
+    history = client.get("/equity/validation-attempts", headers=headers)
+    assert history.status_code == 200
+    assert history.headers["cache-control"] == "no-store"
+    attempts = history.json()
+    assert len(attempts) == 2
+    assert {row["status"] for row in attempts} == {"ready", "unavailable"}
+    assert all(not row["frozen"] for row in attempts)
+    assert all(row["requested_allocation"] == "10000" for row in attempts)
+    assert "sensitive-provider-error" not in history.text
+    assert len(client.get("/equity/validation-attempts?limit=1", headers=headers).json()) == 1
+    assert client.get("/equity/validation-attempts?limit=201", headers=headers).status_code == 422
+    assert client.get("/equity/validation-attempts").status_code == 401
+    token = client.post("/auth/register", json={
+        "email": "attempt-isolation@example.com", "password": "another-strong-password",
+    }).json()["access_token"]
+    assert client.get("/equity/validation-attempts", headers={
+        "Authorization": f"Bearer {token}",
+    }).json() == []
+    with factory() as session:
+        assert list(session.scalars(select(EquityDeployment))) == []
+        assert list(session.scalars(select(EquityValidationStudy))) == []
+
+
 def test_reviewable_study_freezes_once_and_survives_provider_outage(client, setup, monkeypatch):
     from packages.regime.chronological_validation import review_fixed_equity_rules
 

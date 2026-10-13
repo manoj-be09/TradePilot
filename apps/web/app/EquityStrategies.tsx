@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { StrategyPerformance, type StrategyPerformanceData } from "./StrategyPerformance";
+import { ValidationAttemptHistory } from "./ValidationAttemptHistory";
 
 type Instrument = { id: string; instrument_key: string; trading_symbol: string; exchange: string; instrument_type: string; provider: string };
 type FoundInstrument = { instrument_key: string; trading_symbol: string; name: string | null; exchange: string; segment: string; instrument_type: string };
@@ -469,6 +470,7 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
         <div><strong>Chronological replay check</strong><p>Compare earlier training results with later trades. The newest sessions are reserved for a future final check. This does not change the ranking, deployed rules or paper risk.</p></div>
         <button className="inline-button" type="button" disabled={validationBusy || busy} onClick={() => void reviewChronology()}>{validationBusy ? "Checking…" : validation ? "Refresh check" : "Run check"}</button>
       </div>
+      <ValidationAttemptHistory apiUrl={apiUrl} token={token} refresh={validationBusy} />
       {validationError && <p className="error-banner" role="alert">{validationError}</p>}
       {validation?.status === "unavailable" && <p className="muted" role="status">Chronological check unavailable: {validation.reason}</p>}
       {validation?.status === "ready" && <>

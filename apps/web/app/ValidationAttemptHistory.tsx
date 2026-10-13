@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 type Attempt = {
   id: string; created_at: string; symbol: string; status: string;
   reason: string | null; frozen: boolean; requested_allocation: string;
+  served_allocation: string | null;
   strategies_reviewed: number; reviewable_strategies: number;
 };
 
@@ -48,6 +49,7 @@ export function ValidationAttemptHistory({ apiUrl, token, refresh }: {
     {attempts.map(attempt => <div className="equity-shadow-card" key={attempt.id}>
       <strong>{attempt.symbol} · {attempt.frozen ? "Frozen study returned" : attempt.status === "unavailable" ? "Data unavailable" : "Insufficient evidence"}</strong>
       <small>{new Date(attempt.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} · requested allocation ₹{Number(attempt.requested_allocation).toLocaleString("en-IN")}</small>
+      {attempt.frozen && attempt.served_allocation != null && Number(attempt.served_allocation) !== Number(attempt.requested_allocation) && <small>Saved study allocation ₹{Number(attempt.served_allocation).toLocaleString("en-IN")} · frozen assumptions retained</small>}
       <span>{attempt.reason ?? `${attempt.reviewable_strategies}/${attempt.strategies_reviewed} rules have sufficient earlier-window trades`}</span>
     </div>)}
   </details>;

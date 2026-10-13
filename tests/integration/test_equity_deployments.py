@@ -435,6 +435,11 @@ def test_reviewable_study_freezes_once_and_survives_provider_outage(client, setu
     )
     assert second.status_code == 200
     assert second.json() == saved  # Frozen assumptions never silently change.
+    attempts = client.get("/equity/validation-attempts", headers=headers).json()
+    assert len(attempts) == 2
+    assert len({row["result_digest"] for row in attempts}) == 1
+    assert all(row["served_allocation"] == "10000" for row in attempts)
+    assert {row["requested_allocation"] for row in attempts} == {"10000", "12000"}
     with factory() as session:
         studies = list(session.scalars(select(EquityValidationStudy)))
         assert len(studies) == 1

@@ -657,7 +657,9 @@ def test_policy_trials_freeze_from_owned_study_without_touching_holdout_or_paper
     ).status_code == 404
 
 
-@pytest.mark.parametrize("changed_cost", ["FEE", "SLIPPAGE", "legacy", "code", "legacy_code"])
+@pytest.mark.parametrize("changed_cost", [
+    "FEE", "SLIPPAGE", "legacy", "code", "legacy_code", "environment", "legacy_environment",
+])
 def test_policy_comparison_rejects_cost_drift(client, setup, monkeypatch, changed_cost):
     from packages.regime.chronological_validation import review_fixed_equity_rules
 
@@ -679,14 +681,16 @@ def test_policy_comparison_rejects_cost_drift(client, setup, monkeypatch, change
         study = session.scalar(select(EquityValidationStudy))
         assert Decimal(study.dataset_manifest["fee_per_side"]) > 0
         assert Decimal(study.dataset_manifest["slippage_per_side"]) > 0
-    if changed_cost in {"legacy", "legacy_code"}:
+    if changed_cost in {"legacy", "legacy_code", "legacy_environment"}:
         from apps.api.equity_routes import _canonical_hash
 
         with factory() as session:
             study = session.scalar(select(EquityValidationStudy))
-            missing = {"fee_per_side", "slippage_per_side"} if changed_cost == "legacy" else {
-                "calculation_source_digest",
-            }
+            missing = {
+                "legacy": {"fee_per_side", "slippage_per_side"},
+                "legacy_code": {"calculation_source_digest"},
+                "legacy_environment": {"calculation_environment"},
+            }[changed_cost]
             study.dataset_manifest = {
                 key: value for key, value in study.dataset_manifest.items()
                 if key not in missing
@@ -697,14 +701,19 @@ def test_policy_comparison_rejects_cost_drift(client, setup, monkeypatch, change
             session.commit()
     elif changed_cost == "code":
         monkeypatch.setattr("apps.api.equity_routes.research_code_digest", lambda: "0" * 64)
+    elif changed_cost == "environment":
+        monkeypatch.setattr(
+            "apps.api.equity_routes.research_environment", lambda: {"changed": True},
+        )
     else:
         monkeypatch.setattr(f"apps.api.equity_routes.{changed_cost}", Decimal("0.9"))
     result = client.post("/equity/exit-policy-comparison", headers=headers,
                          json={"watchlist_id": body["watchlist_id"], "strategy": "trend"})
-    assert result.status_code == (200 if changed_cost in {"legacy", "legacy_code"} else 409)
-    if changed_cost in {"legacy", "legacy_code"}:
+    assert result.status_code == (200 if changed_cost.startswith("legacy") else 409)
+    if changed_cost.startswith("legacy"):
         assert result.json()["status"] == "unavailable"
-        reason = "fee and slippage" if changed_cost == "legacy" else "source identity"
+        reason = {"legacy": "fee and slippage", "legacy_code": "source identity",
+                  "legacy_environment": "runtime assumptions"}[changed_cost]
         assert reason in result.json()["reason"]
     with factory() as session:
         assert list(session.scalars(select(EquityPolicyTrial))) == []
@@ -713,6 +722,7 @@ def test_policy_comparison_rejects_cost_drift(client, setup, monkeypatch, change
 
 @pytest.mark.parametrize("field", [
     "result", "fee_per_side", "slippage_per_side", "calculation_source_digest",
+    "calculation_environment",
 ])
 def test_tampered_policy_trial_is_rejected(client, setup, monkeypatch, field):
     from packages.regime.chronological_validation import review_fixed_equity_rules

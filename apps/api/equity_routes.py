@@ -70,7 +70,7 @@ from packages.regime.equity_policy_trials import (
     compare_exit_policies,
 )
 from packages.regime.outlook import describe_market
-from packages.regime.research_identity import research_code_digest
+from packages.regime.research_identity import research_code_digest, research_environment
 from packages.regime.shadow_fit import ShadowFitResult, compare_shadow_fit, unavailable_fit
 from packages.regime.strategy_fit import describe_stock_context, fit_for_strategy
 from packages.regime.strategy_ranking import RANKING_METHOD, RANKING_VERSION, profit_review
@@ -162,7 +162,10 @@ def _saved_policy_trial(
     except ValueError as error:
         raise HTTPException(409, "Frozen policy comparison is invalid") from error
     if study.dataset_manifest is not None:
-        for field in ("fee_per_side", "slippage_per_side", "calculation_source_digest"):
+        for field in (
+            "fee_per_side", "slippage_per_side", "calculation_source_digest",
+            "calculation_environment",
+        ):
             if (
                 field in study.dataset_manifest
                 and trial.trial_manifest.get(field) != study.dataset_manifest[field]
@@ -689,10 +692,11 @@ async def _chronological_validation(
         return report
     try:
         code_digest = research_code_digest()
+        environment = research_environment()
     except OSError:
         return unavailable_validation(
             provider.provider_id, item.trading_symbol,
-            "Calculation source identity could not be verified.",
+            "Calculation source identity or runtime metadata could not be verified.",
         )
     manifest = {
         "provider": item.provider,
@@ -705,6 +709,7 @@ async def _chronological_validation(
         "slippage_per_side": str(SLIPPAGE),
         "planned_risk": str(body.risk_budget),
         "calculation_source_digest": code_digest,
+        "calculation_environment": environment,
         "bars": [
             [bar.timestamp.isoformat(), str(bar.open), str(bar.high),
              str(bar.low), str(bar.close), bar.volume]
@@ -804,6 +809,7 @@ def create_validation_successor(
         raise HTTPException(409, "Successor must preserve the parent's cost and exit assumptions")
     try:
         code_digest = research_code_digest()
+        environment = research_environment()
         bars = [HistoricalBar(
             timestamp=row[0], open=row[1], high=row[2], low=row[3], close=row[4], volume=row[5],
         ) for row in manifest["bars"]]
@@ -842,6 +848,7 @@ def create_validation_successor(
     successor_id, frozen_at = uuid4(), datetime.now(timezone.utc)
     successor_manifest = {
         **manifest, "calculation_source_digest": code_digest, "rule_version": report.rule_version,
+        "calculation_environment": environment,
     }
     digest = _canonical_hash(successor_manifest)
     report = report.model_copy(update={
@@ -926,10 +933,18 @@ def exit_policy_comparison(
         )
     try:
         code_digest = research_code_digest()
+        environment = research_environment()
     except OSError:
         raise HTTPException(409, "Calculation source identity could not be verified") from None
     if manifest["calculation_source_digest"] != code_digest:
         raise HTTPException(409, "Frozen study uses different calculation source")
+    if "calculation_environment" not in manifest:
+        return PolicyComparison(
+            status="unavailable", provider=item.provider, symbol=item.trading_symbol,
+            strategy=body.strategy, reason="This older study has no preserved runtime assumptions.",
+        )
+    if manifest["calculation_environment"] != environment:
+        raise HTTPException(409, "Frozen study uses different calculation runtime assumptions")
     if (
         manifest.get("fee_per_side") != str(FEE)
         or manifest.get("slippage_per_side") != str(SLIPPAGE)
@@ -959,6 +974,7 @@ def exit_policy_comparison(
         raise HTTPException(409, "Frozen study candles are invalid") from error
     trial_manifest = {
         "calculation_source_digest": code_digest,
+        "calculation_environment": environment,
         "study_id": str(study.id),
         "dataset_digest": study.dataset_digest,
         "study_report_digest": study.report_digest,

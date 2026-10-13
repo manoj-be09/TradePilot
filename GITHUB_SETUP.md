@@ -19,7 +19,8 @@ not that a strategy has entered a trade or that paper results predict profit.
 
 To run the deterministic paper lifecycle checks without changing the running database,
 use `./scripts/run-paper-lifecycle-tests.ps1` from PowerShell. It uses a disposable
-container and SQLite; the expected result is 85 passing integration tests plus the
+container and SQLite; the expected result is the historical validation unit tests plus
+the 85 passing integration tests and the
 existing Starlette/httpx deprecation warning.
 Open `http://localhost:3000` and select **Equity & ETF → Algo Trading**. Before
 selecting a stock, expand a strategy in the library to see its source and rules.

@@ -22,6 +22,7 @@
 
 - Added `scripts/run-paper-lifecycle-tests.ps1`, which fixes the Docker working directory at `/src` and runs the 85-test equity/F&O lifecycle suite against disposable SQLite state. This prevents the earlier false migration failures caused by running pytest from `/tmp`.
 - The script keeps `LIVE_TRADING_ENABLED=false` and mounts the repository read-only; it cannot alter the running PostgreSQL volume.
+- The script also runs chronological-validation, bounded policy-trial and historical replay unit tests so reserved holdout windows and replay provenance are checked with the lifecycle suite.
 
 ## 2026-10-13 — Graphify refresh workflow gate
 

@@ -2407,10 +2407,11 @@ export default function Home() {
                 <div><strong>Strategies for current conditions</strong><small>Reorders when live option-chain conditions or risk estimates change</small></div>
                 <span>{rankedStrategies[0]?.bias || "UNCERTAIN"} · {rankedStrategies[0]?.volatility || "IV UNKNOWN"}</span>
               </div>
+              <div className="strategy-color-legend" aria-label="Strategy evidence legend"><span className="strategy-color-legend--green">Green · stronger qualified evidence</span><span className="strategy-color-legend--amber">Amber · limited or insufficient evidence</span><span className="strategy-color-legend--red">Red · blocked or unavailable</span></div>
               <section className="strategy-scorecards" aria-label="Strategy performance comparison">
                 {rankedStrategies.map(({ strategy, payoff, bias, volatility, riskReward, historyReliable, qualified, matchedCondition }, index) => (
                   <article
-                    className={`strategy-scorecard ${selectedStrategy === strategy.key ? "selected" : ""} ${index === 0 ? "best-fit" : ""}`}
+                    className={`strategy-scorecard ${selectedStrategy === strategy.key ? "selected" : ""} ${index === 0 ? "best-fit" : ""} strategy-scorecard--${!payoff || payoff.maximum_loss_unbounded ? "red" : qualified && historyReliable ? "green" : "amber"}`}
                     key={strategy.key}
                   >
                     {index === 0 ? <em>{qualified ? "Best current fit" : "Provisional fit"}</em> : null}

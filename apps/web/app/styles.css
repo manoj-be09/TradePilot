@@ -357,6 +357,14 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
 .strategy-ranking-heading small { margin-top: 3px; color: var(--ink-muted); font-size: 10px; }
 .strategy-ranking-heading > span { border-radius: 999px; padding: 5px 9px; background: #eef5ef; color: #24583a; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
 .strategy-scorecard { position: relative; }
+.strategy-color-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 10px 0 12px; color: var(--ink-muted); font-size: 9px; font-weight: 700; }
+.strategy-color-legend span::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: currentColor; }
+.strategy-color-legend--green { color: #21784c; }
+.strategy-color-legend--amber { color: #a46a12; }
+.strategy-color-legend--red { color: #a84444; }
+.strategy-scorecard--green { border-color: #b9dec7; background: linear-gradient(145deg, #f4fbf6, #fff); }
+.strategy-scorecard--amber { border-color: #ead8ad; background: linear-gradient(145deg, #fffaf0, #fff); }
+.strategy-scorecard--red { border-color: #eccaca; background: linear-gradient(145deg, #fff6f6, #fff); }
 .strategy-scorecard.best-fit { border-color: #2d8a5b; background: linear-gradient(145deg, #f4fbf6, #fff); }
 .strategy-scorecard em { display: inline-block; margin-bottom: 8px; border-radius: 999px; padding: 4px 7px; background: #21784c; color: white; font-size: 8px; font-style: normal; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
 .strategy-scorecard .strategy-fit { min-height: 0; margin: 0 0 8px; color: #276945; font-weight: 700; }

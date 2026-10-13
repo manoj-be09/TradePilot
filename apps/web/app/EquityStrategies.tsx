@@ -420,7 +420,8 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
     {!selected && <section className="strategy-library strategy-library-preview" aria-label="Available equity strategies">
       <div className="equity-lab-heading"><div><h3>Equity &amp; ETF strategies</h3><small>Paper-ready rules, grouped like the AlgoCrab strategy board</small></div><span className="paper-mode-badge">RANK AFTER STOCK SELECTION</span></div>
       <p className="muted">Choose a saved stock to calculate market fit, historical ranking, and the Apply action. The strategy cards stay visible here so you can browse the rules before choosing an instrument.</p>
-      <div className="equity-preview-grid">{catalog.filter(entry => entry.status === "PAPER_READY").map((entry, index) => <article className={`equity-preview-card equity-preview-card--${index % 3}`} key={entry.key}>
+      <div className="strategy-color-legend" aria-label="Strategy evidence legend"><span className="strategy-color-legend--green">Green · paper-ready</span><span className="strategy-color-legend--amber">Amber · limited evidence</span><span className="strategy-color-legend--red">Red · research-only or blocked</span></div>
+      <div className="equity-preview-grid">{catalog.filter(entry => entry.status === "PAPER_READY").map(entry => <article className="equity-preview-card strategy-scorecard--green" key={entry.key}>
         <div className="equity-preview-card-heading"><span aria-hidden="true">↗</span><strong>{entry.name}</strong><span className="equity-preview-status">PAPER READY</span></div>
         <small>{entry.trader_or_source}</small><p>{entry.market_conditions}</p>
         <details><summary>Entry, exit &amp; risk</summary><CatalogDetails entry={entry} /></details>
@@ -473,7 +474,8 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
         <p className="muted">{trial.method}</p>
       </>}
       </details>
-      <div className="equity-card-grid">{research.strategies.filter(strategy => research.top_three.includes(strategy.key)).map((strategy) => <article className={`equity-card ${research.top_three[0] === strategy.key ? "equity-card-first" : ""}`} key={strategy.key}>
+      <div className="strategy-color-legend" aria-label="Strategy evidence legend"><span className="strategy-color-legend--green">Green · stronger evidence</span><span className="strategy-color-legend--amber">Amber · limited evidence</span><span className="strategy-color-legend--red">Red · blocked or unavailable</span></div>
+      <div className="equity-card-grid">{research.strategies.filter(strategy => research.top_three.includes(strategy.key)).map((strategy) => <article className={`equity-card strategy-scorecard--${strategy.profit_review.tier >= 2 ? "green" : strategy.profit_review.tier === 1 ? "amber" : "red"} ${research.top_three[0] === strategy.key ? "equity-card-first" : ""}`} key={strategy.key}>
         <div className="equity-card-rank">#{research.top_three.indexOf(strategy.key) + 1} Ranked candidate<span>{strategy.provisional ? "Limited evidence" : "Historical sample"}</span></div>
         <h4>{strategy.name}</h4>
         <small className="muted">{catalog.find(entry => entry.implementation_key === strategy.key)?.trader_or_source}</small>

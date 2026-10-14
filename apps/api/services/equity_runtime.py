@@ -114,6 +114,7 @@ def record_waiting_check(
                 "code": code,
                 "category": category,
                 "reason": reason,
+                "quote_observation": state.get("latest_quote_observation"),
             },
         ))
         reasons.append(code)
@@ -275,8 +276,29 @@ async def process_equities(
                 continue
             now = datetime.now(timezone.utc)
             state = dict(row.state)
+            state["latest_quote_observation"] = None
             row.updated_at = now
             if quote is not None:
+                observation = {
+                    "checked_at": now.isoformat(),
+                    "quote_at": quote.timestamp.isoformat(),
+                    "timestamp_basis": quote.timestamp_basis,
+                    "trade_at": (
+                        quote.last_trade_time.isoformat() if quote.last_trade_time else None
+                    ),
+                    "book_at": quote.book_as_of.isoformat() if quote.book_as_of else None,
+                    "book_basis": quote.book_timestamp_basis,
+                    "last": str(quote.last_price),
+                    "bid": str(quote.bid) if quote.bid is not None else None,
+                    "ask": str(quote.ask) if quote.ask is not None else None,
+                    "bid_size": quote.bid_quantity, "ask_size": quote.ask_quantity,
+                }
+                # Bounded worker samples, not every feed tick or exchange receipt time.
+                samples = state.get("quote_observations")
+                state["quote_observations"] = (
+                    samples[-99:] if isinstance(samples, list) else []
+                ) + [observation]
+                state["latest_quote_observation"] = observation
                 state.update(
                     current_price=str(quote.last_price),
                     current_price_at=quote.timestamp.isoformat(),
@@ -407,6 +429,7 @@ async def process_equities(
                                         "instrument_key": row.instrument_key,
                                         "signal_date": day.isoformat(),
                                         "quote_at": quote.last_trade_time.isoformat(),
+                                        "quote_observation": state.get("latest_quote_observation"),
                                         "quote_basis": quote_basis,
                                         "book_as_of": book_at,
                                         "quote_mode": state.get("quote_mode", "VERIFIED"),
@@ -495,6 +518,7 @@ async def process_equities(
                                 "deployment_id": str(deployment_id),
                                 "strategy": row.strategy,
                                 "quote_at": quote.last_trade_time.isoformat(),
+                                "quote_observation": state.get("latest_quote_observation"),
                                 "quote_basis": quote_basis,
                                 "book_as_of": book_at,
                                 "quote_mode": state.get("quote_mode", "VERIFIED"),
@@ -520,6 +544,7 @@ async def process_equities(
                                     "deployment_id": str(deployment_id),
                                     "strategy": row.strategy,
                                     "quote_at": quote.last_trade_time.isoformat(),
+                                    "quote_observation": state.get("latest_quote_observation"),
                                     "old_stop": position["stop"],
                                     "new_stop": updated_position["stop"],
                                     "high_water": updated_position["high_water"],

@@ -1230,6 +1230,30 @@ def test_response_timestamp_cannot_authorize_equity_entry_or_exit(client, setup)
     assert account(client, headers)["deployments"][0]["status"] == "CLOSED"
 
 
+def test_worker_quote_samples_are_bounded_and_linked_to_waiting_decisions(client, setup):
+    headers, body, provider, factory = setup
+    applied = client.post("/equity/deployments", json=body, headers=headers).json()
+    with factory() as session:
+        row = session.get(EquityDeployment, UUID(applied["id"]))
+        row.state = {**row.state, "quote_observations": [{"sequence": i} for i in range(120)]}
+        session.commit()
+    provider.book_basis = "unknown"
+    cycle(provider, factory)
+    state = account(client, headers)["deployments"][0]["state"]
+    assert len(state["quote_observations"]) == 100
+    assert state["quote_observations"][0] == {"sequence": 21}
+    observation = state["latest_quote_observation"]
+    assert observation == state["quote_observations"][-1]
+    assert observation["book_basis"] == "unknown"
+    assert observation["bid"] == str(provider.price)
+    decisions = client.get(
+        f"/equity/deployments/{applied['id']}/decisions", headers=headers,
+    ).json()
+    check = next(row for row in decisions if row["event_type"].endswith("entry_checked"))
+    assert check["details"]["quote_observation"] == observation
+    assert "token" not in str(observation) and "url" not in str(observation)
+
+
 def test_each_stale_clock_is_retained_once_in_decision_history(client, setup):
     headers, body, provider, factory = setup
     applied = client.post("/equity/deployments", json=body, headers=headers).json()

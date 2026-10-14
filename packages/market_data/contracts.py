@@ -146,6 +146,10 @@ class MarketDataProvider(Protocol):
 
     async def get_nfo_session(self, trading_day: date) -> ExchangeSession | None: ...
 
+    async def get_index_option_session(
+        self, underlying: str, trading_day: date
+    ) -> ExchangeSession | None: ...
+
     async def get_equity_session(self, trading_day: date) -> ExchangeSession | None: ...
 
     async def get_quote(self, instrument_token: str) -> Quote: ...
@@ -207,6 +211,11 @@ class UnconfiguredMarketDataProvider:
 
     async def get_nfo_session(self, trading_day: date) -> ExchangeSession | None:
         del trading_day
+        raise MarketDataUnavailable("No market-data provider is configured")
+
+    async def get_index_option_session(
+        self, underlying: str, trading_day: date
+    ) -> ExchangeSession | None:
         raise MarketDataUnavailable("No market-data provider is configured")
 
     async def get_quote(self, instrument_token: str) -> Quote:

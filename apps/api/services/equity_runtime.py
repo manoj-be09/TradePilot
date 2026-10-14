@@ -53,6 +53,8 @@ ENTRY_CHECK_CODES: dict[str, tuple[str, str]] = {
         "RESPONSE_TIME_UNVERIFIED", "DATA"
     ),
     "Waiting for a verified exchange trade within 60 seconds": ("TRADE_TIME_STALE", "DATA"),
+    "Waiting for a valid quote timestamp within 60 seconds": ("QUOTE_TIME_STALE", "DATA"),
+    "Waiting for an exchange-timestamped book within 60 seconds": ("BOOK_TIME_STALE", "DATA"),
     "Indicative paper fill needs a provider response within 5 seconds": (
         "RESPONSE_TIME_STALE", "DATA"
     ),

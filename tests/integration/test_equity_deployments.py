@@ -1175,6 +1175,28 @@ def test_response_timestamp_cannot_authorize_equity_entry_or_exit(client, setup)
     assert account(client, headers)["deployments"][0]["status"] == "CLOSED"
 
 
+def test_each_stale_clock_is_retained_once_in_decision_history(client, setup):
+    headers, body, provider, factory = setup
+    applied = client.post("/equity/deployments", json=body, headers=headers).json()
+    Clock.instant += timedelta(days=1)
+    provider.day += timedelta(days=1)
+    for response_lag, book_lag, stale_trade in ((120, 0, False), (0, 120, False), (0, 0, True)):
+        provider.response_lag_seconds = response_lag
+        provider.book_lag_seconds = book_lag
+        provider.stale = stale_trade
+        cycle(provider, factory)
+        cycle(provider, factory)
+    checks = [row for row in client.get(
+        f"/equity/deployments/{applied['id']}/decisions", headers=headers,
+    ).json() if row["event_type"] == "equity.deployment.entry_checked"]
+    assert len(checks) == 3
+    assert {row["details"]["code"] for row in checks} == {
+        "QUOTE_TIME_STALE", "BOOK_TIME_STALE", "TRADE_TIME_STALE",
+    }
+    assert all(row["details"]["category"] == "DATA" for row in checks)
+    assert account(client, headers)["deployments"][0]["status"] == "WAITING_FOR_ENTRY"
+
+
 def test_waiting_entry_checks_are_durable_bounded_and_not_logged_after_hours(client, setup):
     headers, body, provider, factory = setup
     applied = client.post("/equity/deployments", json=body, headers=headers).json()

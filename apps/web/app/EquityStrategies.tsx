@@ -80,7 +80,7 @@ function Scenario({ value }: { value: SharedScenario }) {
 
 function DeploymentRules({ row, entry }: { row: Deployment; entry?: CatalogEntry }) {
   if (row.strategy === "test_pulse") return <div className="equity-deployment-rules">
-    <p><strong>Test only:</strong> Collect three prior quotes that passed their checks within the last two minutes, then buy above their average. Exit below that average or after 60 seconds; protective stops still apply.</p>
+    <p><strong>Test only:</strong> Collect three prior quotes that passed their checks within {row.version === "equity-test-pulse-v1" ? "one minute" : "two minutes"}, then buy above their average. Exit below that average or after 60 seconds; protective stops still apply.</p>
     <p>Expires without entry after five minutes. Quote, session, spread, depth and risk checks still apply. Long-only; sell closes the holding. Excluded from normal strategy rankings.</p>
   </div>;
   return <div className="equity-deployment-rules">

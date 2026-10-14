@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { StrategyPerformance, type StrategyPerformanceData } from "./StrategyPerformance";
 import { ValidationAttemptHistory } from "./ValidationAttemptHistory";
 import { StudySuccessorControl } from "./StudySuccessorControl";
+import { StudyProvenance } from "./StudyProvenance";
 
 type Instrument = { id: string; instrument_key: string; trading_symbol: string; exchange: string; instrument_type: string; provider: string };
 type FoundInstrument = { instrument_key: string; trading_symbol: string; name: string | null; exchange: string; segment: string; instrument_type: string };
@@ -477,6 +478,7 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
       {validationError && <p className="error-banner" role="alert">{validationError}</p>}
       {validation?.status === "unavailable" && <p className="muted" role="status">Chronological check unavailable: {validation.reason}</p>}
       {validation?.status === "ready" && <>
+        {validation.frozen && validation.study_id && <StudyProvenance studyId={validation.study_id} apiUrl={apiUrl} token={token} />}
         {validation.frozen && validation.study_id && validation.generation != null && <StudySuccessorControl study={validation} apiUrl={apiUrl} token={token} onUpdated={report => {
           ++validationGeneration.current; ++trialGeneration.current;
           setValidationBusy(false); setTrialBusy(false);

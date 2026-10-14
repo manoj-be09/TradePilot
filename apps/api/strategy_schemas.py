@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from apps.api.paper_schemas import PaperEntryConditionRequest, StrategyLegDefinitionResponse
+from packages.market_data.index_catalog import OptionIndex
 
 
 class StrategyVersionCreateRequest(BaseModel):
@@ -19,6 +20,7 @@ class StrategyVersionCreateRequest(BaseModel):
     target_profit_amount: Decimal | None = Field(default=None, gt=0)
     trailing_stop_amount: Decimal | None = Field(default=None, gt=0)
     base_version_id: UUID | None = None
+    underlying: str | None = Field(default=None, min_length=1, max_length=128)
 
     @field_validator("name")
     @classmethod
@@ -33,6 +35,7 @@ class StrategyDefinitionSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[1] = 1
+    option_index: OptionIndex | None = None
     template_key: str
     template_version: str
     template_legs: list[StrategyLegDefinitionResponse]

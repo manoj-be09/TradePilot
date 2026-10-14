@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+from packages.market_data.index_catalog import OptionIndex
 from tests.integration.test_paper_trading import FakeUpstoxProvider
 
 
@@ -23,6 +24,52 @@ def _definition(**changes):
         "trailing_stop_amount": None,
     }
     return {**definition, **changes}
+
+
+def test_explicit_nifty_retains_legacy_definition_hash(client):
+    headers = _headers(client, "nifty-version-hash@example.com")
+    legacy = client.post("/strategies/versions", headers=headers, json=_definition()).json()
+    explicit = client.post("/strategies/versions", headers=headers, json=_definition(
+        name="Explicit Nifty", underlying="NIFTY",
+    ))
+    assert explicit.status_code == 201, explicit.text
+    assert explicit.json()["definition_hash"] == legacy["definition_hash"]
+
+
+def test_index_identity_is_pinned_and_cannot_use_legacy_execution(client, monkeypatch):
+    headers = _headers(client, "sensex-version@example.com")
+    provider = FakeUpstoxProvider()
+    monkeypatch.setattr("apps.api.main.get_market_data_provider", lambda: provider)
+    index = OptionIndex(symbol="SENSEX", instrument_key="BSE_INDEX|SENSEX",
+                        name="SENSEX", exchange="BSE", derivatives_exchange="BFO")
+
+    async def resolve(underlying):
+        assert underlying == "SENSEX"
+        return index
+
+    monkeypatch.setattr("apps.api.main.resolve_option_index", resolve)
+    created = client.post("/strategies/versions", headers=headers, json=_definition(
+        underlying="SENSEX", stop_loss_amount=None, target_profit_amount=None,
+    ))
+    assert created.status_code == 201, created.text
+    version = created.json()
+    assert version["definition"]["option_index"] == index.model_dump()
+    entry = {
+        "strategy_version_id": version["id"], "strategy_key": "long_call",
+        "expiry": provider.expiry.isoformat(), "reference_strike": "25000", "lots": 1,
+    }
+    opened = client.post("/paper/trades", headers={
+        **headers, "Idempotency-Key": str(uuid4()),
+    }, json=entry)
+    assert opened.status_code == 409, opened.text
+    replay = client.post("/backtests/options/run", headers=headers, json={
+        "strategy_version_id": version["id"], "strategy_key": "long_call",
+        "expiry": "2026-10-01", "entry_date": "2026-09-29",
+        "exit_date": "2026-09-30", "lots": 1,
+    })
+    assert replay.status_code == 409, replay.text
+    assert "Index-specific strategy replay" in replay.json()["detail"]
+    assert client.get("/paper/orders", headers=headers).json() == []
 
 
 def test_versions_are_append_only_user_scoped_and_require_latest_base(client):

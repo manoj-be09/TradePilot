@@ -133,7 +133,7 @@ from packages.market_data.contracts import (
     ProviderHealth,
     Quote,
 )
-from packages.market_data.index_catalog import OptionIndex, option_indexes
+from packages.market_data.index_catalog import OptionIndex, option_indexes, resolve_option_index
 from packages.market_data.provider import get_market_data_provider
 from packages.market_data.quality import assess_option_chain
 from packages.options.models import (
@@ -905,6 +905,8 @@ def _replay_strategy_version(
             status_code=409, detail="Saved strategy definition failed integrity check"
         )
     definition = StrategyDefinitionSnapshot.model_validate(version.definition)
+    if definition.option_index is not None and definition.option_index.symbol != "NIFTY":
+        raise HTTPException(409, "Index-specific strategy replay is not enabled yet")
     current_legs = [
         StrategyLegDefinitionResponse(
             option_type=leg.option_type, side=leg.side, strike_offset=leg.strike_offset
@@ -1421,8 +1423,10 @@ def _strategy_version_hash(definition: dict[str, object]) -> str:
 def _strategy_version_definition(
     body: StrategyVersionCreateRequest | PaperTradeCreateRequest,
     strategy: StrategyDefinition,
+    option_index: OptionIndex | None = None,
 ) -> dict[str, object]:
     return StrategyDefinitionSnapshot(
+        option_index=option_index,
         template_key=strategy.key,
         template_version=strategy.version,
         template_legs=[
@@ -1436,7 +1440,7 @@ def _strategy_version_definition(
         stop_loss_amount=body.stop_loss_amount,
         target_profit_amount=body.target_profit_amount,
         trailing_stop_amount=body.trailing_stop_amount,
-    ).model_dump(mode="json")
+    ).model_dump(mode="json", exclude={"option_index"} if option_index is None else set())
 
 
 @app.get(
@@ -1476,13 +1480,21 @@ def get_strategy_version(
     "/strategies/versions", response_model=StrategyVersionResponse,
     status_code=status.HTTP_201_CREATED, tags=["strategies"],
 )
-def create_strategy_version(
+async def create_strategy_version(
     body: StrategyVersionCreateRequest, user: CurrentUser, session: SessionDep
 ) -> StrategyVersionResponse:
     strategy = get_strategy(body.strategy_key)
     if strategy is None:
         raise HTTPException(status_code=422, detail="A registered strategy template is required")
-    definition = _strategy_version_definition(body, strategy)
+    index = None
+    if body.underlying is not None:
+        try:
+            selected = await resolve_option_index(body.underlying)
+        except MarketDataProviderError as error:
+            raise _market_data_http_error(error) from error
+        if selected.symbol != "NIFTY":
+            index = selected
+    definition = _strategy_version_definition(body, strategy, index)
     definition_hash = _strategy_version_hash(definition)
     latest = session.scalar(
         select(StrategyVersion)

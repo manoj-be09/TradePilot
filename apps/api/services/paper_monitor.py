@@ -227,11 +227,25 @@ async def monitor_exits(
                 unrealized_pnl={}, warnings=["Worker ownership expired; exits were not evaluated."],
             )
 
+    unsupported_ids = [trade.id for trade in matching_trades if trade.underlying != "NIFTY"]
+    if unsupported_ids:
+        if not _record_skipped_exit_checks(
+            session, user_id, unsupported_ids, provider, lease,
+            "UNSUPPORTED_INDEX", "Index-specific exit and settlement routing is not enabled",
+        ):
+            return PaperMonitorResponse(
+                checked_at=checked_at, evaluated_count=0, closed_trade_ids=[],
+                unrealized_pnl={}, warnings=["Worker ownership expired; exits were not evaluated."],
+            )
+        matching_trades = [trade for trade in matching_trades if trade.underlying == "NIFTY"]
+
     chains: dict[date, OptionChain] = {}
     warnings: list[str] = (
         ["Open option trades belong to another market provider; exits need the original provider."]
         if mismatched_ids else []
     )
+    if unsupported_ids:
+        warnings.append("Non-NIFTY paper exits need index-specific routing; checks were skipped.")
     active_expiries: list[date] = []
     for expiry in sorted({trade.expiry for trade in matching_trades}):
         if expiry_has_passed(expiry):

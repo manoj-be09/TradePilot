@@ -52,6 +52,35 @@ def test_worker_closes_without_browser_or_jwt_and_restart_does_not_repeat(client
     assert client.get("/paper/worker", headers=headers).json()["status"] == "HEALTHY"
 
 
+def test_unsupported_index_never_uses_nifty_quotes_for_exit(client, monkeypatch):
+    provider, headers, _, trade, factory = setup_position(
+        client, monkeypatch, stop_loss_amount="100",
+    )
+    with factory() as session:
+        saved = session.get(PaperTrade, UUID(trade["id"]))
+        saved.underlying = "SENSEX"
+        session.commit()
+
+    async def unexpected_chain(*args):
+        raise AssertionError("Unsupported index must not fetch a NIFTY chain")
+
+    provider.get_option_chain = unexpected_chain
+    result = client.post("/paper/monitor", headers=headers)
+    assert result.status_code == 200, result.text
+    assert result.json()["evaluated_count"] == 0
+    assert result.json()["closed_trade_ids"] == []
+    assert any("Non-NIFTY" in warning for warning in result.json()["warnings"])
+    assert client.post("/paper/monitor", headers=headers).status_code == 200
+    with factory() as session:
+        assert session.get(PaperTrade, UUID(trade["id"])).status == "OPEN"
+        assert len(list(session.scalars(select(PaperOrder)))) == 1
+        checks = list(session.scalars(select(AuditEvent).where(
+            AuditEvent.event_type == "paper.trade.exit_checked",
+        )))
+        assert len(checks) == 1
+        assert checks[0].details["snapshot"]["reason_code"] == "UNSUPPORTED_INDEX"
+
+
 def _expiry_day_position(client, monkeypatch):
     provider, headers, payload, trade, factory = setup_position(client, monkeypatch)
     with factory() as session:

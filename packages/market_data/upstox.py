@@ -119,6 +119,12 @@ class UpstoxMarketDataProvider:
     async def get_nfo_session(self, trading_day: date) -> ExchangeSession | None:
         return await self._exchange_session(trading_day, "NFO")
 
+    async def get_index_option_session(
+        self, underlying: str, trading_day: date
+    ) -> ExchangeSession | None:
+        index = await resolve_option_index(underlying)
+        return await self._exchange_session(trading_day, index.derivatives_exchange)
+
     async def get_equity_session(self, trading_day: date) -> ExchangeSession | None:
         return await self._exchange_session(trading_day, "NSE")
 

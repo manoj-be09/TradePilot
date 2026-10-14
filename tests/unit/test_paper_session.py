@@ -9,6 +9,7 @@ from packages.paper_trading.session import (
     expiry_entry_window_closed,
     expiry_has_passed,
     expiry_square_off_due,
+    require_derivatives_session_open,
     require_nfo_session_open,
 )
 
@@ -73,3 +74,22 @@ def test_unfilled_expiry_entry_cutoff_includes_closed_session_and_no_session():
         expiry_entry_window_closed(
             expiry, ExchangeSession("NFO", session.end, start), now=start
         )
+
+
+def test_bse_session_cannot_borrow_open_nse_session_or_its_expiry_cutoff():
+    start = datetime(2026, 10, 15, 3, 45, tzinfo=timezone.utc)
+    nse = ExchangeSession("NFO", start, start + timedelta(hours=6))
+    bse = ExchangeSession("BFO", start, start + timedelta(hours=5))
+    require_derivatives_session_open(bse, "BFO", start)
+    with pytest.raises(PaperSessionError, match="invalid"):
+        require_derivatives_session_open(nse, "BFO", start)
+    with pytest.raises(PaperSessionError, match="closed"):
+        require_derivatives_session_open(bse, "BFO", bse.end)
+    assert expiry_square_off_due(
+        start.date(), bse, now=bse.end - timedelta(minutes=20), expected_exchange="BFO",
+    )
+    assert not expiry_square_off_due(
+        start.date(), nse, now=bse.end - timedelta(minutes=20),
+    )
+    with pytest.raises(PaperSessionError, match="invalid"):
+        expiry_entry_window_closed(start.date(), nse, now=start, expected_exchange="BFO")

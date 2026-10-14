@@ -71,6 +71,14 @@ def test_unsupported_index_never_uses_nifty_quotes_for_exit(client, monkeypatch)
     assert result.json()["closed_trade_ids"] == []
     assert any("Non-NIFTY" in warning for warning in result.json()["warnings"])
     assert client.post("/paper/monitor", headers=headers).status_code == 200
+    marked = client.get("/paper/trades", headers=headers)
+    assert marked.status_code == 200, marked.text
+    item = marked.json()["trades"][0]
+    assert item["unrealized_pnl"] is None
+    assert "Index-specific valuation" in item["valuation_warning"]
+    closed = client.post(f"/paper/trades/{trade['id']}/close", headers=headers)
+    assert closed.status_code == 409, closed.text
+    assert "Index-specific paper close" in closed.json()["detail"]
     with factory() as session:
         assert session.get(PaperTrade, UUID(trade["id"])).status == "OPEN"
         assert len(list(session.scalars(select(PaperOrder)))) == 1

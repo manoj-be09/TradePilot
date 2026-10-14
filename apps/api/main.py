@@ -2591,7 +2591,10 @@ async def paper_trades(user: CurrentUser, session: SessionDep) -> PaperTradeList
     ).all()
     session.commit()
     warnings: list[str] = []
-    open_expiries = sorted({trade.expiry for trade in trades if trade.status == "OPEN"})
+    open_expiries = sorted({
+        trade.expiry for trade in trades
+        if trade.status == "OPEN" and trade.underlying == "NIFTY"
+    })
     chains: dict[date, OptionChain] = {}
     provider = get_market_data_provider()
     active_expiries = [expiry for expiry in open_expiries if not expiry_has_passed(expiry)]
@@ -2631,6 +2634,12 @@ async def paper_trades(user: CurrentUser, session: SessionDep) -> PaperTradeList
     for trade in trades:
         item = _paper_trade_response(trade)
         if trade.status == "OPEN":
+            if trade.underlying != "NIFTY":
+                item.valuation_warning = (
+                    "Index-specific valuation is not enabled; no NIFTY quote was substituted."
+                )
+                responses.append(item)
+                continue
             trade_provider = (
                 trade.entry_rule_snapshot.get("market_data_provider", "upstox")
                 if isinstance(trade.entry_rule_snapshot, dict) else "upstox"
@@ -3115,6 +3124,10 @@ async def close_paper_trade(
         raise HTTPException(status_code=404, detail="Paper trade not found")
     if trade.status != "OPEN":
         raise HTTPException(status_code=409, detail="Paper trade is already closed")
+    if trade.underlying != "NIFTY":
+        raise HTTPException(
+            status_code=409, detail="Index-specific paper close routing is not enabled yet",
+        )
     if expiry_has_passed(trade.expiry):
         raise HTTPException(
             status_code=409,

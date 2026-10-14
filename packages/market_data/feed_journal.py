@@ -1,5 +1,6 @@
 """Bounded local feed diagnostics; never accept connection strings or exceptions."""
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -29,6 +30,7 @@ class FeedJournal:
         if quote is not None:
             # Deliberately omit raw payloads, instrument keys, URLs and exception text.
             data.update(
+                instrument_digest=hashlib.sha256(quote.instrument_token.encode()).hexdigest(),
                 quote_at=quote.timestamp.isoformat(), timestamp_basis=quote.timestamp_basis,
                 trade_at=quote.last_trade_time.isoformat() if quote.last_trade_time else None,
                 book_at=quote.book_as_of.isoformat() if quote.book_as_of else None,

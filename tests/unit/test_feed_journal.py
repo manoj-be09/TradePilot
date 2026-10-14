@@ -22,9 +22,13 @@ def test_journal_survives_reopening_omits_private_fields_and_bounds_files(tmp_pa
     assert "private-token-and-url" not in path.read_text()
     assert data[-1]["book_basis"] == "unknown"
     assert data[-1]["book_at"] is None
+    first_instrument = data[-1]["instrument_digest"]
+    assert len(first_instrument) == 64
     reopened = FeedJournal(path)
     reopened.record("disconnected")
     assert len(path.read_text().splitlines()) == 3
+    reopened.record("quote", quote.model_copy(update={"instrument_token": "different-instrument"}))
+    assert json.loads(path.read_text().splitlines()[-1])["instrument_digest"] != first_instrument
     with pytest.raises(ValueError, match="Unsupported feed event"):
         reopened.record("private-exception")
     # Small fixture boundary exercises the same standard-library rotation policy.

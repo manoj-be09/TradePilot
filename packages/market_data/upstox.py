@@ -169,6 +169,15 @@ class UpstoxMarketDataProvider:
         raw_contracts = data if isinstance(data, list) else data.get("data")
         if not isinstance(raw_contracts, list):
             raise MarketDataProviderError("Upstox option-contract response had an unexpected shape")
+        for item in raw_contracts:
+            if not isinstance(item, dict) or (
+                not isinstance(item.get("instrument_key"), str)
+                or not item["instrument_key"].startswith(index.exchange + "_FO|")
+                or ("underlying_key" in item and item["underlying_key"] != index.instrument_key)
+            ):
+                raise MarketDataProviderError(
+                    "Option contract does not match the selected index or derivatives venue"
+                )
         try:
             return [
                 UpstoxOptionContract(
@@ -277,6 +286,10 @@ class UpstoxMarketDataProvider:
                     instrument_key = option.get("instrument_key")
                     if ltp is None or not isinstance(instrument_key, str):
                         continue
+                    if not instrument_key.startswith(index.exchange + "_FO|"):
+                        raise MarketDataProviderError(
+                            "Option-chain leg belongs to a different derivatives venue"
+                        )
                     open_interest = _integer(market.get("oi"))
                     previous_open_interest = _integer(market.get("prev_oi"))
                     close_price = _decimal(market.get("close_price"))

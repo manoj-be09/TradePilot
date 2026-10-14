@@ -835,3 +835,46 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
 .app-section-page { display: grid; gap: 18px; }
 .empty-section-card { border: 1px solid #dfe7df; border-radius: 14px; padding: 22px; background: #fff; box-shadow: 0 8px 24px #1b2b1f06; }
 .empty-section-card h3 { margin: 0 0 8px; font-family: Manrope, sans-serif; font-size: 20px; letter-spacing: -.03em; }
+
+/* Compact paper workspace: core prices and warnings stay visible. */
+.dashboard-shell { --paper: #f5f7fa; --line: #e4e9ef; --ink: #172b3a; --ink-muted: #617183; }
+.paper-workspace, .equity-lab { border-radius: 16px; box-shadow: 0 4px 20px #172b3a05; }
+.paper-heading { align-items: center; gap: 16px; }
+.paper-heading h2 { margin: 4px 0 8px; font-size: 26px; letter-spacing: -.035em; }
+.paper-heading .muted { margin: 0; font-size: 12px; }
+.paper-actions { flex-wrap: wrap; justify-content: flex-end; }
+.paper-readiness { padding: 12px 14px; background: #f8fafc; }
+.paper-readiness-grid { gap: 8px; }
+.paper-readiness-grid > span { padding: 9px 12px; border-radius: 8px; background: #fff; font-size: 11px; }
+.paper-readiness-grid b { font-size: 11px; }
+.workspace-disclosure { margin: 10px 0; color: var(--ink-muted); font-size: 12px; }
+.workspace-disclosure summary { cursor: pointer; padding: 7px 0; font-weight: 600; }
+.workspace-disclosure summary:hover { color: var(--green); }
+.paper-stats { gap: 10px; margin: 16px 0 4px; }
+.paper-stats > div { min-height: 82px; background: #fff; border-color: #e4e9ef; border-radius: 12px; }
+.paper-stats span { font-size: 11px; }
+.paper-stats strong { font-size: 21px; letter-spacing: -.025em; }
+.equity-pinned { padding: 20px; background: #f8fafc; border-color: #e4e9ef; border-radius: 14px; }
+.equity-deployments { gap: 14px; }
+.equity-deployments > article { padding: 20px; border-radius: 12px; border-color: #e4e9ef; box-shadow: none; }
+.equity-deployment-heading { align-items: flex-start; gap: 12px; }
+.equity-deployment-heading > strong { font-size: 16px; line-height: 1.4; }
+.equity-deployment-heading > span { flex-shrink: 0; padding: 5px 8px; border-radius: 6px; font-size: 10px; }
+.equity-entry-comparison > div { padding: 12px; background: #f8fafc; border-color: #e4e9ef; border-radius: 9px; }
+.equity-entry-comparison strong { font-size: 21px; font-variant-numeric: tabular-nums; letter-spacing: -.025em; }
+.equity-entry-comparison span { font-size: 10px; letter-spacing: .035em; }
+.equity-entry-comparison small { font-size: 10px; line-height: 1.4; }
+.equity-deployments details > summary { padding: 6px 0; font-size: 12px; cursor: pointer; }
+button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px solid #649ff0; outline-offset: 3px; }
+@media (max-width: 680px) {
+  .paper-heading { align-items: flex-start; flex-direction: column; }
+  .paper-actions { width: 100%; justify-content: flex-start; }
+  .paper-readiness-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .equity-pinned { padding: 12px; }
+  .equity-deployment-heading { flex-wrap: wrap; }
+  .equity-entry-comparison strong { font-size: 18px; }
+}
+
+.equity-pinned-grid { gap: 14px; }
+.equity-pinned-grid > article { padding: 20px; border-radius: 12px; border-color: #e4e9ef; box-shadow: none; }
+.equity-pinned-grid details > summary { padding: 6px 0; font-size: 12px; cursor: pointer; }

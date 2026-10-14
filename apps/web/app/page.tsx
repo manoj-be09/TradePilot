@@ -668,6 +668,7 @@ export default function Home() {
   const [payoffEstimateBusy, setPayoffEstimateBusy] = useState(false);
   const [strategyPayoffs, setStrategyPayoffs] = useState<Record<string, PayoffEstimate>>({});
   const [paperTicketMessage, setPaperTicketMessage] = useState("");
+  const [showAllStrategies, setShowAllStrategies] = useState(false);
   const [deploymentPreparedKey, setDeploymentPreparedKey] = useState("");
   const deploymentCommand = useRef<{ payload: string; key: string } | null>(null);
   const paperTicketRef = useRef<HTMLParagraphElement | null>(null);
@@ -2266,7 +2267,14 @@ export default function Home() {
             <section className={`equities-workspace app-section-page${activeSection === "dashboard" ? " dashboard-detail-section" : ""}`} aria-label="Equities workspace">
               {activeSection !== "dashboard" ? <div className="equities-heading"><div><div className="panel-kicker">{activeSection.toUpperCase()}</div><h2>{activeSection === "charts" ? "Equity & ETF charts" : activeSection === "algo" ? "Equity algo strategies" : activeSection === "broker" ? "Equity broker panel" : activeSection === "backtest" ? "Equity backtest" : "Equity bridge tool"}</h2></div><span className="paper-mode-badge">PAPER TRADING</span></div> : null}
               {activeSection === "dashboard" ? <><MarketOutlook token={token} apiUrl={API_URL} /><div id="equity-instruments"><InstrumentCatalog token={token} apiUrl={API_URL} compact /></div></> : null}
-              <label className="market-toolbar">Index
+              {activeSection === "charts" ? <ChartWorkspace token={token} apiUrl={API_URL} /> : null}
+              {activeSection === "algo" ? <EquityStrategies token={token} apiUrl={API_URL} /> : null}
+              {activeSection === "broker" ? <section className="empty-section-card"><h3>Equity broker panel</h3><p className="muted">This page will hold broker connection, account, and order-routing controls for equities. For now, live broker orders remain disabled and equity paper trading uses the local wallet.</p></section> : null}
+              {activeSection === "backtest" ? <section className="empty-section-card"><h3>Equity backtest</h3><p className="muted">Equity strategy replay will use saved equity candles and paper-trade history. The current build has the F&O replay engine first; equity replay is planned next.</p></section> : null}
+              {activeSection === "bridge" ? <section className="empty-section-card"><h3>Equity bridge tool</h3><p className="muted">This page will show paper/live bridge controls when live equity broker routing is enabled. It stays read-only in this milestone.</p></section> : null}
+            </section>
+          ) : <>
+          <label className="market-toolbar">Index
             <select aria-label="Option index" value={selectedOptionIndex} onChange={(event) => {
               setSelectedOptionIndex(event.target.value); setContracts([]); setSelectedExpiry("");
               setChain(null); setOptionFeatures(null); setSelectedVersionId("");
@@ -2277,13 +2285,6 @@ export default function Home() {
           </label>
           {indexCatalogError ? <p role="alert">{indexCatalogError}</p> : null}
           {selectedOptionIndex !== "NIFTY" ? <p role="status">Market-data preview. Paper entry for this index is pending venue and settlement validation.</p> : null}
-          {activeSection === "charts" ? <ChartWorkspace token={token} apiUrl={API_URL} /> : null}
-              {activeSection === "algo" ? <EquityStrategies token={token} apiUrl={API_URL} /> : null}
-              {activeSection === "broker" ? <section className="empty-section-card"><h3>Equity broker panel</h3><p className="muted">This page will hold broker connection, account, and order-routing controls for equities. For now, live broker orders remain disabled and equity paper trading uses the local wallet.</p></section> : null}
-              {activeSection === "backtest" ? <section className="empty-section-card"><h3>Equity backtest</h3><p className="muted">Equity strategy replay will use saved equity candles and paper-trade history. The current build has the F&O replay engine first; equity replay is planned next.</p></section> : null}
-              {activeSection === "bridge" ? <section className="empty-section-card"><h3>Equity bridge tool</h3><p className="muted">This page will show paper/live bridge controls when live equity broker routing is enabled. It stays read-only in this milestone.</p></section> : null}
-            </section>
-          ) : <>
           {activeSection === "charts" ? <ChartWorkspace token={token} apiUrl={API_URL} /> : null}
           {["charts", "broker"].includes(activeSection) ? <>
           <section className="market-toolbar">
@@ -2355,10 +2356,10 @@ export default function Home() {
               <div>
                 <div className="panel-kicker">PAPER TRADING</div>
                 <h2>Strategy workspace</h2>
-                <button type="button" disabled={chainBusy || paperBusy} onClick={() => void refreshPaperWorkspace()}>Refresh quotes & paper status</button>
-                <p className="muted">Simulated NIFTY option fills use buys at ask and sells at bid. No order is sent to a broker.</p>
+                <p className="muted">Plan. Monitor. Review. Paper orders only.</p>
               </div>
               <div className="paper-actions">
+                <button className="refresh-button" type="button" disabled={chainBusy || paperBusy} onClick={() => void refreshPaperWorkspace()}>↻ Refresh</button>
                 {paperAccount ? (
                   <span className={`paper-mode-badge ${paperAccount.kill_switch_enabled ? "paused" : "active"}`}>
                     {paperAccount.kill_switch_enabled ? "ENTRIES PAUSED" : "PAPER ACTIVE"}
@@ -2372,17 +2373,13 @@ export default function Home() {
             </div>
 
             <section className="paper-readiness" aria-label="Paper trading readiness">
-              <div>
-                <div className="panel-kicker">READINESS</div>
-                <strong>Before an automatic entry</strong>
-              </div>
               <div className="paper-readiness-grid">
                 <span className={paperAccount ? "ready" : "waiting"}><b>{paperAccount ? "Ready" : "Waiting"}</b> paper account</span>
                 <span className={paperEntry.ready ? "ready" : "waiting"}><b>{paperEntry.ready ? "Ready" : "Waiting"}</b> account verification</span>
                 <span className={chain?.quality?.status === "PASS" ? "ready" : chain?.quality?.status === "FAIL" ? "blocked" : "waiting"}><b>{chain?.quality?.status || "Waiting"}</b> quote quality</span>
                 <span className={paperAccount?.live_trading_enabled === false ? "ready" : "blocked"}><b>{paperAccount?.live_trading_enabled === false ? "Disabled" : "Check"}</b> live broker orders</span>
               </div>
-              <p className="features-note">A strategy stays armed until a fresh qualifying snapshot passes its entry rules, risk limits, and quote checks. This status is a guide; the server rechecks every condition before filling.</p>
+              <details className="workspace-disclosure"><summary>Entry checks &amp; fill policy</summary><p className="features-note">A strategy stays armed until a fresh qualifying snapshot passes its entry rules, risk limits, and quote checks. The server rechecks every condition before filling. Simulated buys use ask and sells use bid; no order is sent to a broker.</p></details>
             </section>
 
             {paperAccount ? (
@@ -2396,7 +2393,7 @@ export default function Home() {
                 <div><span>Remaining new-trade risk</span><strong>₹{formatPrice(paperAccount.daily_risk_remaining)}</strong></div>
               </div>
             ) : <p className="features-note">Loading paper account…</p>}
-            <p className="features-note">The daily budget uses realized losses and open positions’ theoretical maximum loss. It does not include live mark-to-market or transaction costs.</p>
+            <details className="workspace-disclosure"><summary>Risk budget details</summary><p className="features-note">The daily budget uses realized losses and open positions’ theoretical maximum loss. It does not include live mark-to-market or transaction costs.</p></details>
 
             <details className="paper-ledger-review">
               <summary>Paper ledger check</summary>
@@ -2439,7 +2436,7 @@ export default function Home() {
               </div>
               <div className="strategy-color-legend" aria-label="Strategy evidence legend"><span className="strategy-color-legend--green">Green · stronger qualified evidence</span><span className="strategy-color-legend--amber">Amber · limited or insufficient evidence</span><span className="strategy-color-legend--red">Red · blocked or unavailable</span></div>
               <section className="strategy-scorecards" aria-label="Strategy performance comparison">
-                {rankedStrategies.map(({ strategy, payoff, bias, volatility, riskReward, historyReliable, qualified, matchedCondition }, index) => (
+                {rankedStrategies.slice(0, showAllStrategies ? undefined : 3).map(({ strategy, payoff, bias, volatility, riskReward, historyReliable, qualified, matchedCondition }, index) => (
                   <article
                     className={`strategy-scorecard ${selectedStrategy === strategy.key ? "selected" : ""} ${index === 0 ? "best-fit" : ""} strategy-scorecard--${!payoff || payoff.maximum_loss_unbounded ? "red" : qualified && historyReliable ? "green" : "amber"}`}
                     key={strategy.key}
@@ -2461,7 +2458,8 @@ export default function Home() {
                   </article>
                 ))}
               </section>
-              <p className="features-note">Ranking uses observed NIFTY put/call open interest when available, current-quote expiry payoff, and a small risk-normalized adjustment only after 20 qualified automatic closes in the same observed market condition with one unchanged rule/stop configuration. IV rank needs stored history and is currently unavailable; missing values never count as low IV or bearish. Manual, incomplete and mixed-configuration results cannot improve ranking. This is a research comparison, not a calibrated profit forecast. “Unbounded” profit is theoretical at expiry.</p>
+              <button className="inline-button" aria-expanded={showAllStrategies} onClick={() => setShowAllStrategies(value => !value)} type="button">{showAllStrategies ? "Show fewer strategies" : `＋ All ${rankedStrategies.length} strategies`}</button>
+              <details className="workspace-disclosure"><summary>Ranking &amp; evidence details</summary>              <p className="features-note">Ranking uses observed NIFTY put/call open interest when available, current-quote expiry payoff, and a small risk-normalized adjustment only after 20 qualified automatic closes in the same observed market condition with one unchanged rule/stop configuration. IV rank needs stored history and is currently unavailable; missing values never count as low IV or bearish. Manual, incomplete and mixed-configuration results cannot improve ranking. This is a research comparison, not a calibrated profit forecast. “Unbounded” profit is theoretical at expiry.</p></details>
               {isCustomStrategy ? (
                 <div className="custom-leg-builder">
                   <div className="custom-leg-heading">
@@ -2536,7 +2534,7 @@ export default function Home() {
                 })}
                 {!entryConditions.length ? <p className="features-note">No entry filters. The selected position will still pass the existing quote and risk checks.</p> : null}
               </div>
-              <section className="preset-panel" aria-label="Saved strategy presets">
+              <details className="preset-panel" aria-label="Saved strategy presets"><summary>Saved presets</summary>
                 <div className="preset-heading">
                   <strong>Saved presets</strong>
                   <small>Save a template and its entry conditions. Expiry, strike, lots, custom legs, and exit rules are not saved.</small>
@@ -2558,7 +2556,7 @@ export default function Home() {
                 </div>
                 {presetError ? <p className="error-banner" role="alert">{presetError}</p> : null}
                 {presetMessage ? <p className="preset-message" role="status">{presetMessage}</p> : null}
-              </section>
+              </details>
               <div className="exit-rule-controls" aria-label="Optional paper exit rules">
                 <label>
                   Stop loss (₹ P&amp;L)
@@ -2573,7 +2571,7 @@ export default function Home() {
                   <input aria-label="Trailing stop amount in rupees" min="0.01" onChange={(event) => setTrailingStopInput(event.target.value)} placeholder="Off" step="0.01" type="number" value={trailingStopInput} />
                 </label>
               </div>
-              <section className="preset-panel" aria-label="Immutable strategy versions">
+              <details className="preset-panel" aria-label="Immutable strategy versions"><summary>Strategy versions & audit</summary>
                 <div className="preset-heading">
                   <strong>Strategy versions</strong>
                   <small>Save the template, size, entry conditions, and exits. Each revision remains available for audit.</small>
@@ -2623,7 +2621,7 @@ export default function Home() {
                 {selectedVersionId ? <p className="features-note">Pinned version must match the current form exactly. Save a new revision after edits.</p> : null}
                 {versionError ? <p className="error-banner" role="alert">{versionError}</p> : null}
                 {versionMessage ? <p className="preset-message" role="status">{versionMessage}</p> : null}
-              </section>
+              </details>
               <p className="exit-rule-note" ref={paperTicketRef}>Rules apply to total position P&amp;L. The trailing stop starts after unrealized P&amp;L becomes positive. Checks run every 15 seconds while the independent worker is running.</p>
               {paperTicketMessage ? <p className="paper-ticket-message" role="status">{paperTicketMessage}</p> : null}
               {deploymentPreparedKey === selectedStrategy ? <div className="deployment-ready"><strong>Ready to arm in paper mode</strong><span>The worker will wait for a later qualifying market snapshot. Fresh entry rules, quotes, session and risk are checked before any paper fill. It then monitors the moving stop and exits.</span></div> : null}

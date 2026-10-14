@@ -528,6 +528,22 @@ def test_study_provenance_is_owned_integrity_checked_and_omits_candles(client, s
         "email": "provenance-other@example.com", "password": "another-strong-password",
     }).json()["access_token"]
     assert client.get(path, headers={"Authorization": f"Bearer {other}"}).status_code == 404
+    # A valid older manifest stays readable without inventing runtime metadata.
+    from apps.api.equity_routes import _canonical_hash
+
+    with factory() as session:
+        study = session.get(EquityValidationStudy, UUID(report["study_id"]))
+        legacy = dict(study.dataset_manifest)
+        legacy.pop("calculation_environment")
+        study.dataset_manifest = legacy
+        study.dataset_digest = _canonical_hash(legacy)
+        study.report = {**study.report, "dataset_digest": study.dataset_digest}
+        study.report_digest = _canonical_hash(study.report)
+        session.commit()
+    legacy_response = client.get(path, headers=headers)
+    assert legacy_response.status_code == 200
+    assert legacy_response.json()["missing_assumptions"] == ["calculation_environment"]
+    assert "calculation_environment" not in legacy_response.json()["assumptions"]
     with factory() as session:
         study = session.get(EquityValidationStudy, UUID(report["study_id"]))
         study.dataset_manifest = {**study.dataset_manifest, "fee_per_side": "0.9"}

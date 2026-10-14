@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from packages.market_data.index_catalog import OptionIndex
+from packages.market_data.index_catalog import OptionIndex, resolve_option_index
 from tests.integration.test_paper_trading import FakeUpstoxProvider
 
 
@@ -44,6 +44,8 @@ def test_index_identity_is_pinned_and_cannot_use_legacy_execution(client, monkey
                         name="SENSEX", exchange="BSE", derivatives_exchange="BFO")
 
     async def resolve(underlying):
+        if underlying == "NIFTY":
+            return await resolve_option_index(underlying)
         assert underlying == "SENSEX"
         return index
 

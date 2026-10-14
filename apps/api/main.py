@@ -174,7 +174,6 @@ from packages.paper_trading.session import (
     expiry_has_passed,
     expiry_square_off_due,
     require_derivatives_session_open,
-    require_nfo_session_open,
 )
 from packages.paper_trading.strategies import STRATEGIES, StrategyDefinition, get_strategy
 from packages.paper_trading.transactions import (
@@ -1829,6 +1828,8 @@ def arm_paper_deployment(
 ) -> PaperDeploymentResponse:
     if not get_settings().paper_trading_enabled:
         raise HTTPException(503, "Paper trading is disabled")
+    if body.underlying != "NIFTY":
+        raise HTTPException(409, "Index-specific automatic arming is not enabled yet")
     if body.strategy_key == "custom" or get_strategy(body.strategy_key) is None:
         raise HTTPException(422, "Only registered defined-risk templates can be armed")
     if (
@@ -2105,6 +2106,12 @@ async def _open_paper_trade_with_provider(
     )
     if not settings.paper_trading_enabled:
         raise HTTPException(status_code=503, detail="Paper trading is disabled by configuration")
+    if body.underlying != "NIFTY" and not settings.paper_index_execution_enabled:
+        raise HTTPException(409, "Index-specific paper execution is not enabled yet")
+    try:
+        index = await resolve_option_index(body.underlying)
+    except MarketDataProviderError as error:
+        raise _market_data_http_error(error) from error
     is_custom_strategy = body.strategy_key == "custom"
     strategy = None if is_custom_strategy else get_strategy(body.strategy_key)
     if not is_custom_strategy and strategy is None:
@@ -2123,7 +2130,9 @@ async def _open_paper_trade_with_provider(
             raise HTTPException(
                 status_code=409, detail="Custom structures cannot use template versions"
             )
-        expected_definition = _strategy_version_definition(body, strategy)
+        expected_definition = _strategy_version_definition(
+            body, strategy, index if index.symbol != "NIFTY" else None
+        )
         if (
             _strategy_version_hash(strategy_version.definition) != strategy_version.definition_hash
             or expected_definition != strategy_version.definition
@@ -2144,19 +2153,33 @@ async def _open_paper_trade_with_provider(
             status_code=503, detail="Paper trading requires an options-capable market provider"
         )
     try:
-        nfo_session = await provider.get_nfo_session(exchange_today())
+        if index.symbol != "NIFTY" and not callable(
+            getattr(provider, "get_index_option_session", None)
+        ):
+            raise MarketDataUnavailable("Index session capability unavailable")
+        nfo_session = (
+            await provider.get_nfo_session(exchange_today()) if index.symbol == "NIFTY"
+            else await provider.get_index_option_session(index.symbol, exchange_today())
+        )
         session_check_at = datetime.now(timezone.utc)
-        require_nfo_session_open(nfo_session, session_check_at)
+        require_derivatives_session_open(nfo_session, index.derivatives_exchange, session_check_at)
         if expiry_square_off_due(
             body.expiry, nfo_session,
             now=session_check_at,
             minutes_before_close=policy.square_off_minutes_before_close,
+            expected_exchange=index.derivatives_exchange,
         ):
             raise PaperSessionError(
                 "Expiry-day paper entry window is closed before the scheduled square-off"
             )
-        option_contracts = await provider.get_option_contracts("NIFTY", body.expiry)
-        chain = await provider.get_option_chain("NIFTY", body.expiry)
+        option_contracts = await provider.get_option_contracts(index.symbol, body.expiry)
+        chain = await provider.get_option_chain(index.symbol, body.expiry)
+        if chain.underlying != index.symbol or chain.expiry != body.expiry:
+            raise PaperSessionError("Option-chain identity differs from the selected index")
+        if index.symbol != "NIFTY":
+            saved_option_index(index.symbol, {
+                "option_index": index.model_dump(), "market_data_provider": provider.provider_id,
+            }, [contract.instrument_key for contract in option_contracts])
     except (MarketDataUnavailable, MarketDataProviderError) as error:
         raise _market_data_http_error(error) from error
     except PaperSessionError as error:
@@ -2206,6 +2229,7 @@ async def _open_paper_trade_with_provider(
     ]
     condition_results = evaluate_entry_conditions(entry_conditions, rule_metrics)
     entry_rule_snapshot = {
+        **({"option_index": index.model_dump()} if index.symbol != "NIFTY" else {}),
         "market_data_provider": provider.provider_id,
         "exit_policy": policy.as_dict(),
         "conditions": [condition.model_dump(mode="json") for condition in body.entry_conditions],
@@ -2366,7 +2390,7 @@ async def _open_paper_trade_with_provider(
     spot = chain.underlying_spot or Decimal(1)
     payoff = calculate_expiry_payoff(
         PayoffRequest(
-            underlying="NIFTY",
+            underlying=index.symbol,
             multiplier=Decimal(lot_size),
             price_min=Decimal(0),
             price_max=max(spot, max(selected_strikes)) * Decimal(2),
@@ -2421,11 +2445,12 @@ async def _open_paper_trade_with_provider(
         )
     try:
         session_check_at = datetime.now(timezone.utc)
-        require_nfo_session_open(nfo_session, session_check_at)
+        require_derivatives_session_open(nfo_session, index.derivatives_exchange, session_check_at)
         if expiry_square_off_due(
             body.expiry, nfo_session,
             now=session_check_at,
             minutes_before_close=policy.square_off_minutes_before_close,
+            expected_exchange=index.derivatives_exchange,
         ):
             raise PaperSessionError(
                 "Expiry-day paper entry window is closed before the scheduled square-off"
@@ -2492,7 +2517,7 @@ async def _open_paper_trade_with_provider(
         user_id=user.id,
         strategy_key=strategy_key,
         strategy_name=strategy_name,
-        underlying="NIFTY",
+        underlying=index.symbol,
         expiry=body.expiry,
         reference_strike=reference_strike,
         lots=body.lots,

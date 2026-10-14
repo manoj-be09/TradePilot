@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     live_trading_enabled: bool = False
     paper_trading_enabled: bool = True
+    paper_index_execution_enabled: bool = False
     initial_paper_capital: int = Field(default=1_000_000, gt=0)
     initial_equity_paper_capital: int = Field(default=1_000_000, gt=0)
     paper_max_trade_risk_pct: int = Field(default=2, gt=0, le=100)

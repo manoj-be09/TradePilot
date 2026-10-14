@@ -3,7 +3,15 @@ from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from packages.paper_trading.rules import RuleMetric, RuleOperator
 
@@ -143,12 +151,20 @@ class PaperTradeCreateRequest(BaseModel):
     def reject_unsupported_index_selectors(cls, value: Any) -> Any:
         # Saved requests also contain provider/policy metadata; retain legacy parsing.
         if isinstance(value, dict) and any(
-            key in value for key in ("underlying", "underlying_key", "index")
+            key in value for key in ("underlying_key", "index")
         ):
             raise ValueError("Index-specific paper execution is not enabled yet")
         return value
 
     strategy_version_id: UUID | None = None
+    underlying: str = Field(default="NIFTY", min_length=1, max_length=128)
+
+    @model_serializer(mode="wrap")
+    def serialize_index(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.underlying == "NIFTY":
+            data.pop("underlying", None)
+        return data
     strategy_key: str = Field(min_length=1, max_length=64)
     expiry: date
     reference_strike: Decimal | None = Field(default=None, gt=0)

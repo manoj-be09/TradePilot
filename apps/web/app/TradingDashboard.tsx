@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { EquityEntryReadiness, type EquityEntryState } from "./EquityEntryReadiness";
 
 type EquityDeployment = {
   id: string;
@@ -8,7 +9,7 @@ type EquityDeployment = {
   strategy: string;
   status: string;
   updated_at: string;
-  state: { entry_threshold_price?: string | null; entry_reference_price?: string | null; current_price?: string | null; current_price_at?: string | null; realized_pnl?: string | null; marked_pnl?: string | null; quote_at?: string | null; detail?: string };
+  state: EquityEntryState & { position?: {entry_price: string}; entry_threshold_price?: string | null; entry_reference_price?: string | null; current_price?: string | null; current_price_at?: string | null; realized_pnl?: string | null; marked_pnl?: string | null; quote_at?: string | null };
 };
 type OptionTrade = {
   id: string;
@@ -20,7 +21,7 @@ type OptionTrade = {
   opened_at: string;
   closed_at: string | null;
 };
-type OptionDeployment = { id: string; strategy_key: string; status: string; trade_id: string | null; created_at: string };
+type OptionDeployment = { id: string; strategy_key: string; status: string; trade_id: string | null; created_at: string; detail?: string; entry_conditions?: {metric: string; operator: string; threshold: string}[] };
 type EquitySummary = { strategy: string; gross_profit: string; gross_loss: string; realized_net: string; closed_trades: number; winning_trades: number; closed_unpriced: number; active_strategies: number };
 type DailyActivity = { date: string; strategy: string; closed_trades: number; realized_net: string };
 type EquityDashboardData = { scope: "all_time"; totals: EquitySummary; strategies: EquitySummary[]; daily: DailyActivity[] };
@@ -106,6 +107,16 @@ export function TradingDashboard({ token, apiUrl, workspace, onOpenStrategies, o
   onExploreSymbols: () => void;
 }) {
   const [equity, setEquity] = useState<EquityDeployment[] | null>(null);
+  const [entryCatalog, setEntryCatalog] = useState<{implementation_key: string; entry: string}[]>([]);
+  useEffect(() => {
+    if (workspace !== "equities") return;
+    const controller = new AbortController();
+    fetch(`${apiUrl}/equity/strategy-catalog`, {headers: {Authorization: `Bearer ${token}`}, signal: controller.signal})
+      .then(async response => response.ok ? response.json() : [])
+      .then(rows => { if (!controller.signal.aborted) setEntryCatalog(rows); })
+      .catch(() => { if (!controller.signal.aborted) setEntryCatalog([]); });
+    return () => controller.abort();
+  }, [apiUrl, token, workspace]);
   const [equitySummary, setEquitySummary] = useState<EquityDashboardData | null>(null);
   const [options, setOptions] = useState<OptionTrade[] | null>(null);
   const [optionDeployments, setOptionDeployments] = useState<OptionDeployment[] | null>(null);
@@ -193,13 +204,13 @@ export function TradingDashboard({ token, apiUrl, workspace, onOpenStrategies, o
   const averageTrade = closedCount ? money((profit + loss) / closedCount) : "Unavailable";
   const active: DashboardRow[] = workspace === "equities"
     ? (equity ?? []).filter(row => ["WAITING_FOR_ENTRY", "OPEN", "EXIT_REQUESTED"].includes(row.status) && matches(row.strategy)).map(row => ({
-      entry: row.state.entry_threshold_price ?? row.state.entry_reference_price, currentPrice: row.state.current_price, currentAt: row.state.current_price_at,
+      entry: row.status === "WAITING_FOR_ENTRY" ? row.state.entry_threshold_price ?? row.state.entry_reference_price : row.state.position?.entry_price, currentPrice: row.state.current_price, currentAt: row.state.current_price_at,
       id: row.id, name: `${row.symbol} · ${row.strategy}`, strategy: row.strategy, status: row.status, mark: ["OPEN", "EXIT_REQUESTED"].includes(row.status) ? row.state.marked_pnl ?? null : null,
-      markAt: row.state.quote_at ?? null, note: row.state.detail ?? null, at: row.updated_at,
+      markAt: row.state.quote_at ?? null, note: row.state.detail ? `${row.status === "WAITING_FOR_ENTRY" ? "" : "Exit monitoring: "}${row.state.detail}` : null, at: row.updated_at,
     }))
     : [
       ...(optionDeployments ?? []).filter(row => row.status === "WAITING_FOR_ENTRY" && matches(row.strategy_key)).map(row => ({
-        id: row.id, name: row.strategy_key.replaceAll("_", " "), strategy: row.strategy_key, status: row.status, mark: null, markAt: null, note: "Waiting for entry signal", at: row.created_at,
+        id: row.id, name: row.strategy_key.replaceAll("_", " "), strategy: row.strategy_key, status: row.status, mark: null, markAt: null, note: row.detail ?? "Waiting for entry signal", at: row.created_at,
       })),
       ...(options ?? []).filter(row => row.status === "OPEN" && matches(row.strategy_name)).map(row => ({
         id: row.id, name: row.strategy_name, strategy: row.strategy_name, status: "OPEN", mark: row.valuation_warning ? null : row.unrealized_pnl,
@@ -238,7 +249,9 @@ export function TradingDashboard({ token, apiUrl, workspace, onOpenStrategies, o
       <details className="workspace-disclosure"><summary>Performance details</summary><p>{loaded ? `${closedCount} closed trades · Observed win rate ${observedWinRate} · Average realized P&L/trade ${averageTrade}. ` : ""}Entry can wait for a qualifying signal. Open P&amp;L is a quote-based mark, not realized profit.</p></details>
       {!loaded ? <p className="muted">{error ? "Active strategies unavailable." : "Loading paper strategies…"}</p> : active.length === 0 ? <p className="trading-dashboard-empty">No active paper strategies. Add one from Strategies to start monitoring.</p> : <div className="trading-dashboard-list">{active.map(row => <article key={row.id}>
         <div><strong>{row.name}</strong><small>{row.status.replaceAll("_", " ")} · Updated {time(row.at)}</small>{row.note && <small>{row.note}</small>}</div>
-        {workspace === "equities" ? <div className="dashboard-price-pair"><div><span>Daily entry reference</span><strong>{money(row.entry ?? null)}</strong></div><div><span>Current price</span><strong>{money(row.currentPrice ?? null)}</strong></div></div> : null}
+        {workspace === "equities" ? <div className="dashboard-price-pair"><div><span>{row.status !== "WAITING_FOR_ENTRY" ? "Filled entry price" : row.strategy === "test_pulse" ? "Quote-average reference" : "Daily close reference"}</span><strong>{money(row.entry ?? null)}</strong></div><div><span>Current price</span><strong>{money(row.currentPrice ?? null)}</strong></div></div> : null}
+        {workspace === "equities" && row.status === "WAITING_FOR_ENTRY" ? <EquityEntryReadiness strategy={row.strategy} state={equity?.find(item => item.id === row.id)?.state ?? {}} rule={entryCatalog.find(item => item.implementation_key === row.strategy)?.entry} /> : null}
+        {workspace === "derivatives" && row.status === "WAITING_FOR_ENTRY" ? <details className="entry-readiness"><summary>Entry criteria &amp; current state</summary><p>Every saved condition must pass on a later open-market snapshot:</p><ul>{optionDeployments?.find(item => item.id === row.id)?.entry_conditions?.map((condition, index) => <li key={index}>{condition.metric.replaceAll("_", " ")} {({GT: ">", GTE: "≥", LT: "<", LTE: "≤"} as Record<string, string>)[condition.operator] ?? condition.operator} {condition.threshold}</li>)}</ul><p>Selected legs, quote quality, expiry window, available cash and risk limits must also pass. The current worker reason is shown above; individual gate results are not confirmed here.</p></details> : null}
         <div className="trading-dashboard-mark"><span>Open P&amp;L</span><strong>{money(row.mark)}</strong>{row.markAt && <small>Mark quote {time(row.markAt)}</small>}{row.currentAt && <small>Price snapshot {time(row.currentAt)}</small>}</div>
       </article>)}</div>}
     </div>

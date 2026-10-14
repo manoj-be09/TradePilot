@@ -930,3 +930,11 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px
 
 .position-card-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 680px) { .position-card-metrics { grid-template-columns: 1fr; } }
+
+.entry-readiness { font-size: 12px; line-height: 1.5; color: var(--ink-muted); }
+.entry-readiness > p { margin: 4px 0; }
+.entry-readiness b { color: var(--ink); }
+.entry-readiness details { margin: 8px 0; }
+.entry-readiness summary { cursor: pointer; color: var(--green); font-weight: 600; }
+.entry-readiness details p { margin: 10px 0; }
+.trading-dashboard-list { align-items: start; } .trading-dashboard-list article { justify-content: flex-start; }

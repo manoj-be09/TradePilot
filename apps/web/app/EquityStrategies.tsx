@@ -6,6 +6,7 @@ import { ValidationAttemptHistory } from "./ValidationAttemptHistory";
 import { StudySuccessorControl } from "./StudySuccessorControl";
 import { StudyProvenance } from "./StudyProvenance";
 import { EquityWalletCheck, QuoteLog, type QuoteObservation } from "./EquityPaperLogs";
+import { EquityEntryReadiness } from "./EquityEntryReadiness";
 
 type Instrument = { id: string; instrument_key: string; trading_symbol: string; exchange: string; instrument_type: string; provider: string };
 type FoundInstrument = { instrument_key: string; trading_symbol: string; name: string | null; exchange: string; segment: string; instrument_type: string };
@@ -417,7 +418,8 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
       <div className="equity-lab-heading"><h3>Your active strategies</h3><small>Paper mode · stays visible after reload</small></div>
       <div className="equity-pinned-grid">{activeDeployments.map(row => <article key={row.id}>
         <div className="equity-deployment-heading"><div><strong>{row.symbol}</strong><small>{strategyName(row.strategy)}</small></div><span>{row.status.replaceAll("_", " ").toLowerCase()}</span></div>
-        <p className="equity-deployment-status">{row.state.detail}</p>
+        <p className="equity-deployment-status">{row.status !== "WAITING_FOR_ENTRY" ? "Exit monitoring: " : ""}{row.state.detail}</p>
+        {row.status === "WAITING_FOR_ENTRY" ? <EquityEntryReadiness strategy={row.strategy} state={row.state} rule={catalog.find(entry => entry.implementation_key === row.strategy)?.entry} /> : null}
         <div className="equity-entry-comparison" aria-label="Entry plan compared with current market price">
           <div><span>{row.state.position ? "Entry price" : row.strategy === "test_pulse" ? "Quote-average trigger" : "Daily close reference"}</span><strong>{row.state.position ? rupees(row.state.position.entry_price) : row.state.entry_threshold_price ? `Above ${rupees(row.state.entry_threshold_price)}` : entryZone(row) ? `${rupees(entryZone(row)!.low)} – ${rupees(entryZone(row)!.high)}` : "Waiting for signal"}</strong><small>{row.state.position ? "Filled entry" : dailySetupNote(row)}</small></div>
           <div><span>Current price</span><strong>{row.state.current_price ? rupees(row.state.current_price) : "Unavailable"}</strong><small>{row.state.current_price_at ? `${quoteTimeLabel(row.state.current_price_basis)} · ${date(row.state.current_price_at)}` : "Waiting for quote"}</small></div>

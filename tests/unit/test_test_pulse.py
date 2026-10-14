@@ -14,4 +14,6 @@ def test_reference_requires_three_distinct_recent_gate_passed_prior_observations
     assert reference(rows[:2] + [current], now) is None
     assert reference([rows[0], rows[0], rows[1], current], now) is None
     assert reference([{**row, "entry_gate_ok": False} for row in rows] + [current], now) is None
-    assert reference(rows + [current], now + timedelta(seconds=61)) is None
+    assert reference(rows + [current], now + timedelta(seconds=61)) == Decimal("102")
+    assert reference(rows + [current], now + timedelta(seconds=61), max_age_seconds=60) is None
+    assert reference(rows + [current], now + timedelta(seconds=121)) is None

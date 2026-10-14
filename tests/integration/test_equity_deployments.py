@@ -911,7 +911,7 @@ def test_tampered_validation_dataset_is_rejected(client, setup, monkeypatch):
     assert "dataset" in rejected.json()["detail"]
 
 
-@pytest.mark.parametrize("exit_mode", ["bearish", "timer"])
+@pytest.mark.parametrize("exit_mode", ["bearish", "timer", "legacy"])
 def test_diagnostic_pulse_enters_without_new_daily_candle_and_closes(client, setup, exit_mode):
     headers, body, provider, factory = setup
     request = {**body, "strategy": "test_pulse", "budget": "1000", "risk_budget": "20"}
@@ -919,10 +919,15 @@ def test_diagnostic_pulse_enters_without_new_daily_candle_and_closes(client, set
     request["testing_only"] = True
     applied = client.post("/equity/deployments", json=request, headers=headers)
     assert applied.status_code == 201, applied.text
-    assert applied.json()["version"] == "equity-test-pulse-v1"
+    assert applied.json()["version"] == "equity-test-pulse-v2"
+    if exit_mode == "legacy":
+        with factory() as session:
+            row = session.get(EquityDeployment, UUID(applied.json()["id"]))
+            row.version = "equity-test-pulse-v1"
+            session.commit()
     for _ in range(3):
         cycle(provider, factory)
-        Clock.instant += timedelta(seconds=15)
+        Clock.instant += timedelta(seconds=15 if exit_mode == "legacy" else 25)
     assert account(client, headers)["deployments"][0]["status"] == "WAITING_FOR_ENTRY"
     provider.price = Decimal("161")
     cycle(provider, factory)

@@ -5,17 +5,21 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 KEY = "test_pulse"
-VERSION = "equity-test-pulse-v1"
+VERSION = "equity-test-pulse-v2"
+MAX_SAMPLE_AGE_SECONDS = 120
 
 
-def reference(samples: list[dict[str, Any]], now: datetime) -> Decimal | None:
+def reference(
+    samples: list[dict[str, Any]], now: datetime,
+    *, max_age_seconds: int = MAX_SAMPLE_AGE_SECONDS,
+) -> Decimal | None:
     prices: dict[str, Decimal] = {}
     for sample in samples[:-1]:
         try:
             checked = datetime.fromisoformat(sample["checked_at"])
             price = Decimal(sample["last"])
             if (sample.get("entry_gate_ok") and checked.tzinfo is not None
-                    and 0 <= (now - checked).total_seconds() <= 60
+                    and 0 <= (now - checked).total_seconds() <= max_age_seconds
                     and price.is_finite() and price > 0):
                 prices[sample["quote_at"]] = price
         except (KeyError, TypeError, ValueError, InvalidOperation):

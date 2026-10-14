@@ -281,6 +281,7 @@ async def process_equities(
             now = datetime.now(timezone.utc)
             state = dict(row.state)
             diagnostic = row.strategy == TEST_KEY and state.get("testing_only") is True
+            sample_age = 60 if row.version == "equity-test-pulse-v1" else 120
             state["latest_quote_observation"] = None
             row.updated_at = now
             if quote is not None:
@@ -320,7 +321,11 @@ async def process_equities(
                 state["latest_daily_signal_after_apply"] = (
                     day > datetime.fromisoformat(state["signal_after"]).date()
                 )
-            if row.version != (TEST_VERSION if diagnostic else VERSION):
+            supported_version = (
+                row.version in {TEST_VERSION, "equity-test-pulse-v1"}
+                if diagnostic else row.version == VERSION
+            )
+            if not supported_version:
                 issue = "Unsupported strategy version; manual review required"
             timeout = timedelta(minutes=5) if diagnostic else timedelta(days=7)
             if row.status == "WAITING_FOR_ENTRY" and now >= utc(row.created_at) + timeout:
@@ -372,7 +377,10 @@ async def process_equities(
                         day = bars[-1].timestamp.astimezone(ZONE).date()
                         baseline = datetime.fromisoformat(state["signal_after"]).date()
                         pulse = (
-                            test_reference(state.get("quote_observations", []), now)
+                            test_reference(
+                                state.get("quote_observations", []), now,
+                                max_age_seconds=sample_age,
+                            )
                             if diagnostic else None
                         )
                         if diagnostic and pulse is not None:
@@ -487,7 +495,10 @@ async def process_equities(
                         else exit_reason(position, quote.bid)
                     )
                     if diagnostic and not reason:
-                        pulse = test_reference(state.get("quote_observations", []), now)
+                        pulse = test_reference(
+                            state.get("quote_observations", []), now,
+                            max_age_seconds=sample_age,
+                        )
                         if pulse is not None and quote.last_price < pulse:
                             reason = "TEST_BEARISH_EXIT"
                         elif now >= (

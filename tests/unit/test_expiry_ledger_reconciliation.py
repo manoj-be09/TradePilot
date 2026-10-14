@@ -5,6 +5,8 @@ from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
+
 from packages.paper_trading.ledger_reconciliation import reconcile_paper_ledger
 
 
@@ -61,3 +63,17 @@ def test_missing_or_invalid_settlement_reference_is_a_mismatch():
     orders[1].fill_snapshot = {}
     report = reconcile_paper_ledger(account, [trade], orders)
     assert any("no recorded reference" in issue for issue in report.issues)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("settlement_date", "2026-09-30"),
+    ("source_reference", "   "),
+    ("final_index_value", "NaN"),
+])
+def test_balanced_cash_does_not_validate_corrupted_settlement_evidence(field, value):
+    account, trade, orders = _record()
+    orders[1].fill_snapshot["settlement_reference"][field] = value
+    report = reconcile_paper_ledger(account, [trade], orders)
+    assert report.cash_difference == Decimal("0.00")
+    assert report.status == "MISMATCH"
+    assert any("cannot be recomputed" in issue for issue in report.issues)

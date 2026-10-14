@@ -135,6 +135,30 @@ def test_stale_exchange_book_cannot_fill():
         require_quote(chain, "call-key", "BUY", 1)
 
 
+@pytest.mark.parametrize("allow_unverified", [False, True])
+@pytest.mark.parametrize("field", ["chain", "quote", "book"])
+@pytest.mark.parametrize("offset", [-61, 6])
+def test_fresh_receipt_cannot_hide_stale_or_future_execution_time(
+    allow_unverified, field, offset,
+):
+    now = datetime.now(timezone.utc)
+    call = _contract("CE", "call-key")
+    chain = _chain([call], timestamp_basis="exchange")
+    chain.as_of = call.quote.timestamp = call.quote.book_as_of = now
+    invalid_time = now + timedelta(seconds=offset)
+    if field == "chain":
+        chain.as_of = invalid_time
+    elif field == "quote":
+        call.quote.timestamp = invalid_time
+    else:
+        call.quote.book_as_of = invalid_time
+    with pytest.raises(PaperQuoteError, match="stale or in the future"):
+        require_quote(
+            chain, "call-key", "BUY", 1, now=now,
+            allow_unverified=allow_unverified,
+        )
+
+
 def test_quality_detects_crossed_market_duplicate_and_missing_side():
     call = _contract("CE", "call-key", bid="12.00", ask="10.00")
     duplicate_call = _contract("CE", "call-key", bid="9.00", ask="11.00")

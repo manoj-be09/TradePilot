@@ -1,10 +1,12 @@
 import asyncio
+import json
 from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
 
 from packages.market_data.contracts import Quote
+from packages.market_data.feed_journal import FeedJournal
 from packages.market_data.shared_feed import SharedQuoteFeed
 
 
@@ -56,12 +58,14 @@ def quote(price: str = "100") -> Quote:
     )
 
 
-def test_one_connection_serves_multiple_readers_without_upgrading_provenance():
+def test_one_connection_serves_multiple_readers_without_upgrading_provenance(tmp_path):
     async def scenario() -> None:
         provider = ControlledProvider()
+        journal = FeedJournal(tmp_path / "feed.jsonl")
         feed = SharedQuoteFeed(
             provider, ["NSE_EQ|RELIANCE", "NSE_EQ|RELIANCE"],
             reconnect_delay_seconds=0.02,
+            journal=journal,
         )
         try:
             feed.start()
@@ -79,8 +83,13 @@ def test_one_connection_serves_multiple_readers_without_upgrading_provenance():
             assert feed.status().cached_count == 1
         finally:
             await feed.stop()
+            journal.close()
         assert feed.get("NSE_EQ|RELIANCE") is None
         assert not feed.status().running
+        records = [json.loads(line) for line in (tmp_path / "feed.jsonl").read_text().splitlines()]
+        assert [row["event"] for row in records] == [
+            "connected", "quote", "disconnected", "stopped",
+        ]
 
     asyncio.run(scenario())
 

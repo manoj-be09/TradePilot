@@ -12,6 +12,7 @@ from math import isfinite
 from time import monotonic
 
 from packages.market_data.contracts import MarketDataProvider, Quote
+from packages.market_data.feed_journal import FeedJournal
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,7 @@ class SharedQuoteFeed:
         *,
         max_age_seconds: float = 10.0,
         reconnect_delay_seconds: float = 2.0,
+        journal: FeedJournal | None = None,
     ) -> None:
         keys = list(dict.fromkeys(instrument_tokens))
         if not keys or len(keys) > 100 or any(not key.strip() for key in keys):
@@ -48,6 +50,7 @@ class SharedQuoteFeed:
         )):
             raise ValueError("Feed freshness and reconnect delay must be finite and positive")
         self._provider = provider
+        self._journal = journal
         self._keys = keys
         self._max_age = max_age_seconds
         self._reconnect_delay = reconnect_delay_seconds
@@ -72,6 +75,8 @@ class SharedQuoteFeed:
                 await task
         self._connected = False
         self._quotes.clear()
+        if self._journal is not None:
+            self._journal.record("stopped")
 
     def get(self, instrument_token: str) -> Quote | None:
         """Return a fresh copy, or None after staleness or disconnection."""
@@ -81,6 +86,8 @@ class SharedQuoteFeed:
         quote, received_at = entry
         if monotonic() - received_at > self._max_age:
             self._quotes.pop(instrument_token, None)
+            if self._journal is not None:
+                self._journal.record("stale", quote)
             return None
         return quote.model_copy(deep=True)
 
@@ -103,6 +110,13 @@ class SharedQuoteFeed:
                 async for quote in self._provider.subscribe(self._keys):
                     if quote.instrument_token not in self._keys:
                         continue
+                    if self._journal is not None:
+                        if not self._connected:
+                            self._journal.record("connected")
+                        previous = self._quotes.get(quote.instrument_token)
+                        if previous is not None and monotonic() - previous[1] > self._max_age:
+                            self._journal.record("stale", previous[0])
+                        self._journal.record("quote", quote)
                     self._connected = True
                     self._quotes[quote.instrument_token] = (
                         quote.model_copy(deep=True), monotonic()
@@ -117,6 +131,10 @@ class SharedQuoteFeed:
             finally:
                 self._connected = False
                 self._quotes.clear()
+                if self._journal is not None:
+                    self._journal.record("disconnected")
             attempt += 1
             self._reconnects = attempt
+            if self._journal is not None:
+                self._journal.record("reconnect")
             await asyncio.sleep(self._reconnect_delay)

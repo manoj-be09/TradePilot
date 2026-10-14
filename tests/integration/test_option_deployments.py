@@ -104,7 +104,7 @@ def test_armed_option_waits_when_provider_changes_before_entry(client, monkeypat
     assert client.get("/paper/deployments", headers=headers).json()[0]["status"] == "FILLED"
 
 
-def test_arm_waits_for_new_snapshot_then_worker_opens_once(client, monkeypatch):
+def test_arm_waits_for_new_snapshot_then_worker_opens_once(client, monkeypatch, tmp_path):
     provider, headers, payload, factory = armed_setup(client, monkeypatch)
     original_chain = provider.get_option_chain
     old_as_of = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -118,6 +118,8 @@ def test_arm_waits_for_new_snapshot_then_worker_opens_once(client, monkeypatch):
     armed = client.post("/paper/deployments", headers=headers, json=payload)
     assert armed.status_code == 201, armed.text
     deployment = armed.json()
+    walkthrough = [{"step": "Armed: waiting for a new snapshot", "status": "WAITING_FOR_ENTRY",
+                    "account": client.get("/paper/account", headers=headers).json()}]
     assert deployment["status"] == "WAITING_FOR_ENTRY"
     assert deployment["trade_id"] is None
     assert client.get("/paper/trades", headers=headers).json()["trades"] == []
@@ -134,6 +136,9 @@ def test_arm_waits_for_new_snapshot_then_worker_opens_once(client, monkeypatch):
     assert asyncio.run(run_cycle(factory, provider, get_settings())) == "HEALTHY"
     filled = client.get("/paper/deployments", headers=headers).json()[0]
     assert filled["status"] == "FILLED"
+    walkthrough.append({"step": "Entry: new snapshot passes rules", "status": "OPEN",
+                        "trades": client.get("/paper/trades", headers=headers).json(),
+                        "account": client.get("/paper/account", headers=headers).json()})
     with factory() as session:
         trade = session.get(PaperTrade, UUID(filled["trade_id"]))
         assert trade.status == "OPEN"
@@ -176,6 +181,15 @@ def test_arm_waits_for_new_snapshot_then_worker_opens_once(client, monkeypatch):
     assert entry_report.headers["cache-control"] == "no-store"
     assert entry_report.json()["status"] == "MATCHED", entry_report.json()
     assert entry_report.json()["evaluated_count"] == 2
+    walkthrough.append({"step": "Exit: simulated price decline triggers stop loss",
+                        "status": "CLOSED",
+                        "trades": client.get("/paper/trades", headers=headers).json(),
+                        "account": client.get("/paper/account", headers=headers).json()})
+    (tmp_path / "option-cycle.json").write_text(json.dumps({
+        "simulation": True, "scope": "Disposable runtime; synthetic market observations",
+        "steps": walkthrough, "entry_reconciliation": entry_report.json(),
+        "orders": client.get("/paper/orders", headers=headers).json(),
+    }, indent=2), encoding="utf-8")
     assert client.get(
         f"/paper/trades/{filled['trade_id']}/entry-reconciliation"
     ).status_code == 401

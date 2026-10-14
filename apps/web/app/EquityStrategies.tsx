@@ -391,6 +391,7 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
   const activeDeployments = account?.deployments.filter(row => active.includes(row.status)) ?? [];
   const strategyName = (key: string) => key === "test_pulse" ? "TEST ONLY · Short trend pulse" : catalog.find(entry => entry.implementation_key === key)?.name ?? research?.strategies.find(row => row.key === key)?.name ?? key;
   const entryZone = (row: Deployment) => {
+    if (row.strategy === "test_pulse") return null;
     const reference = Number(row.state.entry_reference_price);
     if (!Number.isFinite(reference) || reference <= 0) return null;
     return { low: reference * 0.98, high: reference * 1.02 };

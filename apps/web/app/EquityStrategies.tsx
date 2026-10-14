@@ -411,24 +411,25 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
         basis === "api_response_received" ? "API receipt" : "Time source unverified";
 
   return <section className="equity-lab" aria-label="Equity paper strategies">
-    <div className="equity-lab-heading"><div><div className="panel-kicker">EQUITY STRATEGIES</div><h3>Choose a stock. Apply a strategy.</h3></div><span className="paper-mode-badge">PAPER ONLY · DAILY</span></div>
-    <p>Apply starts monitoring. A trade opens only when a new daily entry signal passes the checks.</p>
+    <div className="equity-lab-heading"><div><div className="panel-kicker">EQUITY STRATEGIES</div><h3>Your equity strategies</h3></div><span className="paper-mode-badge">PAPER ONLY · DAILY</span></div>
+    <p className="muted">Monitor your positions or add a stock strategy.</p>
     {activeDeployments.length > 0 && <section className="equity-pinned" aria-label="Your active strategies" ref={appliedPanel} tabIndex={-1}>
       <div className="equity-lab-heading"><h3>Your active strategies</h3><small>Paper mode · stays visible after reload</small></div>
       <div className="equity-pinned-grid">{activeDeployments.map(row => <article key={row.id}>
-        <div className="equity-deployment-heading"><strong>{row.symbol} · {strategyName(row.strategy)}</strong><span>{row.status.replaceAll("_", " ").toLowerCase()}</span></div>
+        <div className="equity-deployment-heading"><div><strong>{row.symbol}</strong><small>{strategyName(row.strategy)}</small></div><span>{row.status.replaceAll("_", " ").toLowerCase()}</span></div>
         <p className="equity-deployment-status">{row.state.detail}</p>
         <div className="equity-entry-comparison" aria-label="Entry plan compared with current market price">
           <div><span>{row.state.position ? "Entry price" : row.strategy === "test_pulse" ? "Quote-average trigger" : "Daily close reference"}</span><strong>{row.state.position ? rupees(row.state.position.entry_price) : row.state.entry_threshold_price ? `Above ${rupees(row.state.entry_threshold_price)}` : entryZone(row) ? `${rupees(entryZone(row)!.low)} – ${rupees(entryZone(row)!.high)}` : "Waiting for signal"}</strong><small>{row.state.position ? "Filled entry" : dailySetupNote(row)}</small></div>
           <div><span>Current price</span><strong>{row.state.current_price ? rupees(row.state.current_price) : "Unavailable"}</strong><small>{row.state.current_price_at ? `${quoteTimeLabel(row.state.current_price_basis)} · ${date(row.state.current_price_at)}` : "Waiting for quote"}</small></div>
         </div>
         {row.state.position ? <div className="equity-position-strip"><span>Stop <b>{rupees(row.state.position.stop)}</b></span><span>Target <b>{rupees(row.state.position.target)}</b></span><span>Marked P&amp;L <b>{rupees(row.state.marked_pnl)}</b></span></div> : null}
-        <details className="equity-card-details"><summary>＋ Details</summary><DeploymentRules row={row} entry={catalog.find(entry => entry.implementation_key === row.strategy)} /><small>Allocated {rupees(row.budget)} · planned risk {rupees(row.risk_budget)} · last checked {date(row.updated_at)}</small>{row.status === "WAITING_FOR_ENTRY" && <small>Applied {date(row.created_at)} · deadline {date(new Date(new Date(row.created_at).getTime() + (row.strategy === "test_pulse" ? 5 * 60_000 : 7 * 86_400_000)).toISOString())}</small>}{row.state.quote_mode === "INDICATIVE" && <small className="equity-evidence-label">Indicative fill · book time unverified · excluded from verified feedback</small>}</details>
+        <details className="equity-card-details"><summary>＋ Details</summary><DeploymentRules row={row} entry={catalog.find(entry => entry.implementation_key === row.strategy)} /><small>Allocated {rupees(row.budget)} · planned risk {rupees(row.risk_budget)} · last checked {date(row.updated_at)}</small>{row.status === "WAITING_FOR_ENTRY" && <small>Applied {date(row.created_at)} · deadline {date(new Date(new Date(row.created_at).getTime() + (row.strategy === "test_pulse" ? 5 * 60_000 : 7 * 86_400_000)).toISOString())}</small>}{row.state.quote_mode === "INDICATIVE" && <small className="equity-evidence-label">Indicative fill · book time unverified · excluded from verified feedback</small>}
         <QuoteLog samples={row.state.quote_observations} />
-      <DecisionHistory deploymentId={row.id} apiUrl={apiUrl} token={token} />
+      <DecisionHistory deploymentId={row.id} apiUrl={apiUrl} token={token} /></details>
         <button className="inline-button" type="button" disabled={!!applying || row.status === "EXIT_REQUESTED"} onClick={() => void stop(row.id)}>{row.status === "WAITING_FOR_ENTRY" ? "Cancel deployment" : row.status === "EXIT_REQUESTED" ? "Exit requested" : "Request exit"}</button>
       </article>)}</div>
     </section>}
+    <details className="strategy-composer equity-add-strategy"><summary>＋ Add a stock strategy</summary>
     <div className="equity-controls">
       <label>Stock<select value={selected} disabled={!!applying} onChange={event => setSelected(event.target.value)}><option value="">{items.length ? "Choose a saved stock" : "No stocks saved yet"}</option>{items.map(item => <option value={item.id} key={item.id}>{item.trading_symbol} · {item.provider}</option>)}</select></label>
       <label>Allocation (₹)<input type="number" min="100" max="25000" step="100" disabled={!!applying} value={budget} onChange={event => setBudget(event.target.value)} /></label>
@@ -554,8 +555,9 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
       <details className="equity-method"><summary>How ranking, estimates and stops work</summary><p>{research.ranking}</p><p>These are fixed v1 rules, not optimized or validated predictions. The displayed replay win estimate is sample-size smoothed and cannot be used as a calibrated chance that the next trade wins. No claimed maximum profit. The planned risk is not a maximum loss: gaps, stale prices and downtime can exceed it.</p><p>Daily replay uses next-bar entries, stop-first handling for ambiguous bars, and next-bar activation of trailing adjustments. Historical OHLC cannot reproduce the live bid/ask path. Each side includes illustrative 0.10% fees and 0.05% slippage; these are not your broker’s exact charges. Open replay trades are excluded from closed-trade statistics.</p><p>Ranking uses one year of provider history without corporate-action normalization or out-of-sample calibration. The separate on-demand chronological check can expose later-window results, but never changes rank or parameters. Live quote checks require a verified exchange trade within 60 seconds and a spread no greater than 0.5%. Entries more than 2% from the signal close are blocked.</p></details>
       {shadow?.status === "ready" && <details className="equity-method"><summary>About the market comparison</summary><p>{shadow.method}</p><p>It uses up to 900 calendar days of stock and NIFTY history. A trade matches when NIFTY direction and relative volatility at the signal close equal the latest completed NIFTY session. Missing benchmark sessions are excluded. This is descriptive, subject to provider and corporate-action data quality, and has no out-of-sample validation.</p></details>}
     </>}
+    </details>
     <EquityWalletCheck key={token} apiUrl={apiUrl} token={token} />
-    <details className="equity-history" open={activeDeployments.length > 0}><summary>Logs &amp; order history ({account?.deployments.length ?? 0})</summary>
+    <details className="equity-history"><summary>Logs &amp; order history ({account?.deployments.length ?? 0})</summary>
     <p className="muted">Refreshes every 5 seconds · latest 200</p>
     <p className="muted">Waiting deployments expire after seven days. Cancel releases unused allocation. For an open position, Request exit waits for a fresh quote in an open NSE session. Positions can remain open overnight.</p>
     {!account?.deployments.length && <p className="muted">No equity deployments yet.</p>}

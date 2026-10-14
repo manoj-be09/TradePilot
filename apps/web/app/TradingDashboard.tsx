@@ -8,7 +8,7 @@ type EquityDeployment = {
   strategy: string;
   status: string;
   updated_at: string;
-  state: { realized_pnl?: string | null; marked_pnl?: string | null; quote_at?: string | null; detail?: string };
+  state: { entry_threshold_price?: string | null; entry_reference_price?: string | null; current_price?: string | null; current_price_at?: string | null; realized_pnl?: string | null; marked_pnl?: string | null; quote_at?: string | null; detail?: string };
 };
 type OptionTrade = {
   id: string;
@@ -25,7 +25,7 @@ type EquitySummary = { strategy: string; gross_profit: string; gross_loss: strin
 type DailyActivity = { date: string; strategy: string; closed_trades: number; realized_net: string };
 type EquityDashboardData = { scope: "all_time"; totals: EquitySummary; strategies: EquitySummary[]; daily: DailyActivity[] };
 type EquityLedgerReconciliation = { status: "MATCHED" | "MISMATCH"; recorded_cash: string; expected_cash: string; cash_difference: string; deployment_count: number; reserved_count: number; closed_count: number; issue_count: number; issues: string[]; audit_coverage: "COMPLETE" | "INCOMPLETE"; audit_issue_count: number; audit_issues: string[]; cash_journal: { status: "MATCHED" | "LEGACY_CHECKPOINT" | "NOT_STARTED" | "MISMATCH"; entry_count: number; checkpoint_cash: string | null; journal_cash: string | null; issue_count: number; issues: string[] } };
-type DashboardRow = { id: string; name: string; strategy: string; status: string; mark: string | null; markAt: string | null; note: string | null; at: string };
+type DashboardRow = { entry?: string | null; currentPrice?: string | null; currentAt?: string | null; id: string; name: string; strategy: string; status: string; mark: string | null; markAt: string | null; note: string | null; at: string };
 type WatchItem = { id: string; provider: string; instrument_key: string; trading_symbol: string; exchange: string; instrument_type: string };
 type WatchQuote = { instrument_token: string; last_price: string; timestamp: string; timestamp_basis: string; last_trade_time: string | null };
 
@@ -193,6 +193,7 @@ export function TradingDashboard({ token, apiUrl, workspace, onOpenStrategies, o
   const averageTrade = closedCount ? money((profit + loss) / closedCount) : "Unavailable";
   const active: DashboardRow[] = workspace === "equities"
     ? (equity ?? []).filter(row => ["WAITING_FOR_ENTRY", "OPEN", "EXIT_REQUESTED"].includes(row.status) && matches(row.strategy)).map(row => ({
+      entry: row.state.entry_threshold_price ?? row.state.entry_reference_price, currentPrice: row.state.current_price, currentAt: row.state.current_price_at,
       id: row.id, name: `${row.symbol} · ${row.strategy}`, strategy: row.strategy, status: row.status, mark: ["OPEN", "EXIT_REQUESTED"].includes(row.status) ? row.state.marked_pnl ?? null : null,
       markAt: row.state.quote_at ?? null, note: row.state.detail ?? null, at: row.updated_at,
     }))
@@ -217,7 +218,7 @@ export function TradingDashboard({ token, apiUrl, workspace, onOpenStrategies, o
   const activityHigh = Math.max(1, ...activity.map(row => activityMeasure === "trades" ? row.count : Math.abs(row.pnl)));
 
   return <section className="trading-dashboard" aria-label={`${workspace === "equities" ? "Equity and ETF" : "Futures and options"} paper dashboard`}>
-    <div className="trading-dashboard-heading"><div><span className="panel-kicker">PAPER TRADING OVERVIEW</span><h2>{workspace === "equities" ? "Equity & ETF dashboard" : "Future & options dashboard"}</h2><p>Track saved strategies, realized results and market snapshots in one place.</p></div><span className="paper-mode-badge">LIVE ORDERS DISABLED</span></div>
+    <div className="trading-dashboard-heading"><div><span className="panel-kicker">PAPER TRADING OVERVIEW</span><h2>{workspace === "equities" ? "Equity & ETF dashboard" : "Future & options dashboard"}</h2><p>Your paper account at a glance.</p></div><span className="paper-mode-badge">LIVE ORDERS DISABLED</span></div>
     <label className="trading-dashboard-filter">Show results for
       <select aria-label="Filter dashboard by strategy" onChange={event => setSelectedStrategy(event.target.value)} value={chosen}>
         <option value="">All strategies · aggregate</option>
@@ -233,10 +234,12 @@ export function TradingDashboard({ token, apiUrl, workspace, onOpenStrategies, o
       <article className="trading-dashboard-metric"><span>Active strategies</span><strong>{loaded ? activeCount : error ? "Unavailable" : "Loading…"}</strong><small>Waiting or open paper strategies</small></article>
     </div>
     <div className="trading-dashboard-activity">
-      <div className="trading-dashboard-activity-heading"><div><h3>Active strategies</h3><p>{loaded ? `${closedCount} closed trades · Observed win rate ${observedWinRate} · Average realized P&L/trade ${averageTrade}. ` : ""}Entry can wait for a qualifying signal. Open P&amp;L is a quote-based mark, not realized profit.</p></div><button className="refresh-button" onClick={onOpenStrategies} type="button">View strategies</button></div>
-      {!loaded ? <p className="muted">{error ? "Active strategies unavailable." : "Loading paper strategies…"}</p> : active.length === 0 ? <p className="trading-dashboard-empty">No active paper strategies in this view. Apply one from Algo Trading when its entry conditions suit the market.</p> : <div className="trading-dashboard-list">{active.map(row => <article key={row.id}>
-        <div><strong>{row.name}</strong><small>{row.status.replaceAll("_", " ")} · Since {time(row.at)}</small>{row.note && <small>{row.note}</small>}</div>
-        <div className="trading-dashboard-mark"><span>Open P&amp;L</span><strong>{money(row.mark)}</strong>{row.markAt && <small>Quote {time(row.markAt)}</small>}</div>
+      <div className="trading-dashboard-activity-heading"><div><h3>Active strategies</h3><span className="muted">{activeCount} monitoring</span></div><button className="refresh-button" onClick={onOpenStrategies} type="button">Manage strategies</button></div>
+      <details className="workspace-disclosure"><summary>Performance details</summary><p>{loaded ? `${closedCount} closed trades · Observed win rate ${observedWinRate} · Average realized P&L/trade ${averageTrade}. ` : ""}Entry can wait for a qualifying signal. Open P&amp;L is a quote-based mark, not realized profit.</p></details>
+      {!loaded ? <p className="muted">{error ? "Active strategies unavailable." : "Loading paper strategies…"}</p> : active.length === 0 ? <p className="trading-dashboard-empty">No active paper strategies. Add one from Strategies to start monitoring.</p> : <div className="trading-dashboard-list">{active.map(row => <article key={row.id}>
+        <div><strong>{row.name}</strong><small>{row.status.replaceAll("_", " ")} · Updated {time(row.at)}</small>{row.note && <small>{row.note}</small>}</div>
+        {workspace === "equities" ? <div className="dashboard-price-pair"><div><span>Daily entry reference</span><strong>{money(row.entry ?? null)}</strong></div><div><span>Current price</span><strong>{money(row.currentPrice ?? null)}</strong></div></div> : null}
+        <div className="trading-dashboard-mark"><span>Open P&amp;L</span><strong>{money(row.mark)}</strong>{row.markAt && <small>Mark quote {time(row.markAt)}</small>}{row.currentAt && <small>Price snapshot {time(row.currentAt)}</small>}</div>
       </article>)}</div>}
     </div>
     </div><section className="trading-dashboard-chart" aria-label="Recent paper trade activity">

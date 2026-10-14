@@ -2162,7 +2162,7 @@ export default function Home() {
             </label>
             <button aria-current={activeSection === "dashboard" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "dashboard" ? "active" : ""}`} onClick={() => { setActiveSection("dashboard"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">⌂</span> Dashboard</button>
             <button aria-current={activeSection === "charts" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "charts" ? "active" : ""}`} onClick={() => { setActiveSection("charts"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">⌁</span> Charts</button>
-            <button aria-current={activeSection === "algo" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "algo" ? "active" : ""}`} onClick={() => { setActiveSection("algo"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">↗</span> Algo Trading</button>
+            <button aria-current={activeSection === "algo" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "algo" ? "active" : ""}`} onClick={() => { setActiveSection("algo"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">↗</span> Strategies</button>
             <button aria-current={activeSection === "broker" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "broker" ? "active" : ""}`} onClick={() => { setActiveSection("broker"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">▣</span> Broker Panel</button>
             <button aria-current={activeSection === "backtest" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "backtest" ? "active" : ""}`} onClick={() => { setActiveSection("backtest"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">◷</span> Backtest</button>
             <button aria-current={activeSection === "bridge" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "bridge" ? "active" : ""}`} onClick={() => { setActiveSection("bridge"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">◇</span> Bridge Tool</button>
@@ -2355,7 +2355,7 @@ export default function Home() {
             <div className="paper-heading">
               <div>
                 <div className="panel-kicker">PAPER TRADING</div>
-                <h2>Strategy workspace</h2>
+                <h2>Your strategies</h2>
                 <p className="muted">Plan. Monitor. Review. Paper orders only.</p>
               </div>
               <div className="paper-actions">
@@ -2412,7 +2412,7 @@ export default function Home() {
               </div> : null}
             </details>
 
-            <div className="strategy-builder">
+            <details className="strategy-builder strategy-composer"><summary>＋ Add a paper strategy</summary>
               <div className={`strategy-controls ${isCustomStrategy ? "custom-strategy-controls" : ""}`}>
                 <label>
                   Strategy
@@ -2681,7 +2681,7 @@ export default function Home() {
                 {paperBusy ? "Processing paper strategy…" : isCustomStrategy ? "Open custom paper trade" : matchingWaitingPaperDeployment ? "Strategy waiting for entry" : deploymentPreparedKey === selectedStrategy ? "Arm automatic paper entry" : "Apply a strategy above"}
               </button>
               <p className="paper-footnote">Arming a template does not reserve funds or enter now. At entry, risk caps are rechecked: up to 2% of starting capital per position and 10% across open positions. Simulated fills do not model queue priority, partial fills, charges, or slippage.</p>
-            </div>
+            </details>
 
             {paperDeployments.length > 0 && <details className="equity-history" open={paperDeployments.some(item => item.status === "WAITING_FOR_ENTRY")}><summary>Armed F&amp;O strategies ({paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").length} waiting)</summary><div className="equity-deployments">{paperDeployments.slice(0, 10).map(item => <article key={item.id}><div className="equity-deployment-heading"><strong>{paperStrategies.find(strategy => strategy.key === item.strategy_key)?.name || item.strategy_key} · {item.expiry}</strong><span>{item.status.replaceAll("_", " ")}</span></div><p>{item.detail}</p><small>Reference strike {formatPrice(item.reference_strike)} · {item.lots} lot(s) · Armed {new Date(item.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}{item.updated_at !== item.created_at ? ` · Last update ${new Date(item.updated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}</small>
               <details><summary>Saved entry &amp; exit rules</summary><div className="equity-deployment-rules">
@@ -2690,6 +2690,21 @@ export default function Home() {
               </div></details>
               <OptionDeploymentDecisions deploymentId={item.id} apiUrl={API_URL} token={token} />{item.status === "WAITING_FOR_ENTRY" && <button className="inline-button" disabled={paperBusy} onClick={() => void cancelPaperDeployment(item.id)} type="button">Cancel waiting strategy</button>}</article>)}</div></details>}
             {paperWarnings.length ? <ul className="paper-warning-list">{paperWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
+            <section className="position-overview" aria-label="Paper positions">
+              <div className="workspace-section-heading"><h3>Positions &amp; results</h3><span>{paperTrades.filter(trade => trade.status === "OPEN").length} open · {paperTrades.filter(trade => trade.status === "CLOSED").length} closed</span></div>
+              <div className="position-card-grid">{paperTrades.slice(0, 6).map(trade => <article className="position-card" key={trade.id}>
+                <div className="workspace-section-heading"><strong>{trade.strategy_name}</strong><span className={`trade-state trade-${trade.status.toLowerCase()}`}>{trade.status}</span></div>
+                <small>{trade.expiry} · {trade.lots} lot(s)</small>
+                <div className="position-card-metrics"><div><span>{Number(trade.entry_cash_flow) < 0 ? "Entry debit" : "Entry credit"}</span><strong>₹{formatPrice(String(Math.abs(Number(trade.entry_cash_flow))))}</strong></div><div><span>{trade.status === "OPEN" ? "Marked P&L" : "Realized P&L"}</span><strong className={changeClass(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}>{formatSignedPrice(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}</strong></div><div><span>Maximum modeled loss</span><strong>₹{formatPrice(trade.max_loss)}</strong></div></div>
+                {trade.valuation_warning ? <p className="table-warning">{trade.valuation_warning}</p> : null}
+                {trade.execution_warnings.length ? <p className="table-warning">{trade.execution_warnings.join(" · ")}</p> : null}
+                {trade.exit_reason ? <small>{trade.exit_reason.replaceAll("_", " ")}</small> : null}
+                <details><summary>＋ Legs, stops &amp; evidence</summary><p>{trade.legs.map(leg => `${leg.side} ${formatPrice(leg.strike)} ${leg.option_type} ×${formatCount(leg.quantity_units / trade.lot_size)} lots`).join(" / ")}</p><p>Stop {trade.stop_loss_amount ? `₹${formatPrice(trade.stop_loss_amount)}` : "Off"} · Target {trade.target_profit_amount ? `₹${formatPrice(trade.target_profit_amount)}` : "Off"} · Trail {trade.trailing_stop_amount ? `₹${formatPrice(trade.trailing_stop_amount)}` : "Off"}</p><OptionTradeObservations tradeId={trade.id} apiUrl={API_URL} token={token} /></details>
+                {trade.status === "OPEN" ? <button className="inline-button" disabled={paperBusy || (trade.expiry < indiaCalendarDate() && settlementBusy)} onClick={() => { if (trade.expiry < indiaCalendarDate()) { setSettlementTradeId(trade.id); setSettlementValue(""); setSettlementSource(""); setSettlementPreview(null); setIndexCloseReference(null); setOfficialIndexCloseReference(null); setSettlementError(""); } else { void closePaperTrade(trade.id); } }} type="button">{trade.expiry < indiaCalendarDate() ? "Review expiry settlement" : "Close paper position"}</button> : null}
+              </article>)}</div>
+              {!paperTrades.length ? <p className="workspace-empty">No positions yet. Add a strategy to begin monitoring.</p> : null}
+            </section>
+            <details className="workspace-disclosure"><summary>All positions · detailed table</summary>
             {paperTrades.length ? (
               <div className="paper-table-scroll">
                 <table className="paper-table">
@@ -2718,6 +2733,8 @@ export default function Home() {
                 </table>
               </div>
             ) : <p className="features-note">No paper trades yet. Choose a strategy above to start your simulated portfolio.</p>}
+
+            </details>
 
             {expiredPaperTrades.length > 0 ? <details className="equity-history expiry-settlement" open>
               <summary>Expired paper positions needing settlement ({expiredPaperTrades.length})</summary>

@@ -884,3 +884,49 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px
 .preset-panel > summary { cursor: pointer; color: var(--ink); font-size: 13px; font-weight: 600; }
 .preset-panel[open] > summary { margin-bottom: 16px; }
 @media (max-width: 680px) { .paper-risk-details .paper-stats { grid-template-columns: 1fr; } }
+
+/* Shared light dashboard and monitoring-first workspace. */
+.trading-dashboard { padding: 24px; border-radius: 16px; background: transparent; }
+.trading-dashboard-heading h2 { font-size: 30px; color: var(--ink); }
+.trading-dashboard-content { grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); gap: 20px; }
+.trading-dashboard-main { grid-column: 1 / -1; }
+.trading-dashboard-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.trading-dashboard-metric, .trading-dashboard-metric.net, .trading-dashboard-metric.gain, .trading-dashboard-metric.loss { grid-column: auto; min-height: 108px; padding: 20px; border: 1px solid #e4e9ef; border-radius: 14px; background: #fff; color: var(--ink); box-shadow: none; }
+.trading-dashboard-metric.net span, .trading-dashboard-metric.net small { color: var(--ink-muted); }
+.trading-dashboard-metric strong, .trading-dashboard-metric.net strong { font-size: 26px; margin: 12px 0 6px; }
+.trading-dashboard-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 14px; }
+.trading-dashboard-list article { flex-direction: column; padding: 20px; border-radius: 12px; border-color: #e4e9ef; gap: 14px; }
+.trading-dashboard-list article strong { font-size: 16px; }
+.trading-dashboard-list article small { font-size: 11px; line-height: 1.45; }
+.dashboard-price-pair, .position-card-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 14px; border-radius: 10px; background: #f8fafc; }
+.dashboard-price-pair span, .position-card-metrics span { display: block; color: var(--ink-muted); font-size: 11px; margin-bottom: 6px; }
+.dashboard-price-pair strong, .position-card-metrics strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.trading-dashboard-mark { text-align: left; }
+.trading-dashboard-activity, .trading-dashboard-chart, .trading-dashboard-watchlist { border-color: #e4e9ef; border-radius: 14px; box-shadow: none; }
+.trading-dashboard-filter { flex-direction: row; align-items: center; gap: 12px; width: fit-content; }
+.trading-dashboard-filter select { max-width: 250px; }
+.strategy-composer { margin: 20px 0; padding: 18px; border: 1px solid #e4e9ef; border-radius: 12px; background: #fff; }
+.strategy-composer > summary { cursor: pointer; color: var(--green); font-weight: 700; font-size: 15px; }
+.strategy-composer[open] > summary { margin-bottom: 24px; }
+.workspace-section-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.workspace-section-heading h3 { margin: 0; font-size: 20px; }
+.workspace-section-heading > span { color: var(--ink-muted); font-size: 12px; }
+.position-overview { margin: 24px 0; }
+.position-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; margin-top: 16px; }
+.position-card { min-width: 0; padding: 20px; border: 1px solid #e4e9ef; border-radius: 14px; background: white; }
+.position-card > small { display: block; margin: 8px 0 16px; color: var(--ink-muted); font-size: 12px; }
+.position-card details { margin-top: 16px; font-size: 12px; line-height: 1.6; }
+.position-card details > summary { color: var(--green); cursor: pointer; font-weight: 600; }
+.position-card .table-warning { font-size: 11px; line-height: 1.5; }
+.workspace-empty { padding: 24px; border: 1px dashed #d8e1eb; border-radius: 12px; color: var(--ink-muted); font-size: 13px; }
+.equity-deployment-heading > div > strong { display: block; font-size: 18px; }
+.equity-deployment-heading > div > small { display: block; margin-top: 5px; color: var(--ink-muted); font-size: 12px; line-height: 1.4; }
+.equity-lab-heading h3 { font-size: 26px; }
+.equity-entry-comparison { margin: 16px 0; }
+.equity-card, .equity-preview-card, .strategy-scorecard { border-radius: 12px; box-shadow: none; }
+@media (min-width: 1000px) { .dashboard-sidebar { width: 220px; padding: 28px 20px; box-shadow: none; } .dashboard-shell { padding-left: 252px; } }
+@media (max-width: 900px) { .trading-dashboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .trading-dashboard-content { grid-template-columns: 1fr; } }
+@media (max-width: 680px) { .trading-dashboard { padding: 12px; } .trading-dashboard-heading { align-items: flex-start; flex-direction: column; } .trading-dashboard-heading h2 { font-size: 25px; } .trading-dashboard-metric, .trading-dashboard-metric.net { padding: 14px; } .trading-dashboard-metric strong, .trading-dashboard-metric.net strong { font-size: 20px; } .trading-dashboard-filter { flex-direction: column; align-items: flex-start; width: 100%; } .trading-dashboard-filter select { max-width: 100%; width: 100%; } .workspace-section-heading { flex-wrap: wrap; } }
+
+.position-card-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 680px) { .position-card-metrics { grid-template-columns: 1fr; } }

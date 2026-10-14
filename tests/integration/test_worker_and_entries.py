@@ -104,6 +104,59 @@ def _expiry_day_position(client, monkeypatch):
     return provider, headers, payload, trade, factory
 
 
+def test_pinned_bse_manual_close_requires_bfo_session(client, monkeypatch):
+    # Disposable synthetic fixture; this is not a live BSE entry or expiry acceptance.
+    provider, headers, _, trade, factory = setup_position(client, monkeypatch)
+    with factory() as session:
+        saved = session.get(PaperTrade, UUID(trade["id"]))
+        saved.underlying = "SENSEX"
+        saved.entry_rule_snapshot = {**saved.entry_rule_snapshot, "option_index": {
+            "symbol": "SENSEX", "instrument_key": "BSE_INDEX|SENSEX",
+            "name": "SENSEX", "exchange": "BSE", "derivatives_exchange": "BFO",
+        }}
+        saved.legs = {**saved.legs, "items": [{
+            **leg, "instrument_key": leg["instrument_key"].replace("NSE_FO|", "BSE_FO|"),
+        } for leg in saved.legs["items"]]}
+        session.commit()
+    for contract in provider.contracts:
+        contract.instrument_key = contract.instrument_key.replace("NSE_FO|", "BSE_FO|")
+    venue = "NFO"
+    wrong_index = True
+    requested = []
+
+    async def selected_session(underlying, day):
+        assert underlying == "SENSEX"
+        return ExchangeSession(venue, provider.session_open, provider.session_close)
+
+    original_chain = provider.get_option_chain
+
+    async def selected_chain(underlying, expiry):
+        requested.append(underlying)
+        chain = await original_chain(underlying, expiry)
+        if wrong_index:
+            chain.underlying = "BANKEX"
+        return chain
+
+    monkeypatch.setattr(provider, "get_index_option_session", selected_session)
+    monkeypatch.setattr(provider, "get_option_chain", selected_chain)
+    url = f"/paper/trades/{trade['id']}/close"
+    rejected = client.post(url, headers=headers)
+    assert rejected.status_code == 409, rejected.text
+    assert requested == []
+    venue = "BFO"
+    rejected_chain = client.post(url, headers=headers)
+    assert rejected_chain.status_code == 409, rejected_chain.text
+    wrong_index = False
+    closed = client.post(url, headers=headers)
+    assert closed.status_code == 200, closed.text
+    assert requested == ["SENSEX", "SENSEX"]
+    assert closed.json()["status"] == "CLOSED"
+    assert client.post(url, headers=headers).status_code == 409
+    assert client.get("/paper/account/ledger-reconciliation", headers=headers).json()[
+        "status"
+    ] == "MATCHED"
+
+
 def test_worker_square_off_expiry_position_once_with_verified_quote(client, monkeypatch):
     provider, headers, _, trade, factory = _expiry_day_position(client, monkeypatch)
     assert asyncio.run(run_cycle(factory, provider, get_settings())) == "HEALTHY"

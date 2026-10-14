@@ -150,6 +150,7 @@ from packages.paper_trading.expiry_settlement import (
     ExpirySettlement,
     calculate_expiry_settlement,
 )
+from packages.paper_trading.index_scope import saved_option_index
 from packages.paper_trading.ledger_reconciliation import reconcile_paper_ledger
 from packages.paper_trading.observed_entries import replay_observed_entries
 from packages.paper_trading.observed_exits import replay_observed_exits
@@ -172,6 +173,7 @@ from packages.paper_trading.session import (
     exchange_today,
     expiry_has_passed,
     expiry_square_off_due,
+    require_derivatives_session_open,
     require_nfo_session_open,
 )
 from packages.paper_trading.strategies import STRATEGIES, StrategyDefinition, get_strategy
@@ -3136,10 +3138,13 @@ async def close_paper_trade(
         raise HTTPException(status_code=404, detail="Paper trade not found")
     if trade.status != "OPEN":
         raise HTTPException(status_code=409, detail="Paper trade is already closed")
-    if trade.underlying != "NIFTY":
-        raise HTTPException(
-            status_code=409, detail="Index-specific paper close routing is not enabled yet",
+    try:
+        index = saved_option_index(
+            trade.underlying, trade.entry_rule_snapshot,
+            [str(leg["instrument_key"]) for leg in trade.legs["items"]],
         )
+    except PaperSessionError as error:
+        raise HTTPException(409, str(error)) from error
     if expiry_has_passed(trade.expiry):
         raise HTTPException(
             status_code=409,
@@ -3160,10 +3165,17 @@ async def close_paper_trade(
             status_code=409,
             detail="Paper trade belongs to another market provider; no close was recorded",
         )
+    if underlying != "NIFTY" and not callable(getattr(provider, "get_index_option_session", None)):
+        raise HTTPException(503, "Provider cannot verify this index's derivatives session")
     try:
-        nfo_session = await provider.get_nfo_session(exchange_today())
-        require_nfo_session_open(nfo_session)
+        nfo_session = (
+            await provider.get_nfo_session(exchange_today()) if underlying == "NIFTY"
+            else await provider.get_index_option_session(underlying, exchange_today())
+        )
+        require_derivatives_session_open(nfo_session, index.derivatives_exchange)
         chain = await provider.get_option_chain(underlying, expiry)
+        if chain.underlying != underlying or chain.expiry != expiry:
+            raise HTTPException(409, "Option-chain identity differs from the saved paper position")
     except (MarketDataUnavailable, MarketDataProviderError) as error:
         raise _market_data_http_error(error) from error
     except PaperSessionError as error:
@@ -3218,7 +3230,8 @@ async def close_paper_trade(
     if trade.status != "OPEN":
         raise HTTPException(status_code=409, detail="Paper trade was already closed")
     _require_consistent_paper_ledger(session, account)
-    if trade.legs["items"] != saved_legs or trade.entry_cash_flow != entry_cash_flow:
+    if (trade.legs["items"] != saved_legs or trade.entry_cash_flow != entry_cash_flow
+            or trade.underlying != underlying):
         raise HTTPException(
             status_code=409, detail="Paper trade changed while closing; refresh and retry"
         )
@@ -3228,7 +3241,7 @@ async def close_paper_trade(
             detail="Option expiry passed before the paper close could be recorded",
         )
     try:
-        require_nfo_session_open(nfo_session)
+        require_derivatives_session_open(nfo_session, index.derivatives_exchange)
     except PaperSessionError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     for leg in saved_legs:

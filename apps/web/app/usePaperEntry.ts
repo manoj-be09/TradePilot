@@ -32,7 +32,9 @@ export function usePaperEntry(token: string | null, apiUrl: string) {
     setOwner(null); setPending(null); setIdentityError("");
     if (!token) return;
     const controller = new AbortController();
-    void fetch(`${apiUrl}/auth/me`, {
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retries = 0;
+    const verify = () => { void fetch(`${apiUrl}/auth/me`, {
       headers: { Authorization: `Bearer ${token}` }, signal: controller.signal,
     }).then(async response => {
       if (!response.ok) throw new Error("Could not verify your account. Check the API connection or sign in again.");
@@ -42,12 +44,18 @@ export function usePaperEntry(token: string | null, apiUrl: string) {
       const intent = savedIntent(sessionStorage.getItem(`paper-entry:${user.id}`));
       setPending(intent);
       setOwner({ id: user.id, token });
+      setIdentityError("");
     }).catch((error: unknown) => {
       if (!controller.signal.aborted && version === identityVersion.current) {
         setIdentityError(error instanceof Error ? error.message : "Could not verify your account.");
+        if (error instanceof TypeError && retries < 2) {
+          retries += 1;
+          retryTimer = setTimeout(verify, retries * 2_000);
+        }
       }
-    });
-    return () => { controller.abort(); ++identityVersion.current; };
+    }); };
+    verify();
+    return () => { clearTimeout(retryTimer); controller.abort(); ++identityVersion.current; };
   }, [apiUrl, token, identityRetry]);
 
   async function submit(body?: string) {

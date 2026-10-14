@@ -2327,6 +2327,11 @@ async def _open_paper_trade_with_provider(
                 "fill_price": str(fill_price),
                 "cash_flow": str(leg_cash_flow),
                 "quote_timestamp": market_contract.quote.timestamp.isoformat(),
+                "timestamp_basis": market_contract.quote.timestamp_basis,
+                "last_trade_time": (
+                    market_contract.quote.last_trade_time.isoformat()
+                    if market_contract.quote.last_trade_time else None
+                ),
                 "book_as_of": market_contract.quote.book_as_of.isoformat()
                 if market_contract.quote.book_as_of else None,
                 "book_timestamp_basis": market_contract.quote.book_timestamp_basis,
@@ -3155,6 +3160,11 @@ async def close_paper_trade(
                 "fill_price": str(exit_price),
                 "cash_flow": str(leg_cash_flow),
                 "quote_timestamp": market_contract.quote.timestamp.isoformat(),
+                "timestamp_basis": market_contract.quote.timestamp_basis,
+                "last_trade_time": (
+                    market_contract.quote.last_trade_time.isoformat()
+                    if market_contract.quote.last_trade_time else None
+                ),
                 "book_as_of": market_contract.quote.book_as_of.isoformat()
                 if market_contract.quote.book_as_of else None,
                 "book_timestamp_basis": market_contract.quote.book_timestamp_basis,

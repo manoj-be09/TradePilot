@@ -27,6 +27,7 @@ from packages.market_data.contracts import (
     ProviderHealth,
     Quote,
 )
+from packages.market_data.index_catalog import resolve_option_index
 
 UPSTOX_API_BASE = "https://api.upstox.com"
 NIFTY_INDEX_KEY = "NSE_INDEX|Nifty 50"
@@ -154,7 +155,8 @@ class UpstoxMarketDataProvider:
     async def get_option_contracts(
         self, underlying: str = "NIFTY", expiry: date | None = None
     ) -> list[UpstoxOptionContract]:
-        params = {"instrument_key": self._ensure_nifty(underlying)}
+        index = await resolve_option_index(underlying)
+        params = {"instrument_key": index.instrument_key}
         if expiry is not None:
             params["expiry_date"] = expiry.isoformat()
         data = await self._get("/v2/option/contract", params)
@@ -235,7 +237,8 @@ class UpstoxMarketDataProvider:
         return contracts
 
     async def get_option_chain(self, underlying: str, expiry: date) -> OptionChain:
-        key = self._ensure_nifty(underlying)
+        index = await resolve_option_index(underlying)
+        key = index.instrument_key
         data = await self._get(
             "/v2/option/chain",
             {"instrument_key": key, "expiry_date": expiry.isoformat()},
@@ -312,7 +315,7 @@ class UpstoxMarketDataProvider:
         if not contracts:
             raise MarketDataProviderError("Upstox returned no option contracts for that expiry")
         return OptionChain(
-            underlying="NIFTY",
+            underlying=index.symbol,
             underlying_spot=underlying_spot,
             expiry=expiry,
             as_of=received_at,

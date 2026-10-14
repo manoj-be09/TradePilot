@@ -580,6 +580,9 @@ export default function Home() {
   const [securityActivityBusy, setSecurityActivityBusy] = useState(false);
   const [securityActivityError, setSecurityActivityError] = useState("");
   const [securityOpen, setSecurityOpen] = useState(false);
+  const [optionIndexes, setOptionIndexes] = useState<{symbol: string; name: string; exchange: string}[]>([{symbol: "NIFTY", name: "Nifty 50", exchange: "NSE"}]);
+  const [selectedOptionIndex, setSelectedOptionIndex] = useState("NIFTY");
+  const [indexCatalogError, setIndexCatalogError] = useState("");
   const [contracts, setContracts] = useState<ProviderOptionContract[]>([]);
   const [selectedExpiry, setSelectedExpiry] = useState("");
   const [chain, setChain] = useState<OptionChain | null>(null);
@@ -773,9 +776,20 @@ export default function Home() {
   useEffect(() => {
     if (!token) return;
     const controller = new AbortController();
+    fetch(`${API_URL}/market-data/option-indexes`, {
+      headers: { Authorization: `Bearer ${token}` }, signal: controller.signal,
+    }).then(readJson<{symbol: string; name: string; exchange: string}[]>).then((items) => {
+      if (!controller.signal.aborted) { setOptionIndexes(items); setIndexCatalogError(""); }
+    }).catch(() => { if (!controller.signal.aborted) setIndexCatalogError("Index list unavailable. NIFTY remains available."); });
+    return () => controller.abort();
+  }, [token, refreshCount]);
+
+  useEffect(() => {
+    if (!token) return;
+    const controller = new AbortController();
     setContractsBusy(true);
     setMarketError("");
-    fetch(`${API_URL}/market-data/option-contracts`, {
+    fetch(`${API_URL}/market-data/option-contracts?underlying=${encodeURIComponent(selectedOptionIndex)}`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal,
     })
@@ -794,7 +808,7 @@ export default function Home() {
         if (!controller.signal.aborted) setContractsBusy(false);
       });
     return () => controller.abort();
-  }, [token, refreshCount]);
+  }, [token, refreshCount, selectedOptionIndex]);
 
   useEffect(() => {
     if (!token) return;
@@ -998,7 +1012,7 @@ export default function Home() {
     setFeaturesError("");
     setChain(null);
     setOptionFeatures(null);
-    const query = new URLSearchParams({ expiry_date: selectedExpiry, underlying: "NIFTY" });
+    const query = new URLSearchParams({ expiry_date: selectedExpiry, underlying: selectedOptionIndex });
     fetch(`${API_URL}/market-data/option-chain?${query.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal,
@@ -1040,7 +1054,7 @@ export default function Home() {
         if (!controller.signal.aborted) setChainBusy(false);
       });
     return () => controller.abort();
-  }, [token, selectedExpiry, refreshCount]);
+  }, [token, selectedExpiry, refreshCount, selectedOptionIndex]);
 
   const expiryOptions = useMemo(
     () => Array.from(new Set(contracts.map((contract) => contract.expiry))).sort(),
@@ -1769,7 +1783,7 @@ export default function Home() {
   }
 
   async function openPaperTrade() {
-    if (!token || !selectedExpiry || !selectedPaperStrike || paperBusy || !paperEntry.ready || paperEntry.pending) return;
+    if (selectedOptionIndex !== "NIFTY" || !token || !selectedExpiry || !selectedPaperStrike || paperBusy || !paperEntry.ready || paperEntry.pending) return;
     setPaperError("");
     setPendingEntryError("");
     setPaperBusy(true);
@@ -1801,7 +1815,7 @@ export default function Home() {
   }
 
   async function armPaperStrategy() {
-    if (!token || !selectedExpiry || !selectedPaperStrike || paperBusy || !paperEntry.ready || paperEntry.pending || isCustomStrategy || matchingWaitingPaperDeployment) return;
+    if (selectedOptionIndex !== "NIFTY" || !token || !selectedExpiry || !selectedPaperStrike || paperBusy || !paperEntry.ready || paperEntry.pending || isCustomStrategy || matchingWaitingPaperDeployment) return;
     setPaperError("");
     setPaperBusy(true);
     const payload = JSON.stringify({
@@ -2252,7 +2266,18 @@ export default function Home() {
             <section className={`equities-workspace app-section-page${activeSection === "dashboard" ? " dashboard-detail-section" : ""}`} aria-label="Equities workspace">
               {activeSection !== "dashboard" ? <div className="equities-heading"><div><div className="panel-kicker">{activeSection.toUpperCase()}</div><h2>{activeSection === "charts" ? "Equity & ETF charts" : activeSection === "algo" ? "Equity algo strategies" : activeSection === "broker" ? "Equity broker panel" : activeSection === "backtest" ? "Equity backtest" : "Equity bridge tool"}</h2></div><span className="paper-mode-badge">PAPER TRADING</span></div> : null}
               {activeSection === "dashboard" ? <><MarketOutlook token={token} apiUrl={API_URL} /><div id="equity-instruments"><InstrumentCatalog token={token} apiUrl={API_URL} compact /></div></> : null}
-              {activeSection === "charts" ? <ChartWorkspace token={token} apiUrl={API_URL} /> : null}
+              <label className="market-toolbar">Index
+            <select aria-label="Option index" value={selectedOptionIndex} onChange={(event) => {
+              setSelectedOptionIndex(event.target.value); setContracts([]); setSelectedExpiry("");
+              setChain(null); setOptionFeatures(null); setSelectedVersionId("");
+              setSelectedPaperStrike(""); setDeploymentPreparedKey("");
+            }}>
+              {optionIndexes.map((item) => <option key={item.symbol} value={item.symbol}>{item.name} · {item.exchange}</option>)}
+            </select>
+          </label>
+          {indexCatalogError ? <p role="alert">{indexCatalogError}</p> : null}
+          {selectedOptionIndex !== "NIFTY" ? <p role="status">Market-data preview. Paper entry for this index is pending venue and settlement validation.</p> : null}
+          {activeSection === "charts" ? <ChartWorkspace token={token} apiUrl={API_URL} /> : null}
               {activeSection === "algo" ? <EquityStrategies token={token} apiUrl={API_URL} /> : null}
               {activeSection === "broker" ? <section className="empty-section-card"><h3>Equity broker panel</h3><p className="muted">This page will hold broker connection, account, and order-routing controls for equities. For now, live broker orders remain disabled and equity paper trading uses the local wallet.</p></section> : null}
               {activeSection === "backtest" ? <section className="empty-section-card"><h3>Equity backtest</h3><p className="muted">Equity strategy replay will use saved equity candles and paper-trade history. The current build has the F&O replay engine first; equity replay is planned next.</p></section> : null}
@@ -2264,7 +2289,7 @@ export default function Home() {
           <section className="market-toolbar">
             <div>
               <div className="panel-kicker">LIVE MARKET DATA</div>
-              <h2>NIFTY option chain</h2>
+              <h2>{selectedOptionIndex} option chain</h2>
             </div>
             <div className="toolbar-controls">
               <label className="select-label" htmlFor="expiry">Expiry</label>
@@ -2303,7 +2328,7 @@ export default function Home() {
           <section className="stats-grid" aria-label="Market summary">
             <article className="stat-card">
               <span className="stat-label">UNDERLYING</span>
-              <strong>NIFTY 50</strong>
+              <strong>{selectedOptionIndex}</strong>
               <small>National Stock Exchange</small>
             </article>
             <article className="stat-card">
@@ -2650,7 +2675,7 @@ export default function Home() {
                 <p className="paper-warning">This snapshot has WARN quality. Check the report above; timestamps may not be exchange-verified.</p>
               ) : null}
               {paperError ? <p className="error-banner paper-error" role="alert">{paperError}</p> : null}
-              <button className="primary-button paper-submit" disabled={paperBusy || !paperEntry.ready || !!paperEntry.pending || payoffEstimateBusy || !payoffEstimate || payoffEstimate.maximum_loss_unbounded || Number(payoffEstimate.maximum_loss) <= 0 || !entryRuleInputsValid || (isCustomStrategy && !entryConditionsSatisfied) || (!isCustomStrategy && (matchingWaitingPaperDeployment || deploymentPreparedKey !== selectedStrategy || !entryConditions.length || !stopLossInput || !trailingStopInput)) || (isCustomStrategy && hasDuplicateCustomContracts) || !paperAccount || paperAccount.kill_switch_enabled || !strategyPreview || !chain || chain.quality?.status === "FAIL"} onClick={() => void (isCustomStrategy ? openPaperTrade() : armPaperStrategy())} type="button">
+              <button className="primary-button paper-submit" disabled={selectedOptionIndex !== "NIFTY" || paperBusy || !paperEntry.ready || !!paperEntry.pending || payoffEstimateBusy || !payoffEstimate || payoffEstimate.maximum_loss_unbounded || Number(payoffEstimate.maximum_loss) <= 0 || !entryRuleInputsValid || (isCustomStrategy && !entryConditionsSatisfied) || (!isCustomStrategy && (matchingWaitingPaperDeployment || deploymentPreparedKey !== selectedStrategy || !entryConditions.length || !stopLossInput || !trailingStopInput)) || (isCustomStrategy && hasDuplicateCustomContracts) || !paperAccount || paperAccount.kill_switch_enabled || !strategyPreview || !chain || chain.quality?.status === "FAIL"} onClick={() => void (isCustomStrategy ? openPaperTrade() : armPaperStrategy())} type="button">
                 {paperBusy ? "Processing paper strategy…" : isCustomStrategy ? "Open custom paper trade" : matchingWaitingPaperDeployment ? "Strategy waiting for entry" : deploymentPreparedKey === selectedStrategy ? "Arm automatic paper entry" : "Apply a strategy above"}
               </button>
               <p className="paper-footnote">Arming a template does not reserve funds or enter now. At entry, risk caps are rechecked: up to 2% of starting capital per position and 10% across open positions. Simulated fills do not model queue priority, partial fills, charges, or slippage.</p>

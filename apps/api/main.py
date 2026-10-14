@@ -133,6 +133,7 @@ from packages.market_data.contracts import (
     ProviderHealth,
     Quote,
 )
+from packages.market_data.index_catalog import OptionIndex, option_indexes
 from packages.market_data.provider import get_market_data_provider
 from packages.market_data.quality import assess_option_chain
 from packages.options.models import (
@@ -806,7 +807,7 @@ async def market_data_instrument_search(
     tags=["market-data"],
 )
 async def market_data_option_contracts(
-    user: CurrentUser, expiry_date: date | None = None
+    user: CurrentUser, expiry_date: date | None = None, underlying: str = "NIFTY"
 ) -> list[OptionContract]:
     del user
     provider = get_market_data_provider()
@@ -817,8 +818,17 @@ async def market_data_option_contracts(
             MarketDataUnavailable("No market-data provider is configured")
         )
     try:
-        return await provider.get_option_contracts(expiry=expiry_date)
+        return await provider.get_option_contracts(underlying=underlying, expiry=expiry_date)
     except (MarketDataUnavailable, MarketDataProviderError) as error:
+        raise _market_data_http_error(error) from error
+
+
+@app.get("/market-data/option-indexes", response_model=list[OptionIndex], tags=["market-data"])
+async def market_data_option_indexes(user: CurrentUser) -> list[OptionIndex]:
+    del user
+    try:
+        return await option_indexes()
+    except MarketDataProviderError as error:
         raise _market_data_http_error(error) from error
 
 

@@ -82,6 +82,14 @@ def test_selected_index_entry_close_and_ledger(
         closed = client.post(f"/paper/trades/{trade['id']}/close", headers=headers)
         assert closed.status_code == 200, closed.text
     assert len(client.get("/paper/orders", headers=headers).json()) == 2
+    selected_stats = client.get(f"/paper/strategies?underlying={symbol}", headers=headers).json()
+    nifty_stats = client.get("/paper/strategies", headers=headers).json()
+    assert next(item for item in selected_stats if item["key"] == "long_call")[
+        "closed_trade_count"
+    ] == 1
+    assert next(item for item in nifty_stats if item["key"] == "long_call")[
+        "closed_trade_count"
+    ] == 0
     assert client.get("/paper/account/ledger-reconciliation", headers=headers).json()[
         "status"
     ] == "MATCHED"

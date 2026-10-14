@@ -1253,11 +1253,16 @@ def analytics_payoff(user: CurrentUser, body: PayoffRequest) -> PayoffResult:
     response_model=list[StrategyDefinitionResponse],
     tags=["paper trading"],
 )
-def paper_strategies(user: CurrentUser, session: SessionDep) -> list[StrategyDefinitionResponse]:
+def paper_strategies(
+    user: CurrentUser, session: SessionDep,
+    underlying: Annotated[str, Query(min_length=1, max_length=32, pattern=r"^[A-Z0-9_]+$")]
+    = "NIFTY",
+) -> list[StrategyDefinitionResponse]:
     closed_trades = list(session.scalars(
         select(PaperTrade).where(
             PaperTrade.user_id == user.id,
             PaperTrade.status == "CLOSED",
+            PaperTrade.underlying == underlying,
             PaperTrade.realized_pnl.is_not(None),
         )
     ))

@@ -597,6 +597,7 @@ export default function Home() {
   const [refreshCount, setRefreshCount] = useState(0);
   const [paperRefreshCount, setPaperRefreshCount] = useState(0);
   const [paperStrategies, setPaperStrategies] = useState<PaperStrategy[]>([]);
+  useEffect(() => { setPaperStrategies([]); }, [selectedOptionIndex]);
   const [paperPresets, setPaperPresets] = useState<PaperStrategyPreset[]>([]);
   const [strategyVersions, setStrategyVersions] = useState<StrategyVersion[]>([]);
   const [strategyVersionName, setStrategyVersionName] = useState("");
@@ -843,7 +844,7 @@ export default function Home() {
     if (!token) return;
     const controller = new AbortController();
     Promise.allSettled([
-      fetch(`${API_URL}/paper/strategies`, {
+      fetch(`${API_URL}/paper/strategies?underlying=${encodeURIComponent(selectedOptionIndex)}`, {
         headers: { Authorization: `Bearer ${token}` },
         signal: controller.signal,
       }).then(readJson<PaperStrategy[]>),
@@ -883,7 +884,7 @@ export default function Home() {
         }
       });
     return () => controller.abort();
-  }, [token, paperRefreshCount]);
+  }, [token, paperRefreshCount, selectedOptionIndex]);
 
   useEffect(() => {
     if (!token) {

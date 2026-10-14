@@ -17,13 +17,16 @@ from packages.database.models import (
     UserNotification,
 )
 from packages.market_data.contracts import (
+    ExchangeSession,
     MarketDataProvider,
     MarketDataProviderError,
     MarketDataUnavailable,
     OptionChain,
 )
+from packages.market_data.index_catalog import OptionIndex
 from packages.market_data.quality import assess_option_chain
 from packages.paper_trading.exits import ExitDecision, evaluate_exit
+from packages.paper_trading.index_scope import saved_option_index
 from packages.paper_trading.option_policy import parse_option_exit_policy
 from packages.paper_trading.quotes import PaperQuoteError, require_quote
 from packages.paper_trading.session import (
@@ -31,7 +34,7 @@ from packages.paper_trading.session import (
     exchange_today,
     expiry_has_passed,
     expiry_square_off_due,
-    require_nfo_session_open,
+    require_derivatives_session_open,
 )
 from packages.paper_trading.transactions import (
     PaperLedgerMismatchError,
@@ -227,7 +230,16 @@ async def monitor_exits(
                 unrealized_pnl={}, warnings=["Worker ownership expired; exits were not evaluated."],
             )
 
-    unsupported_ids = [trade.id for trade in matching_trades if trade.underlying != "NIFTY"]
+    indexes: dict[UUID, OptionIndex] = {}
+    unsupported_ids = []
+    for candidate in matching_trades:
+        try:
+            indexes[candidate.id] = saved_option_index(
+                candidate.underlying, candidate.entry_rule_snapshot,
+                [str(leg["instrument_key"]) for leg in candidate.legs["items"]],
+            )
+        except PaperSessionError:
+            unsupported_ids.append(candidate.id)
     if unsupported_ids:
         if not _record_skipped_exit_checks(
             session, user_id, unsupported_ids, provider, lease,
@@ -237,50 +249,59 @@ async def monitor_exits(
                 checked_at=checked_at, evaluated_count=0, closed_trade_ids=[],
                 unrealized_pnl={}, warnings=["Worker ownership expired; exits were not evaluated."],
             )
-        matching_trades = [trade for trade in matching_trades if trade.underlying == "NIFTY"]
+        matching_trades = [trade for trade in matching_trades if trade.id in indexes]
 
-    chains: dict[date, OptionChain] = {}
+    chains: dict[tuple[str, date], OptionChain] = {}
+    sessions: dict[str, ExchangeSession | None] = {}
     warnings: list[str] = (
         ["Open option trades belong to another market provider; exits need the original provider."]
         if mismatched_ids else []
     )
     if unsupported_ids:
         warnings.append("Non-NIFTY paper exits need index-specific routing; checks were skipped.")
-    active_expiries: list[date] = []
-    for expiry in sorted({trade.expiry for trade in matching_trades}):
+    active_groups: list[tuple[str, date]] = []
+    for underlying, expiry in sorted({(trade.underlying, trade.expiry)
+                                     for trade in matching_trades}):
         if expiry_has_passed(expiry):
             warnings.append(
                 f"Exit checks for {expiry} stopped: open positions are unresolved after expiry; "
                 "settlement requires manual reconciliation. No synthetic exit was recorded."
             )
         else:
-            active_expiries.append(expiry)
-    active_trade_ids = [
-        trade.id for trade in matching_trades if not expiry_has_passed(trade.expiry)
-    ]
-
-    nfo_session = None
-    if active_expiries:
+            active_groups.append((underlying, expiry))
+    for underlying, expiry in active_groups:
+        group_trades = [trade for trade in matching_trades
+                        if trade.underlying == underlying and trade.expiry == expiry]
+        expiry_trade_ids = [trade.id for trade in group_trades]
+        index = indexes[group_trades[0].id]
         try:
-            nfo_session = await provider.get_nfo_session(exchange_today())
-            require_nfo_session_open(nfo_session)
+            if underlying not in sessions:
+                sessions[underlying] = None
+                if underlying != "NIFTY" and not callable(
+                    getattr(provider, "get_index_option_session", None)
+                ):
+                    raise MarketDataUnavailable("Index session capability unavailable")
+                sessions[underlying] = (
+                    await provider.get_nfo_session(exchange_today()) if underlying == "NIFTY"
+                    else await provider.get_index_option_session(underlying, exchange_today())
+                )
+            require_derivatives_session_open(sessions[underlying], index.derivatives_exchange)
         except (MarketDataUnavailable, MarketDataProviderError, PaperSessionError):
             warnings.append(
-                "NFO scheduled session is closed or unverified; paper exit checks were skipped."
+                f"{index.derivatives_exchange} scheduled session is closed or unverified; "
+                "paper exit checks were skipped."
             )
             if not _record_skipped_exit_checks(
-                session, user_id, active_trade_ids, provider, lease,
-                "SESSION_UNAVAILABLE", "NFO session closed or unverified",
+                session, user_id, expiry_trade_ids, provider, lease,
+                "SESSION_UNAVAILABLE", f"{index.derivatives_exchange} session closed or unverified",
             ):
                 warnings.append("Worker ownership expired; exit observation was fenced off.")
-            return PaperMonitorResponse(
-                checked_at=checked_at, evaluated_count=0, closed_trade_ids=[],
-                unrealized_pnl={}, warnings=warnings,
-            )
-    for expiry in active_expiries:
-        expiry_trade_ids = [trade.id for trade in matching_trades if trade.expiry == expiry]
+                break
+            continue
         try:
-            chain = await provider.get_option_chain("NIFTY", expiry)
+            chain = await provider.get_option_chain(underlying, expiry)
+            if chain.underlying != underlying or chain.expiry != expiry:
+                raise MarketDataProviderError("Option-chain identity mismatch")
             quality = assess_option_chain(chain)
             if quality.status == "FAIL":
                 warnings.append(f"Exit checks for {expiry} skipped: option-chain quality is FAIL.")
@@ -292,7 +313,7 @@ async def monitor_exits(
                     warnings.append("Worker ownership expired; exit observation was fenced off.")
                     break
                 continue
-            chains[expiry] = chain
+            chains[(underlying, expiry)] = chain
         except (MarketDataUnavailable, MarketDataProviderError):
             warnings.append(f"Exit checks for {expiry} skipped: market data is unavailable.")
             if not _record_skipped_exit_checks(
@@ -308,9 +329,11 @@ async def monitor_exits(
     for snapshot in matching_trades:
         if expiry_has_passed(snapshot.expiry):
             continue
-        trade_chain = chains.get(snapshot.expiry)
+        trade_chain = chains.get((snapshot.underlying, snapshot.expiry))
         if trade_chain is None:
             continue
+        index = indexes[snapshot.id]
+        nfo_session = sessions[snapshot.underlying]
         close_flow = Decimal(0)
         fills: list[dict[str, object]] = []
         observed_quotes: list[dict[str, object]] = []
@@ -457,13 +480,16 @@ async def monitor_exits(
             continue
         try:
             evaluation_instant = datetime.now(timezone.utc)
-            require_nfo_session_open(nfo_session, evaluation_instant)
+            require_derivatives_session_open(
+                nfo_session, index.derivatives_exchange, evaluation_instant
+            )
         except PaperSessionError as error:
             session.rollback()
             warnings.append(str(error))
             if not _record_skipped_exit_checks(
                 session, user_id, [snapshot.id], provider, lease,
-                "SESSION_CHANGED", "NFO session closed during exit evaluation",
+                "SESSION_CHANGED",
+                f"{index.derivatives_exchange} session closed during exit evaluation",
                 trade_chain, assess_option_chain(trade_chain).status,
             ):
                 warnings.append("Worker ownership expired; exit observation was fenced off.")
@@ -483,6 +509,7 @@ async def monitor_exits(
             nfo_session,
             now=evaluation_instant,
             minutes_before_close=exit_policy.square_off_minutes_before_close,
+            expected_exchange=index.derivatives_exchange,
         ):
             decision = ExitDecision(decision.peak_pnl, "EXPIRY_SQUARE_OFF")
         _record_exit_observation(session, user_id, trade.id, {

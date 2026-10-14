@@ -104,7 +104,8 @@ def _expiry_day_position(client, monkeypatch):
     return provider, headers, payload, trade, factory
 
 
-def test_pinned_bse_manual_close_requires_bfo_session(client, monkeypatch):
+@pytest.mark.parametrize("exit_mode", ["manual", "worker"])
+def test_pinned_bse_manual_close_requires_bfo_session(client, monkeypatch, exit_mode):
     # Disposable synthetic fixture; this is not a live BSE entry or expiry acceptance.
     provider, headers, payload, trade, factory = setup_position(client, monkeypatch)
     second = client.post("/paper/trades", headers={
@@ -141,7 +142,7 @@ def test_pinned_bse_manual_close_requires_bfo_session(client, monkeypatch):
         prefix = "NSE_FO|" if underlying == "NIFTY" else "BSE_FO|"
         chain.contracts = [item for item in chain.contracts
                            if item.instrument_token.startswith(prefix)]
-        if wrong_index:
+        if wrong_index and underlying == "SENSEX":
             chain.underlying = "BANKEX"
         return chain
 
@@ -151,6 +152,13 @@ def test_pinned_bse_manual_close_requires_bfo_session(client, monkeypatch):
     rejected = client.post(url, headers=headers)
     assert rejected.status_code == 409, rejected.text
     assert requested == []
+    skipped_bfo = client.post("/paper/monitor", headers=headers)
+    assert skipped_bfo.status_code == 200, skipped_bfo.text
+    assert skipped_bfo.json()["evaluated_count"] == 1
+    assert skipped_bfo.json()["closed_trade_ids"] == []
+    assert any("BFO scheduled session" in warning for warning in skipped_bfo.json()["warnings"])
+    assert requested == ["NIFTY"]
+    requested.clear()
     rows = client.get("/paper/trades", headers=headers).json()["trades"]
     unavailable_mark = next(item for item in rows if item["id"] == trade["id"])
     assert unavailable_mark["unrealized_pnl"] is None
@@ -164,10 +172,23 @@ def test_pinned_bse_manual_close_requires_bfo_session(client, monkeypatch):
     marked = client.get("/paper/trades", headers=headers)
     assert marked.status_code == 200, marked.text
     assert all(item["unrealized_pnl"] is not None for item in marked.json()["trades"])
-    closed = client.post(url, headers=headers)
-    assert closed.status_code == 200, closed.text
-    assert requested == ["SENSEX", "NIFTY", "SENSEX", "SENSEX"]
-    assert closed.json()["status"] == "CLOSED"
+    requested.clear()
+    if exit_mode == "manual":
+        closed = client.post(url, headers=headers)
+        assert closed.status_code == 200, closed.text
+        assert requested == ["SENSEX"]
+        assert closed.json()["status"] == "CLOSED"
+    else:
+        with factory() as session:
+            saved = session.get(PaperTrade, UUID(trade["id"]))
+            saved.target_profit_amount = Decimal("1")
+            session.commit()
+        provider.price_adjustment = Decimal("10")
+        monitored = client.post("/paper/monitor", headers=headers)
+        assert monitored.status_code == 200, monitored.text
+        assert monitored.json()["closed_trade_ids"] == [trade["id"]]
+        assert requested == ["NIFTY", "SENSEX"]
+        assert client.post("/paper/monitor", headers=headers).json()["closed_trade_ids"] == []
     assert client.post(url, headers=headers).status_code == 409
     assert client.get("/paper/account/ledger-reconciliation", headers=headers).json()[
         "status"

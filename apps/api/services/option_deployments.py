@@ -16,6 +16,7 @@ from packages.market_data.contracts import (
     MarketDataProviderError,
     MarketDataUnavailable,
 )
+from packages.market_data.index_catalog import OptionIndex
 from packages.paper_trading.option_policy import parse_option_exit_policy
 from packages.paper_trading.session import (
     PaperSessionError,
@@ -145,9 +146,8 @@ async def process_option_deployments(
     checked = filled = 0
     warnings: list[str] = []
     today = exchange_today()
-    expiry_session: ExchangeSession | None = None
-    expiry_session_loaded = False
-    expiry_session_failed = False
+    expiry_sessions: dict[str, ExchangeSession | None] = {}
+    failed_sessions: set[str] = set()
     for deployment_id, user_id, request_data in rows:
         try:
             body = PaperTradeCreateRequest.model_validate(request_data)
@@ -191,25 +191,45 @@ async def process_option_deployments(
             warnings.append(reason)
             continue
         if body.expiry == today:
-            if not expiry_session_loaded:
-                expiry_session_loaded = True
+            expected_exchange = "NFO"
+            if body.underlying != "NIFTY":
                 try:
-                    expiry_session = await provider.get_nfo_session(today)
+                    expected_exchange = OptionIndex.model_validate(
+                        request_data.get("option_index")
+                    ).derivatives_exchange
+                except ValueError:
+                    _record_retryable_block(factory, token, deployment_id, user_id,
+                                            409, "Armed index identity is unavailable")
+                    continue
+            if body.underlying not in expiry_sessions:
+                expiry_sessions[body.underlying] = None
+                try:
+                    if body.underlying != "NIFTY" and not callable(
+                        getattr(provider, "get_index_option_session", None)
+                    ):
+                        raise MarketDataUnavailable("Index session capability unavailable")
+                    expiry_sessions[body.underlying] = (
+                        await provider.get_nfo_session(today) if body.underlying == "NIFTY"
+                        else await provider.get_index_option_session(body.underlying, today)
+                    )
                 except (MarketDataUnavailable, MarketDataProviderError):
-                    expiry_session_failed = True
-            if expiry_session_failed:
-                reason = "NFO session unavailable; expiry-day entries remain waiting"
+                    failed_sessions.add(body.underlying)
+            if body.underlying in failed_sessions:
+                reason = (
+                    f"{expected_exchange} session unavailable; expiry-day entries remain waiting"
+                )
                 _record_retryable_block(factory, token, deployment_id, user_id, 503, reason)
                 warnings.append(reason)
                 continue
             try:
                 cutoff_passed = expiry_entry_window_closed(
                     body.expiry,
-                    expiry_session,
+                    expiry_sessions[body.underlying],
                     minutes_before_close=exit_policy.square_off_minutes_before_close,
+                    expected_exchange=expected_exchange,
                 )
             except PaperSessionError:
-                reason = "NFO session invalid; expiry-day entries remain waiting"
+                reason = f"{expected_exchange} session invalid; expiry-day entries remain waiting"
                 _record_retryable_block(factory, token, deployment_id, user_id, 503, reason)
                 warnings.append(reason)
                 continue
@@ -245,7 +265,9 @@ async def process_option_deployments(
                         "Saved strategy or contract is no longer valid; arm a new strategy",
                     )
                 elif error.status_code >= 500:
-                    warnings.append("NIFTY options data unavailable; armed entry was not filled")
+                    warnings.append(
+                        f"{body.underlying} options data unavailable; armed entry was not filled"
+                    )
                 # Rule/quality failures already have a detailed checked snapshot. Record
                 # other retryable gates once per changed reason, without logging provider data.
                 if error.status_code in {409, 423, 503}:

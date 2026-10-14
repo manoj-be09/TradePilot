@@ -1818,7 +1818,7 @@ def paper_deployment_decisions(
     status_code=status.HTTP_201_CREATED,
     tags=["paper trading"],
 )
-def arm_paper_deployment(
+async def arm_paper_deployment(
     body: PaperTradeCreateRequest,
     user: CurrentUser,
     session: SessionDep,
@@ -1828,8 +1828,13 @@ def arm_paper_deployment(
 ) -> PaperDeploymentResponse:
     if not get_settings().paper_trading_enabled:
         raise HTTPException(503, "Paper trading is disabled")
-    if body.underlying != "NIFTY":
+    if body.underlying != "NIFTY" and not get_settings().paper_index_execution_enabled:
         raise HTTPException(409, "Index-specific automatic arming is not enabled yet")
+    try:
+        index = await resolve_option_index(body.underlying)
+    except MarketDataProviderError as error:
+        raise _market_data_http_error(error) from error
+    body.underlying = index.symbol
     if body.strategy_key == "custom" or get_strategy(body.strategy_key) is None:
         raise HTTPException(422, "Only registered defined-risk templates can be armed")
     if (
@@ -1862,7 +1867,9 @@ def arm_paper_deployment(
             raise HTTPException(404, "Strategy version not found")
         if (
             _strategy_version_hash(version.definition) != version.definition_hash
-            or _strategy_version_definition(body, strategy) != version.definition
+            or _strategy_version_definition(
+                body, strategy, index if index.symbol != "NIFTY" else None
+            ) != version.definition
         ):
             raise HTTPException(409, "Armed rules differ from the saved strategy version")
     provider = get_market_data_provider()
@@ -1889,9 +1896,10 @@ def arm_paper_deployment(
         PaperDeployment.status == "WAITING_FOR_ENTRY",
     )).all()
     if len(waiting) >= 5:
-        raise HTTPException(409, "At most five NIFTY paper strategies can wait for entry")
+        raise HTTPException(409, "At most five paper strategies can wait for entry")
     if any(
         existing.request_data.get("strategy_key") == body.strategy_key
+        and existing.request_data.get("underlying", "NIFTY") == index.symbol
         and existing.request_data.get("expiry") == body.expiry.isoformat()
         and existing.request_data.get("reference_strike") == str(body.reference_strike)
         for existing in waiting
@@ -1904,6 +1912,7 @@ def arm_paper_deployment(
         request_hash=digest,
         request_data={
             **body.model_dump(mode="json"),
+            **({"option_index": index.model_dump()} if index.symbol != "NIFTY" else {}),
             "market_data_provider": provider.provider_id,
             "exit_policy": OptionExitPolicy(
                 get_settings().paper_expiry_square_off_minutes_before_close
@@ -2112,6 +2121,10 @@ async def _open_paper_trade_with_provider(
         index = await resolve_option_index(body.underlying)
     except MarketDataProviderError as error:
         raise _market_data_http_error(error) from error
+    if deployment_id is not None and index.symbol != "NIFTY":
+        armed = session.get(PaperDeployment, deployment_id)
+        if armed is None or armed.request_data.get("option_index") != index.model_dump():
+            raise HTTPException(409, "Armed index identity differs from current contract catalog")
     is_custom_strategy = body.strategy_key == "custom"
     strategy = None if is_custom_strategy else get_strategy(body.strategy_key)
     if not is_custom_strategy and strategy is None:

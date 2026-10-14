@@ -197,6 +197,7 @@ class PaperTradeCreateRequest(BaseModel):
 class PaperDeploymentResponse(BaseModel):
     id: UUID
     strategy_key: str
+    underlying: str = "NIFTY"
     expiry: date
     reference_strike: Decimal
     lots: int
@@ -217,6 +218,7 @@ class PaperDeploymentResponse(BaseModel):
         return cls(
             id=model.id,
             strategy_key=body.strategy_key,
+            underlying=body.underlying,
             expiry=body.expiry,
             reference_strike=body.reference_strike,
             lots=body.lots,

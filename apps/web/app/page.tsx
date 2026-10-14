@@ -794,7 +794,7 @@ export default function Home() {
         if (!controller.signal.aborted) setContractsBusy(false);
       });
     return () => controller.abort();
-  }, [token]);
+  }, [token, refreshCount]);
 
   useEffect(() => {
     if (!token) return;
@@ -827,7 +827,7 @@ export default function Home() {
   useEffect(() => {
     if (!token) return;
     const controller = new AbortController();
-    Promise.all([
+    Promise.allSettled([
       fetch(`${API_URL}/paper/strategies`, {
         headers: { Authorization: `Bearer ${token}` },
         signal: controller.signal,
@@ -851,12 +851,16 @@ export default function Home() {
       }).then(readJson<PaperDeployment[]>),
     ])
       .then(([strategies, account, portfolio, orders, deployments]) => {
-        setPaperStrategies(strategies);
-        setPaperAccount(account);
-        setPaperTrades(portfolio.trades);
-        setPaperWarnings(portfolio.warnings);
-        setPaperOrders(orders);
-        setPaperDeployments(deployments);
+        if (controller.signal.aborted) return;
+        if (strategies.status === "fulfilled") setPaperStrategies(strategies.value);
+        if (account.status === "fulfilled") setPaperAccount(account.value);
+        if (portfolio.status === "fulfilled") {
+          setPaperTrades(portfolio.value.trades); setPaperWarnings(portfolio.value.warnings);
+        }
+        if (orders.status === "fulfilled") setPaperOrders(orders.value);
+        if (deployments.status === "fulfilled") setPaperDeployments(deployments.value);
+        setPaperError([strategies, account, portfolio, orders, deployments].some(result => result.status === "rejected")
+          ? "Some paper data could not refresh. Refresh quotes & paper status to retry." : "");
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
@@ -2326,6 +2330,7 @@ export default function Home() {
               <div>
                 <div className="panel-kicker">PAPER TRADING</div>
                 <h2>Strategy workspace</h2>
+                <button type="button" disabled={chainBusy || paperBusy} onClick={() => void refreshPaperWorkspace()}>Refresh quotes & paper status</button>
                 <p className="muted">Simulated NIFTY option fills use buys at ask and sells at bid. No order is sent to a broker.</p>
               </div>
               <div className="paper-actions">

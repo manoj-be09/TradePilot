@@ -34,6 +34,42 @@ def armed_setup(client, monkeypatch):
     return provider, headers, payload, client.app.state.test_session_factory
 
 
+def test_educational_automatic_entry_and_exit_keep_unverified_provenance(client, monkeypatch):
+    provider, headers, payload, factory = armed_setup(client, monkeypatch)
+    monkeypatch.setattr(get_settings(), "paper_allow_unverified_quotes", True)
+    original_chain = provider.get_option_chain
+
+    async def educational_chain(*args):
+        chain = await original_chain(*args)
+        for contract in chain.contracts:
+            contract.quote.timestamp_basis = "api_response_received"
+            contract.quote.book_timestamp_basis = "unknown"
+            contract.quote.book_as_of = None
+        chain.timestamp_basis = "api_response_received"
+        return chain
+
+    provider.get_option_chain = educational_chain
+    payload.update(stop_loss_amount="1", target_profit_amount="1", trailing_stop_amount="1")
+    armed = client.post("/paper/deployments", headers=headers, json=payload)
+    assert armed.status_code == 201, armed.text
+    for _ in range(3):
+        asyncio.run(run_cycle(factory, provider, get_settings()))
+    with factory() as session:
+        deployment = session.get(PaperDeployment, UUID(armed.json()["id"]))
+        assert deployment.status == "FILLED"
+        trades = list(session.scalars(select(PaperTrade)))
+        assert len(trades) == 1 and trades[0].status == "CLOSED"
+        orders = list(session.scalars(select(PaperOrder)))
+        assert len(orders) == 2
+        for order in orders:
+            for fill in order.fill_snapshot["fills"]:
+                assert fill["timestamp_basis"] == "api_response_received"
+                assert fill["book_timestamp_basis"] == "unknown"
+    ledger = client.get("/paper/account/ledger-reconciliation", headers=headers)
+    assert ledger.status_code == 200
+    assert ledger.json()["status"] == "MATCHED"
+
+
 def test_non_upstox_options_provider_can_arm_enter_and_cannot_cross_price(client, monkeypatch):
     backing, headers, payload, factory = armed_setup(client, monkeypatch)
 

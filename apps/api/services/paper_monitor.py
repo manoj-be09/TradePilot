@@ -101,6 +101,9 @@ def _raw_exit_leg_quotes(trade: PaperTrade, chain: OptionChain | None) -> list[d
             "ask_quantity": contract.ask_quantity if contract else None,
             "selected_side_quote": str(side_quote) if side_quote is not None else None,
             "quote_timestamp": quote.timestamp.isoformat() if quote else None,
+            "last_trade_time": (
+                quote.last_trade_time.isoformat() if quote and quote.last_trade_time else None
+            ),
             "timestamp_basis": quote.timestamp_basis if quote else None,
             "book_as_of": quote.book_as_of.isoformat()
             if quote and quote.book_as_of else None,
@@ -323,6 +326,11 @@ async def monitor_exits(
                         "fill_price": str(exit_price),
                         "cash_flow": str(leg_cash_flow),
                         "quote_timestamp": market_contract.quote.timestamp.isoformat(),
+                        "timestamp_basis": market_contract.quote.timestamp_basis,
+                        "last_trade_time": (
+                            market_contract.quote.last_trade_time.isoformat()
+                            if market_contract.quote.last_trade_time else None
+                        ),
                         "book_as_of": market_contract.quote.book_as_of.isoformat()
                         if market_contract.quote.book_as_of else None,
                         "book_timestamp_basis": market_contract.quote.book_timestamp_basis,
@@ -340,6 +348,10 @@ async def monitor_exits(
                     "ask_quantity": market_contract.ask_quantity,
                     "selected_side_quote": str(exit_price),
                     "quote_timestamp": market_contract.quote.timestamp.isoformat(),
+                    "last_trade_time": (
+                        market_contract.quote.last_trade_time.isoformat()
+                        if market_contract.quote.last_trade_time else None
+                    ),
                     "timestamp_basis": market_contract.quote.timestamp_basis,
                     "book_as_of": market_contract.quote.book_as_of.isoformat()
                     if market_contract.quote.book_as_of else None,

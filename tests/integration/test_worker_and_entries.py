@@ -226,6 +226,10 @@ def test_exit_quote_path_and_stop_decisions_are_durable_and_account_scoped(clien
         assert first["leg_quotes"][0]["quote_timestamp"] == (
             saved_chain.contracts[4].quote.timestamp.isoformat()
         )
+        trade_time = saved_chain.contracts[4].quote.last_trade_time
+        assert first["leg_quotes"][0]["last_trade_time"] == (
+            trade_time.isoformat() if trade_time else None
+        )
         assert session.get(PaperTrade, UUID(trade["id"])).status == "OPEN"
 
     provider.get_option_chain = original_chain

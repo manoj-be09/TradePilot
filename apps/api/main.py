@@ -2605,40 +2605,66 @@ async def paper_trades(user: CurrentUser, session: SessionDep) -> PaperTradeList
     ).all()
     session.commit()
     warnings: list[str] = []
-    open_expiries = sorted({
-        trade.expiry for trade in trades
-        if trade.status == "OPEN" and trade.underlying == "NIFTY"
-    })
-    chains: dict[date, OptionChain] = {}
     provider = get_market_data_provider()
-    active_expiries = [expiry for expiry in open_expiries if not expiry_has_passed(expiry)]
-    session_open = False
-    if active_expiries:
+    indexes: dict[UUID, OptionIndex] = {}
+    scope_errors: dict[UUID, str] = {}
+    for trade in trades:
+        if trade.status != "OPEN":
+            continue
         try:
-            require_nfo_session_open(await provider.get_nfo_session(exchange_today()))
-            session_open = True
-        except (MarketDataUnavailable, MarketDataProviderError, PaperSessionError):
-            warnings.append(
-                "NFO scheduled session is closed or unverified; quote-based paper marks are hidden."
+            indexes[trade.id] = saved_option_index(
+                trade.underlying, trade.entry_rule_snapshot,
+                [str(leg["instrument_key"]) for leg in trade.legs["items"]],
             )
-    for expiry in open_expiries:
+        except PaperSessionError:
+            scope_errors[trade.id] = (
+                "Index-specific valuation needs matching pinned identity; "
+                "no NIFTY quote was substituted."
+            )
+    chains: dict[tuple[str, date], OptionChain] = {}
+    open_sessions: dict[str, bool] = {}
+    groups = sorted({
+        (trade.underlying, trade.expiry) for trade in trades if trade.id in indexes
+    })
+    for underlying, expiry in groups:
+        index = next(indexes[trade.id] for trade in trades
+                     if trade.id in indexes and trade.underlying == underlying)
         if expiry_has_passed(expiry):
             warnings.append(
-                f"Open positions expiring {expiry} remain unresolved after expiry; "
+                f"Open {underlying} positions expiring {expiry} remain unresolved after expiry; "
                 "settlement must be reconciled manually. No synthetic valuation was recorded."
             )
             continue
-        if not session_open:
-            continue
         try:
-            chain = await provider.get_option_chain("NIFTY", expiry)
+            if underlying not in open_sessions:
+                open_sessions[underlying] = False
+                if underlying != "NIFTY" and not callable(
+                    getattr(provider, "get_index_option_session", None)
+                ):
+                    raise MarketDataUnavailable("Index session capability unavailable")
+                scheduled = (
+                    await provider.get_nfo_session(exchange_today()) if underlying == "NIFTY"
+                    else await provider.get_index_option_session(underlying, exchange_today())
+                )
+                require_derivatives_session_open(scheduled, index.derivatives_exchange)
+                open_sessions[underlying] = True
+            if not open_sessions[underlying]:
+                continue
+            chain = await provider.get_option_chain(underlying, expiry)
+            if chain.underlying != underlying or chain.expiry != expiry:
+                raise MarketDataProviderError("Option-chain identity mismatch")
             quality = assess_option_chain(chain)
             if quality.status == "FAIL":
                 warnings.append(
                     f"Open positions expiring {expiry} could not be valued: chain quality is FAIL."
                 )
                 continue
-            chains[expiry] = chain
+            chains[(underlying, expiry)] = chain
+        except PaperSessionError:
+            warnings.append(
+                f"{index.derivatives_exchange} scheduled session is closed or unverified; "
+                "quote-based paper marks are hidden."
+            )
         except (MarketDataUnavailable, MarketDataProviderError):
             warnings.append(
                 f"Open positions expiring {expiry} could not be valued because "
@@ -2648,10 +2674,8 @@ async def paper_trades(user: CurrentUser, session: SessionDep) -> PaperTradeList
     for trade in trades:
         item = _paper_trade_response(trade)
         if trade.status == "OPEN":
-            if trade.underlying != "NIFTY":
-                item.valuation_warning = (
-                    "Index-specific valuation is not enabled; no NIFTY quote was substituted."
-                )
+            if trade.id in scope_errors:
+                item.valuation_warning = scope_errors[trade.id]
                 responses.append(item)
                 continue
             trade_provider = (
@@ -2665,16 +2689,17 @@ async def paper_trades(user: CurrentUser, session: SessionDep) -> PaperTradeList
                 )
                 responses.append(item)
                 continue
-            current_chain = chains.get(trade.expiry)
+            current_chain = chains.get((trade.underlying, trade.expiry))
             if current_chain is None:
                 item.valuation_warning = (
                     "Expired position requires settlement reconciliation; "
                     "unrealized P&L is not shown."
                     if expiry_has_passed(trade.expiry)
                     else (
-                        "NFO scheduled session is closed or unverified; "
+                        f"{indexes[trade.id].derivatives_exchange} scheduled session "
+                        "is closed or unverified; "
                         "unrealized P&L is not shown."
-                        if not session_open
+                        if not open_sessions.get(trade.underlying, False)
                         else "Current quotes are unavailable; unrealized P&L is not shown."
                     )
                 )

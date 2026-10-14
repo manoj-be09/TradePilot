@@ -106,7 +106,11 @@ def _expiry_day_position(client, monkeypatch):
 
 def test_pinned_bse_manual_close_requires_bfo_session(client, monkeypatch):
     # Disposable synthetic fixture; this is not a live BSE entry or expiry acceptance.
-    provider, headers, _, trade, factory = setup_position(client, monkeypatch)
+    provider, headers, payload, trade, factory = setup_position(client, monkeypatch)
+    second = client.post("/paper/trades", headers={
+        **headers, "Idempotency-Key": "same-expiry-nifty-peer",
+    }, json=payload)
+    assert second.status_code == 201, second.text
     with factory() as session:
         saved = session.get(PaperTrade, UUID(trade["id"]))
         saved.underlying = "SENSEX"
@@ -118,8 +122,9 @@ def test_pinned_bse_manual_close_requires_bfo_session(client, monkeypatch):
             **leg, "instrument_key": leg["instrument_key"].replace("NSE_FO|", "BSE_FO|"),
         } for leg in saved.legs["items"]]}
         session.commit()
-    for contract in provider.contracts:
-        contract.instrument_key = contract.instrument_key.replace("NSE_FO|", "BSE_FO|")
+    provider.contracts += [contract.model_copy(update={
+        "instrument_key": contract.instrument_key.replace("NSE_FO|", "BSE_FO|"),
+    }) for contract in provider.contracts]
     venue = "NFO"
     wrong_index = True
     requested = []
@@ -133,6 +138,9 @@ def test_pinned_bse_manual_close_requires_bfo_session(client, monkeypatch):
     async def selected_chain(underlying, expiry):
         requested.append(underlying)
         chain = await original_chain(underlying, expiry)
+        prefix = "NSE_FO|" if underlying == "NIFTY" else "BSE_FO|"
+        chain.contracts = [item for item in chain.contracts
+                           if item.instrument_token.startswith(prefix)]
         if wrong_index:
             chain.underlying = "BANKEX"
         return chain
@@ -143,13 +151,22 @@ def test_pinned_bse_manual_close_requires_bfo_session(client, monkeypatch):
     rejected = client.post(url, headers=headers)
     assert rejected.status_code == 409, rejected.text
     assert requested == []
+    rows = client.get("/paper/trades", headers=headers).json()["trades"]
+    unavailable_mark = next(item for item in rows if item["id"] == trade["id"])
+    assert unavailable_mark["unrealized_pnl"] is None
+    assert "BFO scheduled session" in unavailable_mark["valuation_warning"]
+    assert requested == ["NIFTY"]
+    requested.clear()
     venue = "BFO"
     rejected_chain = client.post(url, headers=headers)
     assert rejected_chain.status_code == 409, rejected_chain.text
     wrong_index = False
+    marked = client.get("/paper/trades", headers=headers)
+    assert marked.status_code == 200, marked.text
+    assert all(item["unrealized_pnl"] is not None for item in marked.json()["trades"])
     closed = client.post(url, headers=headers)
     assert closed.status_code == 200, closed.text
-    assert requested == ["SENSEX", "SENSEX"]
+    assert requested == ["SENSEX", "NIFTY", "SENSEX", "SENSEX"]
     assert closed.json()["status"] == "CLOSED"
     assert client.post(url, headers=headers).status_code == 409
     assert client.get("/paper/account/ledger-reconciliation", headers=headers).json()[

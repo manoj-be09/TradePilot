@@ -78,6 +78,16 @@ services:
     depends_on:
       api: { condition: service_healthy }
       postgres: { condition: service_healthy }
+  feed-observer:
+    profiles: ["observations"]
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    env_file: .env
+    command: python -m apps.feed_observer.main --instrument "NSE_EQ|INE002A01018"
+    volumes:
+      - feed-observations:/observations
+    restart: unless-stopped
 volumes:
   postgres-data:
   web-node-modules:

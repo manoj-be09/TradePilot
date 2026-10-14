@@ -138,6 +138,16 @@ class PaperStrategyPresetResponse(BaseModel):
 
 
 class PaperTradeCreateRequest(BaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def reject_unsupported_index_selectors(cls, value: Any) -> Any:
+        # Saved requests also contain provider/policy metadata; retain legacy parsing.
+        if isinstance(value, dict) and any(
+            key in value for key in ("underlying", "underlying_key", "index")
+        ):
+            raise ValueError("Index-specific paper execution is not enabled yet")
+        return value
+
     strategy_version_id: UUID | None = None
     strategy_key: str = Field(min_length=1, max_length=64)
     expiry: date

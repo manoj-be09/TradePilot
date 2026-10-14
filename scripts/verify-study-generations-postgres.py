@@ -57,6 +57,7 @@ def verify() -> None:
                     id=trial_id, user_id=owner, study_id=root_id, strategy="trend",
                     registry_version="test-v1", trial_manifest={"preserved": True},
                     manifest_digest="c" * 64, result={"preserved": True}, result_digest="d" * 64,
+                    created_at=datetime.now(timezone.utc),
                 ))
                 migration.upgrade()
                 table = Table("equity_validation_studies", MetaData(), autoload_with=connection)

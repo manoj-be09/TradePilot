@@ -911,6 +911,61 @@ def test_tampered_validation_dataset_is_rejected(client, setup, monkeypatch):
     assert "dataset" in rejected.json()["detail"]
 
 
+def test_visible_simulated_paper_cycle(client, setup, tmp_path):
+    """Export actual disposable runtime results for the operator walkthrough."""
+    import json
+
+    headers, body, provider, factory = setup
+    steps = []
+    applied = client.post("/equity/deployments", json=body, headers=headers)
+    assert applied.status_code == 201
+    deployment_id = applied.json()["id"]
+
+    def capture(label):
+        wallet = account(client, headers)
+        row = next(item for item in wallet["deployments"] if item["id"] == deployment_id)
+        ledger = client.get("/equity/account/ledger-reconciliation", headers=headers).json()
+        assert ledger["status"] == ledger["cash_journal"]["status"] == "MATCHED"
+        steps.append({"label": label, "market_bid": str(provider.price),
+                      "cash": wallet["cash"], "deployment": row, "ledger": ledger})
+        return row
+
+    capture("Applied: capital reserved")
+    cycle(provider, factory)
+    assert capture("Waiting: no new daily candle")["status"] == "WAITING_FOR_ENTRY"
+    Clock.instant += timedelta(days=1)
+    provider.day += timedelta(days=1)
+    cycle(provider, factory)
+    opened = capture("Entry: new signal and valid quote")
+    assert opened["status"] == "OPEN"
+    position = opened["state"]["position"]
+    provider.price = (
+        Decimal(position["entry_price"]) + Decimal(position["distance"]) * Decimal("1.5")
+    )
+    Clock.instant += timedelta(seconds=1)
+    cycle(provider, factory)
+    raised = capture("Price rises: trailing stop advances")
+    stop = Decimal(raised["state"]["position"]["stop"])
+    assert stop > Decimal(position["entry_price"])
+    provider.price = stop - Decimal("0.10")
+    Clock.instant += timedelta(seconds=1)
+    cycle(provider, factory)
+    closed = capture("Exit: price crosses trailing stop")
+    assert closed["status"] == "CLOSED"
+    assert closed["state"]["exit_reason"] == "TRAILING_STOP"
+    assert Decimal(steps[-1]["cash"]) == (
+        Decimal("1000000") + Decimal(closed["state"]["realized_pnl"])
+    )
+    cycle(provider, factory)
+    assert capture("Next cycle: no duplicate settlement")["state"] == closed["state"]
+    assert steps[-1]["cash"] == steps[-2]["cash"]
+    decisions = client.get(f"/equity/deployments/{deployment_id}/decisions", headers=headers).json()
+    (tmp_path / "paper-cycle.json").write_text(json.dumps({
+        "simulation": True, "scope": "Disposable database; synthetic exchange-time evidence",
+        "steps": steps, "decisions": decisions,
+    }, indent=2), encoding="utf-8")
+
+
 def test_deploy_wait_enter_trail_close_persists_and_accounts_for_costs(client, setup):
     headers, body, provider, factory = setup
     research = {k: body[k] for k in ("watchlist_id", "budget", "risk_budget")}

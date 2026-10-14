@@ -239,7 +239,7 @@ type EntryConditionDraft = {
 
 type StrategyVersion = {
   id: string; name: string; version_number: number; definition_hash: string; created_at: string;
-  definition: { template_key: string; template_version: string; template_legs: PaperStrategy["legs"]; lots: number; entry_conditions: EntryConditionDraft[]; stop_loss_amount: string | null; target_profit_amount: string | null; trailing_stop_amount: string | null };
+  definition: { option_index?: {symbol: string; instrument_key: string; exchange: string; derivatives_exchange: string} | null; template_key: string; template_version: string; template_legs: PaperStrategy["legs"]; lots: number; entry_conditions: EntryConditionDraft[]; stop_loss_amount: string | null; target_profit_amount: string | null; trailing_stop_amount: string | null };
 };
 
 type PaperStrategyPreset = {
@@ -1523,6 +1523,7 @@ export default function Home() {
         method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           name: strategyVersionName.trim(), strategy_key: selectedStrategy, lots: paperLots,
+          ...(selectedOptionIndex !== "NIFTY" ? {underlying: selectedOptionIndex} : {}),
           entry_conditions: entryConditions, stop_loss_amount: stopLossInput || null,
           target_profit_amount: targetProfitInput || null, trailing_stop_amount: trailingStopInput || null,
           base_version_id: selectedVersion?.name === strategyVersionName.trim() ? selectedVersion.id : null,
@@ -1539,10 +1540,19 @@ export default function Home() {
   function loadStrategyVersion() {
     const version = strategyVersions.find((item) => item.id === selectedVersionId);
     if (!version) return;
+    const index = version.definition.option_index?.symbol ?? "NIFTY";
+    if (!optionIndexes.some((item) => item.symbol === index)) {
+      setVersionError("This version's index is unavailable in the current catalog."); return;
+    }
     if (!paperStrategies.some((strategy) => strategy.key === version.definition.template_key)) {
       setVersionError("This version uses a strategy template that is no longer available."); return;
     }
     setSelectedStrategy(version.definition.template_key);
+    if (index !== selectedOptionIndex) {
+      setSelectedOptionIndex(index); setContracts([]); setSelectedExpiry("");
+      setChain(null); setOptionFeatures(null); setSelectedPaperStrike("");
+      setDeploymentPreparedKey("");
+    }
     setPaperLots(version.definition.lots);
     setEntryConditions(version.definition.entry_conditions.map((condition) => ({ ...condition })));
     setStopLossInput(version.definition.stop_loss_amount ?? "");
@@ -1596,6 +1606,13 @@ export default function Home() {
         throw new Error("Unsupported strategy export format.");
       }
       const definition = exportData.definition as Record<string, unknown>;
+      const savedIndex = definition.option_index;
+      const index = savedIndex == null ? "NIFTY" : (
+        typeof savedIndex === "object" ? (savedIndex as Record<string, unknown>).symbol : null
+      );
+      if (typeof index !== "string" || !optionIndexes.some((item) => item.symbol === index)) {
+        throw new Error("The exported index is unavailable in the current catalog.");
+      }
       const template = paperStrategies.find((item) => item.key === definition.template_key);
       if (!template || definition.schema_version !== 1 || definition.template_version !== template.version ||
           JSON.stringify(definition.template_legs) !== JSON.stringify(template.legs)) {
@@ -1627,6 +1644,11 @@ export default function Home() {
       const trailing = amount("trailing_stop_amount");
       const sourceName = typeof exportData.name === "string" ? exportData.name : "Imported strategy";
       setSelectedStrategy(template.key);
+      if (index !== selectedOptionIndex) {
+        setSelectedOptionIndex(index); setContracts([]); setSelectedExpiry("");
+        setChain(null); setOptionFeatures(null); setSelectedPaperStrike("");
+        setDeploymentPreparedKey("");
+      }
       setPaperLots(lots);
       setEntryConditions(conditions.map((item) => ({ ...(item as EntryConditionDraft) })));
       setStopLossInput(stop); setTargetProfitInput(target); setTrailingStopInput(trailing);
@@ -2589,7 +2611,7 @@ export default function Home() {
                   <label htmlFor="strategy-version">Saved versions</label>
                   <select id="strategy-version" onChange={(event) => { setSelectedVersionId(event.target.value); setCompareVersionId(""); }} value={selectedVersionId}>
                     <option value="">No version pinned</option>
-                    {strategyVersions.map((version) => <option key={version.id} value={version.id}>{version.name} · v{version.version_number}</option>)}
+                    {strategyVersions.map((version) => <option key={version.id} value={version.id}>{version.name} · v{version.version_number} · {version.definition.option_index?.symbol ?? "NIFTY"}</option>)}
                   </select>
                   <button className="refresh-button" disabled={versionBusy || !selectedVersionId} onClick={loadStrategyVersion} type="button">Load</button>
                   <button className="inline-button" disabled={!selectedVersionId} onClick={() => { setSelectedVersionId(""); setVersionMessage("Version unpinned. Current form remains editable."); }} type="button">Unpin</button>

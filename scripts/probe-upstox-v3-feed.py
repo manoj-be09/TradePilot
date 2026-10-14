@@ -4,6 +4,7 @@ Run from the repository root with the project Python environment:
 python scripts/probe-upstox-v3-feed.py
 """
 
+import argparse
 import asyncio
 import sys
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ import httpx
 repo = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo))
 
+from packages.market_data.feed_journal import FeedJournal  # noqa: E402
 from packages.market_data.provider import get_market_data_provider  # noqa: E402
 
 INSTRUMENT = "NSE_EQ|INE002A01018"  # RELIANCE
@@ -84,7 +86,7 @@ def probe_conclusion(
     )
 
 
-async def main(provider=None) -> None:
+async def main(provider=None, journal=None) -> None:
     provider = provider or get_market_data_provider()
     if provider.provider_id != "upstox":
         print("Upstox token is not configured; no stream attempted.")
@@ -120,6 +122,14 @@ async def main(provider=None) -> None:
             async with asyncio.timeout(SECONDS):
                 async for quote in provider.subscribe([INSTRUMENT]):
                     observed_at = datetime.now(timezone.utc)
+                    if journal is not None:
+                        if received == 0:
+                            journal.record("connected")
+                        elif last_observed_at is not None and (
+                            observed_at - last_observed_at
+                        ).total_seconds() > 5:
+                            journal.record("stale")
+                        journal.record("quote", quote)
                     changed_price, changed_book, book = observation_changes(
                         previous_price, previous_book, quote
                     )
@@ -167,6 +177,9 @@ async def main(provider=None) -> None:
                     previous_price, previous_book = quote.last_price, book
         except TimeoutError:
             pass
+        finally:
+            if journal is not None:
+                journal.record("disconnected")
         market_after = await provider._get("/v2/market/status/NSE")
         end_status = market_after.get("status", "unknown")
         duration = (
@@ -190,4 +203,13 @@ async def main(provider=None) -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="Bounded read-only feed verification")
+    parser.add_argument("--journal", type=Path, help="Optional bounded JSONL observation file")
+    args = parser.parse_args()
+    journal = FeedJournal(args.journal) if args.journal else None
+    try:
+        asyncio.run(main(journal=journal))
+    finally:
+        if journal is not None:
+            journal.record("stopped")
+            journal.close()

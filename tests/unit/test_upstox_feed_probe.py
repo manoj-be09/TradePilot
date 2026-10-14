@@ -84,3 +84,41 @@ def test_probe_failure_does_not_expose_credentials(capsys):
     assert "Probe failed (ValueError)" in output
     assert "must-stay-private" not in output
     assert "private.example" not in output
+
+
+def test_probe_journals_actual_quote_and_disconnect_without_private_url(tmp_path, capsys):
+    import json
+    from datetime import datetime, timezone
+
+    from packages.market_data.contracts import Quote
+    from packages.market_data.feed_journal import FeedJournal
+
+    script = run_path(str(Path("scripts/probe-upstox-v3-feed.py")))
+
+    async def clock():
+        return None
+
+    class Provider:
+        provider_id = "upstox"
+
+        async def _get(self, path):
+            return {"status": "NORMAL_OPEN"}
+
+        async def subscribe(self, instruments):
+            yield Quote(
+                instrument_token="test", timestamp=datetime.now(timezone.utc),
+                last_price=100, bid=99, ask=100, timestamp_basis="provider_tick",
+            )
+            raise ValueError("wss://private.example/?token=must-stay-private")
+
+    script["main"].__globals__["estimate_provider_clock_offset"] = clock
+    path = tmp_path / "probe.jsonl"
+    journal = FeedJournal(path)
+    try:
+        asyncio.run(script["main"](Provider(), journal))
+    finally:
+        journal.close()
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    assert [row["event"] for row in rows] == ["connected", "quote", "disconnected"]
+    assert rows[1]["last"] == "100" and rows[1]["book_basis"] == "unknown"
+    assert "private.example" not in path.read_text() + capsys.readouterr().out

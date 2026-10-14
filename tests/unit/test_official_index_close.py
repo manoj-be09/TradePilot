@@ -29,6 +29,21 @@ def test_nse_archive_exact_expiry_row_and_rejects_ambiguous_or_bad_data():
             archive.parse_nifty_close(bad, EXPIRY)
 
 
+def test_selected_index_never_borrows_nifty_close():
+    bank_row = "Nifty Bank,29-09-2026,50000,50500,49500,50100\n"
+    raw = (HEADER + ROW + bank_row).encode()
+    assert archive.parse_nse_index_close(raw, EXPIRY, "Nifty Bank") == Decimal("50100.00")
+    assert archive.parse_nifty_close(raw, EXPIRY) == Decimal("22716.20")
+    for bad, name in (
+        ((HEADER + ROW).encode(), "Nifty Bank"),
+        ((HEADER + ROW + bank_row + bank_row).encode(), "Nifty Bank"),
+        (raw, "SENSEX"),
+        (raw, ""),
+    ):
+        with pytest.raises(archive.OfficialCloseUnavailable):
+            archive.parse_nse_index_close(bad, EXPIRY, name)
+
+
 def test_fetch_is_bounded_to_fixed_archive_and_rejects_redirects(monkeypatch):
     original_client = httpx.AsyncClient
     seen: list[str] = []

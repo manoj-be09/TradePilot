@@ -37,17 +37,23 @@ def archive_url(expiry: date) -> str:
 
 
 def parse_nifty_close(raw: bytes, expiry: date) -> Decimal:
+    return parse_nse_index_close(raw, expiry, INDEX_NAME)
+
+
+def parse_nse_index_close(raw: bytes, expiry: date, index_name: str) -> Decimal:
+    if not index_name or len(index_name) > 128:
+        raise OfficialCloseUnavailable("An exact NSE archive index name is required.")
     if not raw or len(raw) > MAX_ARCHIVE_BYTES:
         raise OfficialCloseUnavailable("NSE daily index archive has an invalid size.")
     try:
         reader = csv.DictReader(StringIO(raw.decode("utf-8-sig"), newline=""))
         if not reader.fieldnames or not REQUIRED_COLUMNS.issubset(reader.fieldnames):
             raise OfficialCloseUnavailable("NSE daily index archive columns are incomplete.")
-        matches = [row for row in reader if row.get("Index Name") == INDEX_NAME]
+        matches = [row for row in reader if row.get("Index Name") == index_name]
     except (UnicodeDecodeError, csv.Error) as error:
         raise OfficialCloseUnavailable("NSE daily index archive is malformed.") from error
     if len(matches) != 1 or matches[0].get("Index Date") != expiry.strftime("%d-%m-%Y"):
-        raise OfficialCloseUnavailable("Exactly one matching Nifty 50 expiry row is required.")
+        raise OfficialCloseUnavailable(f"Exactly one matching {index_name} expiry row is required.")
     row = matches[0]
     try:
         opening, high, low, close = (

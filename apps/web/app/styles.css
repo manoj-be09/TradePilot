@@ -3,7 +3,7 @@
   --ink: #182822;
   --ink-muted: #697970;
   --ink-faint: #94a098;
-  --paper: #f4f5ef;
+  --paper: #f6f8fb;
   --panel: #ffffff;
   --line: #e3e8df;
   --green: #145d46;
@@ -878,3 +878,9 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px
 .equity-pinned-grid { gap: 14px; }
 .equity-pinned-grid > article { padding: 20px; border-radius: 12px; border-color: #e4e9ef; box-shadow: none; }
 .equity-pinned-grid details > summary { padding: 6px 0; font-size: 12px; cursor: pointer; }
+.index-picker { display: flex; align-items: center; gap: 12px; width: fit-content; margin: 14px 0; color: var(--ink-muted); font-size: 12px; font-weight: 600; }
+.index-picker select { min-height: 38px; max-width: calc(100vw - 80px); border: 1px solid var(--line); border-radius: 9px; padding: 0 32px 0 12px; background: white; color: var(--ink); }
+.paper-risk-details .paper-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.preset-panel > summary { cursor: pointer; color: var(--ink); font-size: 13px; font-weight: 600; }
+.preset-panel[open] > summary { margin-bottom: 16px; }
+@media (max-width: 680px) { .paper-risk-details .paper-stats { grid-template-columns: 1fr; } }

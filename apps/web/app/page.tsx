@@ -2274,7 +2274,7 @@ export default function Home() {
               {activeSection === "bridge" ? <section className="empty-section-card"><h3>Equity bridge tool</h3><p className="muted">This page will show paper/live bridge controls when live equity broker routing is enabled. It stays read-only in this milestone.</p></section> : null}
             </section>
           ) : <>
-          <label className="market-toolbar">Index
+          <label className="index-picker">Index
             <select aria-label="Option index" value={selectedOptionIndex} onChange={(event) => {
               setSelectedOptionIndex(event.target.value); setContracts([]); setSelectedExpiry("");
               setChain(null); setOptionFeatures(null); setSelectedVersionId("");
@@ -2384,16 +2384,20 @@ export default function Home() {
 
             {paperAccount ? (
               <div className="paper-stats" aria-label="Paper account summary">
-                <div><span>Starting capital</span><strong>₹{formatPrice(paperAccount.initial_cash)}</strong></div>
                 <div><span>Cash balance</span><strong>₹{formatPrice(paperAccount.cash_balance)}</strong></div>
                 <div><span>Open positions</span><strong>{formatCount(paperAccount.open_trade_count)}</strong></div>
-                <div><span>Open maximum loss</span><strong>₹{formatPrice(paperAccount.open_max_loss)}</strong></div>
                 <div><span>Today’s realized P&amp;L</span><strong className={changeClass(paperAccount.daily_realized_pnl)}>{formatSignedPrice(paperAccount.daily_realized_pnl)}</strong></div>
-                <div><span>Daily loss budget</span><strong>₹{formatPrice(paperAccount.daily_loss_limit)}</strong></div>
                 <div><span>Remaining new-trade risk</span><strong>₹{formatPrice(paperAccount.daily_risk_remaining)}</strong></div>
               </div>
             ) : <p className="features-note">Loading paper account…</p>}
-            <details className="workspace-disclosure"><summary>Risk budget details</summary><p className="features-note">The daily budget uses realized losses and open positions’ theoretical maximum loss. It does not include live mark-to-market or transaction costs.</p></details>
+            <details className="workspace-disclosure paper-risk-details"><summary>Allocation &amp; risk details</summary>
+              {paperAccount ? <div className="paper-stats">
+                <div><span>Starting capital</span><strong>₹{formatPrice(paperAccount.initial_cash)}</strong></div>
+                <div><span>Open maximum loss</span><strong>₹{formatPrice(paperAccount.open_max_loss)}</strong></div>
+                <div><span>Daily loss budget</span><strong>₹{formatPrice(paperAccount.daily_loss_limit)}</strong></div>
+              </div> : null}
+              <p className="features-note">The daily budget uses realized losses and open positions’ theoretical maximum loss. It does not include live mark-to-market or transaction costs.</p>
+            </details>
 
             <details className="paper-ledger-review">
               <summary>Paper ledger check</summary>

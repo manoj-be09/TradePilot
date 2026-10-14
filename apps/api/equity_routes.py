@@ -234,6 +234,7 @@ class DeployRequest(ResearchRequest):
     strategy: str
     command_key: UUID
     indicative_quotes: bool = False
+    testing_only: bool = False
 
 
 class PolicyTrialRequest(BaseModel):
@@ -1238,12 +1239,23 @@ def deployment_decisions(
 
 @router.post("/deployments", status_code=201)
 async def deploy(body: DeployRequest, user: CurrentUser, session: SessionDep) -> dict[str, Any]:
+    from packages.paper_trading.test_pulse import KEY as TEST_KEY
+    from packages.paper_trading.test_pulse import VERSION as TEST_VERSION
+
+    diagnostic = body.strategy == TEST_KEY
     if not get_settings().paper_trading_enabled:
         raise HTTPException(403, "Paper trading is disabled")
-    if body.strategy not in STRATEGIES:
+    if body.strategy not in STRATEGIES and not diagnostic:
         raise HTTPException(422, "Unknown equity strategy")
+    if body.testing_only and not diagnostic:
+        raise HTTPException(422, "Testing opt-in applies only to the diagnostic strategy")
+    if diagnostic and (not body.testing_only or body.budget > 10000 or body.risk_budget > 200):
+        raise HTTPException(
+            422, "Test strategy requires opt-in, allocation <=10000 and risk <=200"
+        )
     uid = user.id
-    digest = hashlib.sha256(body.model_dump_json(exclude={"command_key"}).encode()).hexdigest()
+    excluded = {"command_key"} if diagnostic else {"command_key", "testing_only"}
+    digest = hashlib.sha256(body.model_dump_json(exclude=excluded).encode()).hexdigest()
     # Resolve completed commands before provider I/O so a retry survives a data outage.
     previous = session.scalar(
         select(EquityDeployment).where(
@@ -1265,9 +1277,10 @@ async def deploy(body: DeployRequest, user: CurrentUser, session: SessionDep) ->
     except Exception as error:
         raise HTTPException(503, "Cannot deploy without valid completed daily history") from error
     baseline = bars[-1].timestamp.astimezone(ZONE).date()
-    if len(bars) < MINIMUM_BARS[body.strategy]:
+    required_bars = 50 if diagnostic else MINIMUM_BARS[body.strategy]
+    if len(bars) < required_bars:
         raise HTTPException(
-            422, f"This strategy needs {MINIMUM_BARS[body.strategy]} completed bars"
+            422, f"This strategy needs {required_bars} completed bars"
         )
     if (now.astimezone(ZONE).date() - baseline).days > 4:
         raise HTTPException(422, "Daily history is stale; deployment blocked")
@@ -1280,6 +1293,10 @@ async def deploy(body: DeployRequest, user: CurrentUser, session: SessionDep) ->
         "latest_daily_signal_met": signal(body.strategy, bars),
         "latest_daily_signal_after_apply": False,
     }
+    if diagnostic:
+        initial_state.update(
+            testing_only=True, detail="Test only: collecting three fresh quote samples"
+        )
     if threshold is not None:
         initial_state["entry_threshold_price"] = str(money(threshold))
     try:
@@ -1316,7 +1333,7 @@ async def deploy(body: DeployRequest, user: CurrentUser, session: SessionDep) ->
         instrument_key=key,
         symbol=symbol,
         strategy=body.strategy,
-        version=VERSION,
+        version=TEST_VERSION if diagnostic else VERSION,
         budget=body.budget,
         risk_budget=body.risk_budget,
         status="WAITING_FOR_ENTRY",

@@ -79,6 +79,10 @@ function Scenario({ value }: { value: SharedScenario }) {
 }
 
 function DeploymentRules({ row, entry }: { row: Deployment; entry?: CatalogEntry }) {
+  if (row.strategy === "test_pulse") return <div className="equity-deployment-rules">
+    <p><strong>Test only:</strong> Collect three fresh prior worker quotes, then buy if price is above their average. Exit below that average or after 60 seconds; protective stops still apply.</p>
+    <p>Expires without entry after five minutes. Quote, session, spread, depth and risk checks still apply. Long-only; sell closes the holding. Excluded from normal strategy rankings.</p>
+  </div>;
   return <div className="equity-deployment-rules">
     <p><strong>Entry rule:</strong> {entry?.entry ?? "Rule description unavailable. Check the strategy catalog before applying again."}</p>
     <p><strong>When checked:</strong> A new completed daily candle after Apply must match the rule. Then the worker checks an open NSE session, the selected provider, a valid two-sided quote, a spread ≤0.5%, enough displayed ask size, and an ask within 2% of the signal close.</p>
@@ -133,6 +137,7 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
   const [savingKey, setSavingKey] = useState("");
   const [budget, setBudget] = useState("10000");
   const [risk, setRisk] = useState("200");
+  const [testConsent, setTestConsent] = useState(false);
   const [indicativeQuotes, setIndicativeQuotes] = useState(false);
   const [research, setResearch] = useState<Research | null>(null);
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
@@ -348,7 +353,8 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
   async function apply(key: string) {
     if (applying) return;
     setApplying(key); setNotice(""); setError("");
-    const request = { watchlist_id: selected, budget, risk_budget: risk, strategy: key, indicative_quotes: indicativeQuotes };
+    const diagnostic = key === "test_pulse";
+    const request = { watchlist_id: selected, budget: diagnostic ? "1000" : budget, risk_budget: diagnostic ? "20" : risk, strategy: key, indicative_quotes: indicativeQuotes, ...(diagnostic ? { testing_only: true } : {}) };
     const fingerprint = JSON.stringify(request);
     if (command.current?.fingerprint !== fingerprint) command.current = { fingerprint, key: crypto.randomUUID() };
     try {
@@ -357,7 +363,7 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
       setAccount(current => current ? { ...current, deployments: [deployment, ...current.deployments.filter(row => row.id !== deployment.id)] } : current);
       if (libraryPanel.current) libraryPanel.current.open = false;
       setFocusApplied(true);
-      setNotice(indicativeQuotes
+      setNotice(diagnostic ? "Test strategy applied: three fresh samples, bullish entry, bearish or 60-second exit. Data gates still apply." : indicativeQuotes
         ? "Indicative paper strategy deployed. Entry waits for a new daily signal and fresh displayed depth. Results stay out of verified ranking evidence."
         : "Strategy deployed and pinned above. Entry waits for a new completed daily signal.");
       setRefresh(value => value + 1);
@@ -383,13 +389,14 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
   );
   const appliedName = research?.strategies.find(row => row.key === activeDeployment?.strategy)?.name ?? activeDeployment?.strategy;
   const activeDeployments = account?.deployments.filter(row => active.includes(row.status)) ?? [];
-  const strategyName = (key: string) => catalog.find(entry => entry.implementation_key === key)?.name ?? research?.strategies.find(row => row.key === key)?.name ?? key;
+  const strategyName = (key: string) => key === "test_pulse" ? "TEST ONLY · Short trend pulse" : catalog.find(entry => entry.implementation_key === key)?.name ?? research?.strategies.find(row => row.key === key)?.name ?? key;
   const entryZone = (row: Deployment) => {
     const reference = Number(row.state.entry_reference_price);
     if (!Number.isFinite(reference) || reference <= 0) return null;
     return { low: reference * 0.98, high: reference * 1.02 };
   };
   const dailySetupNote = (row: Deployment) => {
+    if (row.strategy === "test_pulse") return "Three fresh prior quotes; no new daily candle required";
     const state = row.state;
     if (state.latest_daily_signal_met === false) return `Daily pattern not met on ${state.latest_daily_signal_date ?? "last candle"}`;
     if (state.latest_daily_signal_met === true && !state.latest_daily_signal_after_apply) return "Pattern met before Apply; a new daily candle is required";
@@ -410,11 +417,11 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
         <div className="equity-deployment-heading"><strong>{row.symbol} · {strategyName(row.strategy)}</strong><span>{row.status.replaceAll("_", " ").toLowerCase()}</span></div>
         <p className="equity-deployment-status">{row.state.detail}</p>
         <div className="equity-entry-comparison" aria-label="Entry plan compared with current market price">
-          <div><span>{row.state.position ? "Entry price" : "Daily close reference"}</span><strong>{row.state.position ? rupees(row.state.position.entry_price) : row.state.entry_threshold_price ? `Above ${rupees(row.state.entry_threshold_price)}` : entryZone(row) ? `${rupees(entryZone(row)!.low)} – ${rupees(entryZone(row)!.high)}` : "Waiting for signal"}</strong><small>{row.state.position ? "Filled entry" : dailySetupNote(row)}</small></div>
+          <div><span>{row.state.position ? "Entry price" : row.strategy === "test_pulse" ? "Quote-average trigger" : "Daily close reference"}</span><strong>{row.state.position ? rupees(row.state.position.entry_price) : row.state.entry_threshold_price ? `Above ${rupees(row.state.entry_threshold_price)}` : entryZone(row) ? `${rupees(entryZone(row)!.low)} – ${rupees(entryZone(row)!.high)}` : "Waiting for signal"}</strong><small>{row.state.position ? "Filled entry" : dailySetupNote(row)}</small></div>
           <div><span>Current price</span><strong>{row.state.current_price ? rupees(row.state.current_price) : "Unavailable"}</strong><small>{row.state.current_price_at ? `${quoteTimeLabel(row.state.current_price_basis)} · ${date(row.state.current_price_at)}` : "Waiting for quote"}</small></div>
         </div>
         {row.state.position ? <div className="equity-position-strip"><span>Stop <b>{rupees(row.state.position.stop)}</b></span><span>Target <b>{rupees(row.state.position.target)}</b></span><span>Marked P&amp;L <b>{rupees(row.state.marked_pnl)}</b></span></div> : null}
-        <details className="equity-card-details"><summary>＋ Details</summary><DeploymentRules row={row} entry={catalog.find(entry => entry.implementation_key === row.strategy)} /><small>Allocated {rupees(row.budget)} · planned risk {rupees(row.risk_budget)} · last checked {date(row.updated_at)}</small>{row.status === "WAITING_FOR_ENTRY" && <small>Applied {date(row.created_at)} · deadline {date(new Date(new Date(row.created_at).getTime() + 7 * 86_400_000).toISOString())}</small>}{row.state.quote_mode === "INDICATIVE" && <small className="equity-evidence-label">Indicative fill · book time unverified · excluded from verified feedback</small>}</details>
+        <details className="equity-card-details"><summary>＋ Details</summary><DeploymentRules row={row} entry={catalog.find(entry => entry.implementation_key === row.strategy)} /><small>Allocated {rupees(row.budget)} · planned risk {rupees(row.risk_budget)} · last checked {date(row.updated_at)}</small>{row.status === "WAITING_FOR_ENTRY" && <small>Applied {date(row.created_at)} · deadline {date(new Date(new Date(row.created_at).getTime() + (row.strategy === "test_pulse" ? 5 * 60_000 : 7 * 86_400_000)).toISOString())}</small>}{row.state.quote_mode === "INDICATIVE" && <small className="equity-evidence-label">Indicative fill · book time unverified · excluded from verified feedback</small>}</details>
         <DecisionHistory deploymentId={row.id} apiUrl={apiUrl} token={token} />
         <button className="inline-button" type="button" disabled={!!applying || row.status === "EXIT_REQUESTED"} onClick={() => void stop(row.id)}>{row.status === "WAITING_FOR_ENTRY" ? "Cancel deployment" : row.status === "EXIT_REQUESTED" ? "Exit requested" : "Request exit"}</button>
       </article>)}</div>
@@ -428,6 +435,11 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
     <label className="equity-indicative-choice"><input checked={indicativeQuotes} disabled={!!applying} onChange={event => setIndicativeQuotes(event.target.checked)} type="checkbox" />
       <span><strong>Allow indicative paper fills for the next strategy I apply</strong><small>Uses fresh provider-response snapshots when exchange book time is unavailable. Simulated fills and stops may differ from actual execution; these results are recorded but cannot improve verified strategy rankings. The default is strict.</small></span>
     </label>
+    <details className="equity-context-details"><summary>Paper test · quick entry/exit cycle</summary>
+      <p>Selected stock · ₹1,000 allocation · ₹20 planned risk. Uses three fresh worker quotes instead of waiting for a new daily candle. Uses the quote mode selected above.</p>
+      <label><input type="checkbox" checked={testConsent} onChange={event => setTestConsent(event.target.checked)} /> I understand this is a testing-only paper strategy.</label>
+      <button type="button" disabled={!selected || !testConsent || !!applying} onClick={() => void apply("test_pulse")}>{applying === "test_pulse" ? "Applying…" : "Apply test strategy"}</button>
+    </details>
     <div className="equity-quick-search">
       <label htmlFor="equity-stock-search">{items.length ? "Find another NSE stock" : "Find your first NSE stock"}</label>
       <input autoComplete="off" id="equity-stock-search" maxLength={50} onChange={event => setQuickQuery(event.target.value)} placeholder="Type a symbol, e.g. RELIANCE" type="search" value={quickQuery} />

@@ -911,6 +911,69 @@ def test_tampered_validation_dataset_is_rejected(client, setup, monkeypatch):
     assert "dataset" in rejected.json()["detail"]
 
 
+@pytest.mark.parametrize("exit_mode", ["bearish", "timer"])
+def test_diagnostic_pulse_enters_without_new_daily_candle_and_closes(client, setup, exit_mode):
+    headers, body, provider, factory = setup
+    request = {**body, "strategy": "test_pulse", "budget": "1000", "risk_budget": "20"}
+    assert client.post("/equity/deployments", json=request, headers=headers).status_code == 422
+    request["testing_only"] = True
+    applied = client.post("/equity/deployments", json=request, headers=headers)
+    assert applied.status_code == 201, applied.text
+    assert applied.json()["version"] == "equity-test-pulse-v1"
+    for _ in range(3):
+        cycle(provider, factory)
+        Clock.instant += timedelta(seconds=15)
+    assert account(client, headers)["deployments"][0]["status"] == "WAITING_FOR_ENTRY"
+    provider.price = Decimal("161")
+    cycle(provider, factory)
+    opened = account(client, headers)["deployments"][0]
+    assert opened["status"] == "OPEN"
+    assert opened["state"]["latest_daily_signal_after_apply"] is False
+    provider.fail_history = True  # Protective/test exits must not depend on daily-history I/O.
+    if exit_mode == "bearish":
+        provider.price = Decimal("159.5")
+        Clock.instant += timedelta(seconds=15)
+    else:
+        Clock.instant += timedelta(seconds=60)
+    cycle(provider, factory)
+    closed = account(client, headers)["deployments"][0]
+    assert closed["status"] == "CLOSED"
+    assert closed["state"]["exit_reason"] == (
+        "TEST_BEARISH_EXIT" if exit_mode == "bearish" else "TEST_TIMED_EXIT"
+    )
+    reconciliation = client.get("/equity/account/ledger-reconciliation", headers=headers).json()
+    assert reconciliation["status"] == reconciliation["cash_journal"]["status"] == "MATCHED"
+    cash = account(client, headers)["cash"]
+    cycle(provider, factory)
+    assert account(client, headers)["cash"] == cash
+    provider.fail_history = False
+    research = client.post("/equity/strategies", json={
+        key: body[key] for key in ("watchlist_id", "budget", "risk_budget")
+    }, headers=headers).json()
+    assert all(row["key"] != "test_pulse" for row in research["strategies"])
+    assert all(row["performance"]["paper"]["closed_trades"] == 0 for row in research["strategies"])
+
+
+def test_diagnostic_pulse_expires_and_preserves_strict_book_gate(client, setup):
+    headers, body, provider, factory = setup
+    request = {**body, "strategy": "test_pulse", "testing_only": True}
+    assert client.post("/equity/deployments", json={
+        **request, "budget": "10001",
+    }, headers=headers).status_code == 422
+    assert client.post("/equity/deployments", json=request, headers=headers).status_code == 201
+    provider.book_basis = "unknown"
+    for _ in range(4):
+        cycle(provider, factory)
+        Clock.instant += timedelta(seconds=15)
+    row = account(client, headers)["deployments"][0]
+    assert row["status"] == "WAITING_FOR_ENTRY"
+    assert row["state"]["detail"] == "Waiting for an exchange-timestamped bid/ask book"
+    Clock.instant += timedelta(minutes=5)
+    cycle(provider, factory)
+    assert account(client, headers)["deployments"][0]["status"] == "EXPIRED"
+    assert account(client, headers)["cash"] == "1000000.00"
+
+
 def test_visible_simulated_paper_cycle(client, setup, tmp_path):
     """Export actual disposable runtime results for the operator walkthrough."""
     import json

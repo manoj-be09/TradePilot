@@ -38,12 +38,16 @@ from packages.paper_trading.equity_cash_journal import (
     record_equity_cash_event,
 )
 from packages.paper_trading.equity_ledger import reconcile_equity_ledger
+from packages.paper_trading.test_pulse import KEY as TEST_KEY
+from packages.paper_trading.test_pulse import VERSION as TEST_VERSION
+from packages.paper_trading.test_pulse import reference as test_reference
 from packages.paper_trading.worker_lease import LeaseToken, assert_owned
 from packages.regime.strategy_fit import describe_stock_context
 
 ACTIVE = ("WAITING_FOR_ENTRY", "OPEN", "EXIT_REQUESTED")
 
 ENTRY_CHECK_CODES: dict[str, tuple[str, str]] = {
+    "Test only: waiting for price above three fresh prior samples": ("TEST_SIGNAL_WAIT", "SIGNAL"),
     "Deployment provider is not the active provider": ("PROVIDER_MISMATCH", "DATA"),
     "Market data unavailable; no fill made": ("MARKET_DATA_UNAVAILABLE", "DATA"),
     "Unsupported strategy version; manual review required": ("VERSION_UNSUPPORTED", "CONFIG"),
@@ -276,11 +280,13 @@ async def process_equities(
                 continue
             now = datetime.now(timezone.utc)
             state = dict(row.state)
+            diagnostic = row.strategy == TEST_KEY and state.get("testing_only") is True
             state["latest_quote_observation"] = None
             row.updated_at = now
             if quote is not None:
                 observation = {
                     "checked_at": now.isoformat(),
+                    "entry_gate_ok": issue is None,
                     "quote_at": quote.timestamp.isoformat(),
                     "timestamp_basis": quote.timestamp_basis,
                     "trade_at": (
@@ -314,15 +320,19 @@ async def process_equities(
                 state["latest_daily_signal_after_apply"] = (
                     day > datetime.fromisoformat(state["signal_after"]).date()
                 )
-            if row.version != VERSION:
+            if row.version != (TEST_VERSION if diagnostic else VERSION):
                 issue = "Unsupported strategy version; manual review required"
-            if row.status == "WAITING_FOR_ENTRY" and now >= utc(row.created_at) + timedelta(days=7):
+            timeout = timedelta(minutes=5) if diagnostic else timedelta(days=7)
+            if row.status == "WAITING_FOR_ENTRY" and now >= utc(row.created_at) + timeout:
                 row.status = "EXPIRED"
                 wallet.cash += row.budget
                 record_equity_cash_event(
                     session, wallet, row.id, kind="RELEASE", delta=row.budget,
                 )
-                state["detail"] = "No entry within seven days; reserved cash released"
+                state["detail"] = (
+                    "Test expired after five minutes; reserved cash released"
+                    if diagnostic else "No entry within seven days; reserved cash released"
+                )
                 session.add(AuditEvent(
                     actor_user_id=user_id,
                     correlation_id=str(deployment_id),
@@ -361,13 +371,26 @@ async def process_equities(
                         state["planned_entry_price"] = str(quote.ask)
                         day = bars[-1].timestamp.astimezone(ZONE).date()
                         baseline = datetime.fromisoformat(state["signal_after"]).date()
-                        if day <= baseline:
+                        pulse = (
+                            test_reference(state.get("quote_observations", []), now)
+                            if diagnostic else None
+                        )
+                        if diagnostic and pulse is not None:
+                            state["entry_threshold_price"] = str(money(pulse))
+                            state["entry_reference_price"] = str(pulse)
+                        if diagnostic and (pulse is None or quote.last_price <= pulse):
+                            state["detail"] = (
+                                "Test only: waiting for price above three fresh prior samples"
+                            )
+                        elif not diagnostic and day <= baseline:
                             state["detail"] = "Deployed; waiting for a new completed daily candle"
                         elif (now.astimezone(ZONE).date() - day).days > 4:
                             state["detail"] = "Daily history is stale; entry blocked"
-                        elif not signal(row.strategy, bars):
+                        elif not diagnostic and not signal(row.strategy, bars):
                             state["detail"] = "Deployed; waiting for strategy entry signal"
-                        elif abs(quote.ask / bars[-1].close - 1) > Decimal("0.02"):
+                        elif abs(
+                            quote.ask / (pulse if diagnostic and pulse else bars[-1].close) - 1
+                        ) > Decimal("0.02"):
                             state["detail"] = (
                                 "Signal present; price moved over 2% from signal close"
                             )
@@ -463,6 +486,14 @@ async def process_equities(
                         if row.status == "EXIT_REQUESTED"
                         else exit_reason(position, quote.bid)
                     )
+                    if diagnostic and not reason:
+                        pulse = test_reference(state.get("quote_observations", []), now)
+                        if pulse is not None and quote.last_price < pulse:
+                            reason = "TEST_BEARISH_EXIT"
+                        elif now >= (
+                            datetime.fromisoformat(state["entry_at"]) + timedelta(seconds=60)
+                        ):
+                            reason = "TEST_TIMED_EXIT"
                     evaluated += 1
                     if reason:
                         fill, net = proceeds(position, quote.bid)

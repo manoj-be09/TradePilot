@@ -591,3 +591,6 @@ The dashboard now exposes a compact paper-readiness summary using the existing a
 
 The paper worker now has a Docker healthcheck backed by `/ready/paper-worker`. Complete this priority by rebuilding the stack, confirming API and worker readiness, and investigating any unhealthy result from worker logs without deleting database volumes. After that, proceed to the real-session evidence gates.
 
+
+### Owner scope update — 2026-10-15
+Finalize current NIFTY 50 paper trading first. Defer additional NSE/BSE index execution, discovery and settlement extensions until that acceptance is complete; preserve their default-off gates. Current acceptance is the owner-approved indicative paper mode with honest unverified-book warnings. Validate API/worker/UI deployment, automatic entry/exit, orders and cash reconciliation, duplicate/recovery behavior and reviewed expiry path. Actual held-through-expiry evidence and strict exchange-origin book timing remain separate pending evidence gates; do not represent them as passed or alter positions to manufacture proof.

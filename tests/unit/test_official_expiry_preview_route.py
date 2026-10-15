@@ -101,3 +101,38 @@ def test_official_preview_rejects_non_owned_or_closed_trade(monkeypatch):
             SimpleNamespace(scalar=lambda _statement: trade), Response(),
         ))
     assert closed.value.status_code == 409
+
+
+def test_selected_index_reference_requires_pin_and_never_fetches_nifty(monkeypatch):
+    trade = _trade()
+    trade.underlying = "BANKNIFTY"
+    trade.entry_rule_snapshot = {"option_index": {
+        "symbol": "BANKNIFTY", "name": "Nifty Bank",
+        "instrument_key": "NSE_INDEX|Nifty Bank", "exchange": "NSE",
+        "derivatives_exchange": "NFO",
+    }}
+
+    async def selected_close(day, underlying):
+        assert (day, underlying) == (trade.expiry, "BANKNIFTY")
+        return OfficialIndexClose(
+            close=Decimal("50100"), source_url="https://archives.nseindia.com/test.csv",
+            sha256="b" * 64, retrieved_at=datetime.now(timezone.utc), index_name="Nifty Bank",
+        )
+
+    monkeypatch.setattr(main, "fetch_index_close", selected_close)
+    args = (trade.id, SimpleNamespace(id=trade.user_id),
+            SimpleNamespace(scalar=lambda _: trade), Response())
+    result = _finish_immediate(main.paper_official_index_close_reference(*args))
+    assert result.underlying == "BANKNIFTY"
+    assert result.index_name == "Nifty Bank"
+    assert result.daily_close == Decimal("50100")
+    assert "Nifty Bank" in result.warning
+    assert trade.status == "OPEN"
+    trade.entry_rule_snapshot = {}
+    with pytest.raises(HTTPException) as missing_pin:
+        _finish_immediate(main.paper_official_index_close_reference(*args))
+    assert missing_pin.value.status_code == 409
+    trade.underlying = "SENSEX"
+    with pytest.raises(HTTPException) as unsupported:
+        _finish_immediate(main.paper_official_index_close_reference(*args))
+    assert unsupported.value.status_code == 409

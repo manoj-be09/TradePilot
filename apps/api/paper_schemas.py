@@ -279,6 +279,8 @@ class PaperExpiryIndexCloseReference(BaseModel):
 
 class PaperOfficialIndexCloseReference(BaseModel):
     status: Literal["available", "unavailable"]
+    underlying: str = "NIFTY"
+    index_name: str | None = None
     trade_id: UUID
     expiry: date
     reason: str | None = None

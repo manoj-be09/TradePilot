@@ -155,8 +155,10 @@ from packages.paper_trading.ledger_reconciliation import reconcile_paper_ledger
 from packages.paper_trading.observed_entries import replay_observed_entries
 from packages.paper_trading.observed_exits import replay_observed_exits
 from packages.paper_trading.official_index_close import (
+    NSE_INDEX_NAMES,
     OfficialCloseUnavailable,
     archive_url,
+    fetch_index_close,
     fetch_nifty_close,
 )
 from packages.paper_trading.option_evidence import (
@@ -3001,21 +3003,36 @@ async def paper_official_index_close_reference(
     ))
     if trade is None:
         raise HTTPException(404, "Paper trade not found")
-    if trade.status != "OPEN" or trade.underlying != "NIFTY" or not expiry_has_passed(
+    if trade.status != "OPEN" or trade.underlying not in NSE_INDEX_NAMES or not expiry_has_passed(
         trade.expiry
     ):
-        raise HTTPException(409, "Only an open expired NIFTY paper trade can be checked")
+        raise HTTPException(409, "Only an open expired supported NSE index trade can be checked")
+    if trade.underlying != "NIFTY":
+        try:
+            index = saved_option_index(
+                trade.underlying, trade.entry_rule_snapshot,
+                [str(leg["instrument_key"]) for leg in trade.legs["items"]],
+            )
+            if index.exchange != "NSE":
+                raise PaperSessionError("Official NSE close requires a pinned NSE index")
+        except PaperSessionError as error:
+            raise HTTPException(409, str(error)) from error
     try:
-        reference = await fetch_nifty_close(trade.expiry)
+        reference = (await fetch_nifty_close(trade.expiry) if trade.underlying == "NIFTY"
+                     else await fetch_index_close(trade.expiry, trade.underlying))
     except OfficialCloseUnavailable as error:
         return PaperOfficialIndexCloseReference(
             status="unavailable", trade_id=trade.id, expiry=trade.expiry,
+            underlying=trade.underlying, index_name=NSE_INDEX_NAMES[trade.underlying],
             reason=str(error),
         )
     return PaperOfficialIndexCloseReference(
         status="available", trade_id=trade.id, expiry=trade.expiry,
+        underlying=trade.underlying, index_name=reference.index_name,
         daily_close=reference.close, source_url=reference.source_url,
         archive_sha256=reference.sha256, retrieved_at=reference.retrieved_at,
+        warning=(f"This is the NSE daily {reference.index_name} close, not an automatic "
+                 "settlement. Review exchange corrections and final settlement evidence."),
     )
 
 

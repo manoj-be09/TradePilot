@@ -598,6 +598,7 @@ export default function Home() {
   const [connectionError, setConnectionError] = useState("");
   const [refreshCount, setRefreshCount] = useState(0);
   const [paperRefreshCount, setPaperRefreshCount] = useState(0);
+  const [positionView, setPositionView] = useState<"OPEN" | "CLOSED" | "ALL">("OPEN");
   const [paperStrategies, setPaperStrategies] = useState<PaperStrategy[]>([]);
   useEffect(() => { setPaperStrategies([]); }, [selectedOptionIndex]);
   const [paperPresets, setPaperPresets] = useState<PaperStrategyPreset[]>([]);
@@ -2719,9 +2720,11 @@ export default function Home() {
             {paperWarnings.length ? <ul className="paper-warning-list">{paperWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
             <section className="position-overview" aria-label="Paper positions">
               <div className="workspace-section-heading"><h3>Positions &amp; results</h3><span>{paperTrades.filter(trade => trade.status === "OPEN").length} open · {paperTrades.filter(trade => trade.status === "CLOSED").length} closed</span></div>
-              <div className="position-card-grid">{paperTrades.slice(0, 6).map(trade => <article className="position-card" key={trade.id}>
+              <div className="position-view-tabs" aria-label="Position view">{(["OPEN", "CLOSED", "ALL"] as const).map(view => <button key={view} type="button" aria-pressed={positionView === view} onClick={() => setPositionView(view)}>{view === "OPEN" ? "Open positions" : view === "CLOSED" ? "Closed trades" : "All positions"} <span>{paperTrades.filter(trade => view === "ALL" || trade.status === view).length}</span></button>)}</div>
+              <div className="position-card-grid">{paperTrades.filter(trade => positionView === "ALL" || trade.status === positionView).map(trade => <article className={`position-card position-card--${trade.status.toLowerCase()}`} key={trade.id}>
                 <div className="workspace-section-heading"><strong>{trade.strategy_name}</strong><span className={`trade-state trade-${trade.status.toLowerCase()}`}>{trade.status}</span></div>
-                <small>{trade.expiry} · {trade.lots} lot(s)</small>
+                <small>{trade.underlying} · Expiry {trade.expiry} · {trade.lots} lot(s)</small>
+                <div className="position-contracts" aria-label="Position contracts">{trade.legs.map(leg => <span key={`${leg.side}-${leg.strike}-${leg.option_type}`}>{leg.side} {formatPrice(leg.strike)} {leg.option_type}</span>)}</div>
                 <div className="position-card-metrics"><div><span>{Number(trade.entry_cash_flow) < 0 ? "Entry debit" : "Entry credit"}</span><strong>₹{formatPrice(String(Math.abs(Number(trade.entry_cash_flow))))}</strong></div><div><span>{trade.status === "OPEN" ? "Marked P&L" : "Realized P&L"}</span><strong className={changeClass(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}>{formatSignedPrice(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}</strong></div><div><span>Maximum modeled loss</span><strong>₹{formatPrice(trade.max_loss)}</strong></div></div>
                 {trade.valuation_warning ? <p className="table-warning">{trade.valuation_warning}</p> : null}
                 {trade.execution_warnings.length ? <p className="table-warning">{trade.execution_warnings.join(" · ")}</p> : null}
@@ -2730,6 +2733,7 @@ export default function Home() {
                 {trade.status === "OPEN" ? <button className="inline-button" disabled={paperBusy || (trade.expiry < indiaCalendarDate() && settlementBusy)} onClick={() => { if (trade.expiry < indiaCalendarDate()) { setSettlementTradeId(trade.id); setSettlementValue(""); setSettlementSource(""); setSettlementPreview(null); setIndexCloseReference(null); setOfficialIndexCloseReference(null); setSettlementError(""); } else { void closePaperTrade(trade.id); } }} type="button">{trade.expiry < indiaCalendarDate() ? "Review expiry settlement" : "Close paper position"}</button> : null}
               </article>)}</div>
               {!paperTrades.length ? <p className="workspace-empty">No positions yet. Add a strategy to begin monitoring.</p> : null}
+              {paperTrades.length > 0 && !paperTrades.some(trade => positionView === "ALL" || trade.status === positionView) ? <p className="workspace-empty">No {positionView === "OPEN" ? "open positions" : "closed trades"}. Use the tabs to review your other results.</p> : null}
             </section>
             <details className="workspace-disclosure"><summary>All positions · detailed table</summary>
             {paperTrades.length ? (

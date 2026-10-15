@@ -181,7 +181,7 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
 .dashboard-sidebar-brand .brand-mark { width: 31px; height: 31px; border-radius: 8px; font-size: 16px; }
 .dashboard-sidebar-item { display: flex; width: 100%; min-height: 38px; align-items: center; gap: 10px; border: 0; border-radius: 7px; padding: 0 9px; background: transparent; color: #53645a; font-size: 12px; font-weight: 700; text-align: left; text-decoration: none; }
 .dashboard-sidebar-item:hover { background: #f4f7f2; color: var(--green); text-decoration: none; }
-.dashboard-sidebar-item.active { background: #f0e9ff; color: #7734c8; }
+.dashboard-sidebar-item.active { background: #e9f4ef; color: #145d46; }
 .dashboard-sidebar-item span { display: inline-grid; width: 18px; height: 18px; place-items: center; color: currentColor; font-size: 13px; }
 .dashboard-sidebar-footer { margin-top: auto; border-top: 1px solid #eef1ec; padding-top: 14px; color: var(--ink-muted); font-size: 11px; }
 .dashboard-sidebar-footer span, .dashboard-sidebar-footer small { display: block; }
@@ -938,3 +938,33 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px
 .entry-readiness summary { cursor: pointer; color: var(--green); font-weight: 600; }
 .entry-readiness details p { margin: 10px 0; }
 .trading-dashboard-list { align-items: start; } .trading-dashboard-list article { justify-content: flex-start; }
+
+/* Monitoring workspace: readable hierarchy, quiet surfaces, consistent controls. */
+:root { --ink: #1e293b; --ink-muted: #64748b; --line: #e2e8f0; --paper: #f5f7fa; }
+.position-view-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.position-view-tabs button { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 9px 14px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--ink-muted); font-size: 13px; font-weight: 600; }
+.position-view-tabs button[aria-pressed="true"] { background: #e9f4ef; color: #145d46; border-color: #cce4d7; }
+.position-view-tabs span { padding: 2px 6px; border-radius: 5px; background: #fff; font-size: 11px; }
+.position-card-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); align-items: start; }
+.position-card { padding: 24px; border-radius: 14px; box-shadow: 0 2px 7px #182b4010; }
+.position-card--open { border-top: 3px solid #419477; }
+.position-card--closed { background: #fcfdff; }
+.position-card-metrics { gap: 16px; padding: 16px; border: 1px solid #edf1f5; background: #f7f9fc; }
+.position-card-metrics strong { font-size: 23px; letter-spacing: -.035em; }
+.position-card-metrics span { font-size: 12px; line-height: 1.5; }
+.worker-status { margin-top: 16px; padding: 14px 18px; border-radius: 10px; }
+.worker-status-heading strong { font-size: 13px; }
+.worker-status p, .worker-status small { font-size: 12px; line-height: 1.6; }
+.paper-heading h2, .trading-dashboard-heading h2 { font-size: 28px; letter-spacing: -.035em; }
+.paper-account-summary { gap: 16px; }
+.paper-stats > div { padding: 18px 20px; }
+.paper-stats small, .paper-stats span { font-size: 12px; }
+.trading-dashboard-list article small { font-size: 12px; line-height: 1.6; }
+.equity-context-details { padding: 16px 18px; margin: 16px 0; border: 1px solid var(--line); border-radius: 10px; background: #fafcfe; font-size: 13px; line-height: 1.65; }
+.equity-context-details > summary { font-weight: 650; cursor: pointer; }
+.equity-context-details[open] > summary { margin-bottom: 12px; }
+.equity-context-details button { margin-top: 12px; }
+@media (max-width: 680px) { .position-card { padding: 16px; } .position-card-metrics strong { font-size: 20px; } .position-view-tabs button { padding: 8px 10px; } .worker-status { margin-top: 8px; } }
+.position-contracts { display: flex; flex-wrap: wrap; gap: 7px; margin: -4px 0 16px; }
+.position-contracts span { padding: 5px 9px; border-radius: 6px; background: #edf3f8; color: #41566d; font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.position-card-grid > .position-card:only-child { max-width: 700px; }

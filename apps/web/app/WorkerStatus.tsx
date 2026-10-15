@@ -47,20 +47,21 @@ export function WorkerStatus({ token, apiUrl }: { token: string; apiUrl: string 
   const message = healthy
     ? "The server is checking paper exits independently of this browser."
     : status === "RUNNING" || status === "CHECKING"
-      ? "Waiting for a completed exit check. Automatic exits are not confirmed yet."
+      ? "A shared worker cycle is in progress. Review each position for its latest exit check."
       : status === "NOT_STARTED"
         ? "The independent paper exit worker has not started. Start it before relying on automatic exits."
         : status === "DEGRADED"
-          ? "The last exit check reported warnings. Review the worker and open positions."
+          ? "One or more equity or options checks reported warnings. Review your positions’ latest checks; this shared status does not mean every strategy has stopped."
           : "Exit monitoring is not confirmed healthy. Check the worker before relying on automatic exits.";
   return <section className={`worker-status ${healthy ? "worker-status--healthy" : "worker-status--warning"}`} aria-label="Paper exit monitoring" aria-live="polite">
-    <div className="worker-status-heading"><strong>Paper exits: {status.toLowerCase().replaceAll("_", " ")}</strong><span>{healthy ? "Monitoring active" : degraded ? "Action may be needed" : "Checking"}</span></div>
+    <div className="worker-status-heading"><strong>Shared paper worker: {status.toLowerCase().replaceAll("_", " ")}</strong><span>{healthy ? "Monitoring active" : degraded ? "Action may be needed" : "Checking"}</span></div>
     {!healthy ? <p>{message}</p> : null}
     <details className="worker-status-details">
       <summary>Monitoring details</summary>
       {!unavailable && health?.detail && <small className="worker-detail">{health.detail}</small>}
       {!unavailable && health?.heartbeat_at && <small>Last worker update: {formatUpdate(health.heartbeat_at)}</small>}
-      {!unavailable && health?.last_success_at && <small>Last successful check: {formatUpdate(health.last_success_at)}</small>}
+      {!unavailable && health?.last_success_at && <small>Last fully healthy cycle: {formatUpdate(health.last_success_at)}</small>}
+      <small>A fully healthy cycle has no warnings across equity and options checks. Successful individual exits can still occur in a degraded cycle. This summary does not replace per-position quote and exit evidence.</small>
       {!unavailable && health?.unverified_quotes_allowed && <p>Options educational simulation allows unverified exchange timestamps. Strict equity mode still requires an exchange-timed book; explicitly opted-in indicative equity fills are labeled and excluded from verified strategy feedback.</p>}
     </details>
   </section>;

@@ -968,3 +968,11 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px
 .position-contracts { display: flex; flex-wrap: wrap; gap: 7px; margin: -4px 0 16px; }
 .position-contracts span { padding: 5px 9px; border-radius: 6px; background: #edf3f8; color: #41566d; font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .position-card-grid > .position-card:only-child { max-width: 700px; }
+
+/* Keep monitoring state distinct from prices and quote provenance. */
+.dashboard-strategy-heading { display: grid; gap: 8px; }
+.dashboard-status { width: fit-content; border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 600; background: #f1f5f9; color: #475569; }
+.dashboard-status--open { background: #ecfdf5; color: #047857; }
+.dashboard-status--exit_requested { background: #fffbeb; color: #92400e; }
+.trading-dashboard-list .dashboard-strategy-heading > strong { font-size: 17px; line-height: 1.4; }
+.trading-dashboard-mark { border-top: 1px solid var(--line); padding-top: 10px; }

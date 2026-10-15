@@ -7,6 +7,7 @@ import { StudySuccessorControl } from "./StudySuccessorControl";
 import { StudyProvenance } from "./StudyProvenance";
 import { EquityWalletCheck, QuoteLog, type QuoteObservation } from "./EquityPaperLogs";
 import { EquityEntryReadiness } from "./EquityEntryReadiness";
+import { applyRecommendedStrategies, type ApplyResult } from "./applyRecommendedStrategies";
 
 type Instrument = { id: string; instrument_key: string; trading_symbol: string; exchange: string; instrument_type: string; provider: string };
 type FoundInstrument = { instrument_key: string; trading_symbol: string; name: string | null; exchange: string; segment: string; instrument_type: string };
@@ -162,6 +163,10 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [applying, setApplying] = useState("");
+  const [batchResults, setBatchResults] = useState<ApplyResult[]>([]);
+  const batchCommands = useRef(new Map<string, string>());
+  const batchGeneration = useRef(0);
+  useEffect(() => () => { batchGeneration.current += 1; }, [token, apiUrl]);
   const [refresh, setRefresh] = useState(0);
   const [focusApplied, setFocusApplied] = useState(false);
   const appliedPanel = useRef<HTMLElement>(null);
@@ -383,6 +388,35 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
     finally { setApplying(""); }
   }
 
+  async function applyAll() {
+    if (applying || !account || !items.length) return;
+    const run = ++batchGeneration.current;
+    const current = () => run === batchGeneration.current;
+    setApplying("all"); setBatchResults([]); setError(""); setNotice("");
+    try {
+      await applyRecommendedStrategies(items, Number(budget), {
+        current,
+        wallet: () => read<Account>("/equity/deployments"),
+        research: id => read<Research>("/equity/strategies", { method: "POST",
+          body: JSON.stringify({ watchlist_id: id, budget, risk_budget: risk }) }),
+        deploy: (id, strategy) => {
+          const request = { watchlist_id: id, budget, risk_budget: risk,
+            strategy, indicative_quotes: indicativeQuotes };
+          const fingerprint = JSON.stringify(request);
+          if (!batchCommands.current.has(fingerprint)) batchCommands.current.set(fingerprint, crypto.randomUUID());
+          return read<Deployment>("/equity/deployments", { method: "POST",
+            body: JSON.stringify({ ...request, command_key: batchCommands.current.get(fingerprint) }) })
+            .then(row => { batchCommands.current.delete(fingerprint); return row; });
+        },
+        report: result => setBatchResults(rows => [...rows, result]),
+      });
+      if (current()) {
+        setNotice("Batch finished. Applied strategies wait for a new daily signal; entry and risk checks still apply.");
+        setRefresh(value => value + 1);
+      }
+    } finally { if (current()) setApplying(""); }
+  }
+
   const selectedInstrument = items.find(item => item.id === selected);
   const activeDeployment = account?.deployments.find(row =>
     row.provider === selectedInstrument?.provider &&
@@ -441,6 +475,13 @@ export function EquityStrategies({ token, apiUrl }: { token: string; apiUrl: str
     <label className="equity-indicative-choice"><input checked={indicativeQuotes} disabled={!!applying} onChange={event => setIndicativeQuotes(event.target.checked)} type="checkbox" />
       <span><strong>Allow indicative paper fills for the next strategy I apply</strong><small>Uses fresh provider-response snapshots when exchange book time is unavailable. Simulated fills and stops may differ from actual execution; these results are recorded but cannot improve verified strategy rankings. The default is strict.</small></span>
     </label>
+    <details className="equity-context-details"><summary>Apply recommended strategies to saved stocks</summary>
+      <p>One highest-ranked eligible paper strategy per saved stock, in watchlist order. Uses {rupees(budget)} allocation and {rupees(risk)} planned risk per stock and the quote mode above. Existing strategies are skipped; the five-active limit and cash checks remain.</p>
+      <p>Recommendations use the current ranking and do not guarantee performance. Daily strategies still wait for a new qualifying candle; the quick test strategy is excluded.</p>
+      <p className="muted">{activeDeployments.length} of 5 active slots used. Each stock’s outcome appears below.</p>
+      <button className="primary-button" type="button" disabled={!!applying || !account || !items.length || !!pollError || !Number.isFinite(Number(budget)) || Number(budget) < 100} onClick={() => void applyAll()}>{applying === "all" ? "Applying recommended strategies…" : "Apply all recommended strategies"}</button>
+      {batchResults.length > 0 && <ul aria-label="Batch apply results" aria-live="polite">{batchResults.map((row, index) => <li key={index}><strong>{row.stock}: {row.status}</strong> · {row.detail}</li>)}</ul>}
+    </details>
     <details className="equity-context-details"><summary>Paper test · quick entry/exit cycle</summary>
       <p>Selected stock · ₹1,000 allocation · ₹20 planned risk. Uses three fresh worker quotes instead of waiting for a new daily candle. Uses the quote mode selected above.</p>
       <label><input type="checkbox" checked={testConsent} onChange={event => setTestConsent(event.target.checked)} /> I understand this is a testing-only paper strategy.</label>

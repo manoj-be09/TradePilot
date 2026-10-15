@@ -213,7 +213,10 @@ def test_worker_square_off_expiry_position_once_with_verified_quote(client, monk
     assert report.json()["last_decision"] == "EXPIRY_SQUARE_OFF"
 
 
-def test_explicit_expiry_test_holds_at_cutoff_but_retains_manual_close(client, monkeypatch):
+@pytest.mark.parametrize("close_method", ["manual", "stop"])
+def test_explicit_expiry_test_holds_at_cutoff_but_retains_manual_close(
+    client, monkeypatch, close_method,
+):
     provider, headers, _, trade, factory = _expiry_day_position(client, monkeypatch)
     with factory() as session:
         saved = session.get(PaperTrade, UUID(trade["id"]))
@@ -228,12 +231,45 @@ def test_explicit_expiry_test_holds_at_cutoff_but_retains_manual_close(client, m
     with factory() as session:
         assert session.get(PaperTrade, UUID(trade["id"])).status == "OPEN"
         assert len(list(session.scalars(select(PaperOrder)))) == 1
-    closed = client.post(f"/paper/trades/{trade['id']}/close", headers=headers)
-    assert closed.status_code == 200
-    assert closed.json()["status"] == "CLOSED"
+    if close_method == "manual":
+        closed = client.post(f"/paper/trades/{trade['id']}/close", headers=headers)
+        assert closed.status_code == 200
+        assert closed.json()["status"] == "CLOSED"
+    else:
+        # The hold policy only disables expiry square-off, never an existing P&L stop.
+        with factory() as session:
+            saved = session.get(PaperTrade, UUID(trade["id"]))
+            saved.stop_loss_amount = Decimal("1")
+            session.commit()
+        provider.price_adjustment = Decimal("-10")
+        assert asyncio.run(run_cycle(factory, provider, get_settings())) == "HEALTHY"
+        with factory() as session:
+            saved = session.get(PaperTrade, UUID(trade["id"]))
+            assert saved.status == "CLOSED"
+            assert saved.exit_reason == "STOP_LOSS"
     assert client.get("/paper/account/ledger-reconciliation", headers=headers).json()[
         "status"
     ] == "MATCHED"
+
+
+def test_unlabeled_expiry_hold_policy_cannot_bypass_square_off(client, monkeypatch):
+    provider, _, _, trade, factory = _expiry_day_position(client, monkeypatch)
+    with factory() as session:
+        saved = session.get(PaperTrade, UUID(trade["id"]))
+        saved.entry_rule_snapshot = saved.entry_rule_snapshot | {
+            "exit_policy": {"version": "nifty-option-expiry-test-v1",
+                            "square_off_minutes_before_close": 20},
+        }
+        session.commit()
+    assert asyncio.run(run_cycle(factory, provider, get_settings())) == "DEGRADED"
+    with factory() as session:
+        assert session.get(PaperTrade, UUID(trade["id"])).status == "OPEN"
+        assert len(list(session.scalars(select(PaperOrder)))) == 1
+        checks = list(session.scalars(select(AuditEvent).where(
+            AuditEvent.event_type == "paper.trade.exit_checked",
+        )))
+        assert any(row.details["snapshot"].get("reason_code") == "EXIT_POLICY_INVALID"
+                   for row in checks)
 
 
 def test_expiry_test_entry_is_bounded_labeled_and_idempotent(client, monkeypatch):

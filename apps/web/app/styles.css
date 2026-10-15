@@ -984,3 +984,8 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px
 .position-card-metrics .change-negative { color: #b43e49; }
 .position-card > .position-model-note { font-size: 10px; margin: 8px 0; }
 .position-card h4 { font-size: 16px; }
+
+.probability-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 12px 0; }
+.probability-inputs > div { border-radius: 8px; padding: 12px; background: #f1f5f9; }
+.probability-inputs dt { color: var(--ink-muted); font-size: 11px; }
+.probability-inputs dd { margin: 5px 0 0; font-size: 13px; font-weight: 600; }

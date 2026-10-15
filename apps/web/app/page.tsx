@@ -2494,6 +2494,19 @@ export default function Home() {
                 <span>{rankedStrategies[0]?.bias || "UNCERTAIN"} · {rankedStrategies[0]?.volatility || "IV UNKNOWN"}</span>
               </div>
               <div className="strategy-color-legend" aria-label="Strategy evidence legend"><span className="strategy-color-legend--green">Green · stronger qualified evidence</span><span className="strategy-color-legend--amber">Amber · limited or insufficient evidence</span><span className="strategy-color-legend--red">Red · blocked or unavailable</span></div>
+              <details className="workspace-disclosure probability-evidence"><summary>Win / loss probability · Insufficient evidence</summary>
+                <p>No validated forecast is available. Historical paper win frequency is not a prediction for the next trade.</p>
+                <dl className="probability-inputs">
+                  <div><dt>Price snapshot</dt><dd>{chain?.underlying_spot ? `₹${formatPrice(chain.underlying_spot)}` : "Unavailable"}</dd></div>
+                  <div><dt>Volume put/call ratio</dt><dd>{optionFeatures?.put_call_ratio_volume == null ? "Unavailable" : formatPrice(optionFeatures.put_call_ratio_volume)}</dd></div>
+                  <div><dt>OI put/call ratio</dt><dd>{optionFeatures?.put_call_ratio_oi == null ? "Unavailable" : formatPrice(optionFeatures.put_call_ratio_oi)}</dd></div>
+                  <div><dt>ATM call / put IV</dt><dd>{optionFeatures?.atm_call_iv_pct == null ? "—" : `${formatPrice(optionFeatures.atm_call_iv_pct)}%`} / {optionFeatures?.atm_put_iv_pct == null ? "—" : `${formatPrice(optionFeatures.atm_put_iv_pct)}%`}</dd></div>
+                  <div><dt>Median option spread</dt><dd>{optionFeatures?.median_relative_spread_pct == null ? "Unavailable" : `${formatPrice(optionFeatures.median_relative_spread_pct)}%`}</dd></div>
+                  <div><dt>News / price trend model</dt><dd>Not integrated</dd></div>
+                </dl>
+                <p>{optionFeatures ? `Option features observed ${new Date(optionFeatures.as_of).toLocaleString("en-IN")}. ` : "Option features unavailable. "}These snapshots are candidate inputs only; missing or stale data cannot support a probability.</p>
+                <p>Target outcome: positive P&amp;L after declared costs under the saved entry and exit rules. Win, loss and break-even will be separate outcomes. No validation period, calibrated model or after-cost validation sample exists yet.</p>
+              </details>
               <section className="strategy-scorecards" aria-label="Strategy performance comparison">
                 {rankedStrategies.slice(0, showAllStrategies ? undefined : 3).map(({ strategy, payoff, bias, volatility, riskReward, historyReliable, qualified, matchedCondition }, index) => (
                   <article
@@ -2507,9 +2520,9 @@ export default function Home() {
                       <span>Max modeled profit<b>{payoff?.maximum_profit_unbounded ? "Unbounded*" : payoff?.maximum_profit !== null && payoff?.maximum_profit !== undefined ? `₹${formatPrice(payoff.maximum_profit)}` : "Calculating…"}</b></span>
                       <span>Max modeled loss<b>{payoff?.maximum_loss_unbounded ? "Unbounded" : payoff?.maximum_loss !== null && payoff?.maximum_loss !== undefined ? `₹${formatPrice(payoff.maximum_loss)}` : "Calculating…"}</b></span>
                       <span>All paper wins<b>{strategy.observed_win_rate_pct === null ? "No history" : `${formatPrice(strategy.observed_win_rate_pct)}%`}</b></span>
-                      <span>Qualified paper frequency<b>{strategy.estimated_win_probability_pct === null ? "Insufficient" : `${formatPrice(strategy.estimated_win_probability_pct)}%`}</b></span>
+                      <span>Smoothed historical frequency<b>{strategy.estimated_win_probability_pct === null ? "Insufficient" : `${formatPrice(strategy.estimated_win_probability_pct)}%`}</b></span>
                     </div>
-                    <small>{strategy.winning_trade_count}/{strategy.closed_trade_count} profitable paper trades · {strategy.qualified_automated_wins}/{strategy.qualified_automated_trade_count} qualified automatic outcomes · risk/reward {riskReward ? riskReward.toFixed(2) : "—"}</small>
+                    <small>{strategy.winning_trade_count}/{strategy.closed_trade_count} profitable paper trades · {strategy.qualified_automated_wins}/{strategy.qualified_automated_trade_count} qualified automatic outcomes (before costs) · risk/reward {riskReward ? riskReward.toFixed(2) : "—"}</small>
                     <small>{historyReliable ? `${bias} paper sample: ${matchedCondition?.trade_count} trades · average ${formatSignedPrice(matchedCondition?.average_net_pnl)}` : strategy.qualified_policy_variant_count > 1 ? `${strategy.qualified_policy_variant_count} different rule/stop configurations; outcome weighting withheld` : `No qualified ${bias.toLowerCase()} outcome weight (${matchedCondition?.trade_count || 0}/20 matching closes)`}</small>
                     <button className="strategy-apply" disabled={paperBusy || !chain || chain.quality?.status === "FAIL" || !payoff || payoff.maximum_loss_unbounded || payoff.maximum_loss === null} onClick={() => applyStrategyToPaperTicket(strategy, payoff)} type="button">
                       {deploymentPreparedKey === strategy.key ? "Ready to arm · paper" : "Apply to paper ticket"}

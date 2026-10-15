@@ -2275,6 +2275,9 @@ async def _open_paper_trade_with_provider(
         "quality_status": quality.status,
         "entry_market_context": {
             "version": "nifty-option-observed-v1",
+            "underlying_spot": str(chain.underlying_spot),
+            "observed_at": chain.as_of.isoformat(),
+            "expiry": body.expiry.isoformat(),
             "put_call_ratio_oi": str(features.put_call_ratio_oi)
             if features.put_call_ratio_oi is not None else None,
             "put_call_ratio_volume": str(features.put_call_ratio_volume)

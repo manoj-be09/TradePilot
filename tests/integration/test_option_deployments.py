@@ -208,6 +208,10 @@ def test_arm_waits_for_new_snapshot_then_worker_opens_once(client, monkeypatch, 
         assert closed.entry_rule_snapshot["entry_market_context"]["version"] == (
             "nifty-option-observed-v1"
         )
+        context = closed.entry_rule_snapshot["entry_market_context"]
+        assert Decimal(context["underlying_spot"]) > 0
+        assert context["observed_at"] == closed.entry_rule_snapshot["market_as_of"]
+        assert context["expiry"] == closed.expiry.isoformat()
     result = next(item for item in client.get("/paper/strategies", headers=headers).json()
                   if item["key"] == "long_call")
     entry_report = client.get(

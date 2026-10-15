@@ -167,7 +167,7 @@ from packages.paper_trading.option_evidence import (
     qualifies_automated_option_outcome,
     trade_entry_condition,
 )
-from packages.paper_trading.option_policy import OptionExitPolicy
+from packages.paper_trading.option_policy import EXPIRY_TEST_POLICY_VERSION, OptionExitPolicy
 from packages.paper_trading.quotes import PaperQuoteError, require_quote
 from packages.paper_trading.rules import EntryCondition, RuleMetric, evaluate_entry_conditions
 from packages.paper_trading.session import (
@@ -1833,6 +1833,8 @@ async def arm_paper_deployment(
         str, Header(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
     ],
 ) -> PaperDeploymentResponse:
+    if body.expiry_test_only:
+        raise HTTPException(422, "Expiry test positions require explicit direct entry")
     if not get_settings().paper_trading_enabled:
         raise HTTPException(503, "Paper trading is disabled")
     if body.underlying != "NIFTY" and not get_settings().paper_index_execution_enabled:
@@ -1993,6 +1995,12 @@ async def open_paper_trade(
     )
 
 
+@app.get("/paper/expiry-test-policy", tags=["paper trading"])
+def expiry_test_policy(user: CurrentUser) -> dict[str, object]:
+    del user
+    return {"version": EXPIRY_TEST_POLICY_VERSION, "maximum_loss": "10000", "lots": 1}
+
+
 def _record_armed_entry_check(
     session: SessionDep, user_id: UUID, deployment_id: UUID,
     lease: LeaseToken | None, snapshot: dict[str, object],
@@ -2120,6 +2128,13 @@ async def _open_paper_trade_with_provider(
     policy = exit_policy or OptionExitPolicy(
         settings.paper_expiry_square_off_minutes_before_close
     )
+    if body.expiry_test_only:
+        if deployment_id is not None or exit_policy is not None:
+            raise HTTPException(422, "Expiry test cannot inherit an automated deployment policy")
+        policy = OptionExitPolicy(
+            settings.paper_expiry_square_off_minutes_before_close,
+            version=EXPIRY_TEST_POLICY_VERSION,
+        )
     if not settings.paper_trading_enabled:
         raise HTTPException(status_code=503, detail="Paper trading is disabled by configuration")
     if body.underlying != "NIFTY" and not settings.paper_index_execution_enabled:
@@ -2249,6 +2264,8 @@ async def _open_paper_trade_with_provider(
     ]
     condition_results = evaluate_entry_conditions(entry_conditions, rule_metrics)
     entry_rule_snapshot = {
+        **({"testing_only": True, "test_purpose": "expiry_settlement"}
+           if body.expiry_test_only else {}),
         **({"option_index": index.model_dump()} if index.symbol != "NIFTY" else {}),
         "market_data_provider": provider.provider_id,
         "exit_policy": policy.as_dict(),
@@ -2424,6 +2441,8 @@ async def _open_paper_trade_with_provider(
             detail="This strategy has unbounded maximum loss and cannot be paper traded",
         )
     max_loss = payoff.maximum_loss.quantize(_CENT, rounding=ROUND_HALF_UP)
+    if body.expiry_test_only and max_loss > Decimal("10000"):
+        raise HTTPException(409, "Expiry test maximum premium loss must not exceed 10000 rupees")
     if max_loss <= 0:
         raise HTTPException(
             status_code=409, detail="Calculated maximum loss is invalid; trade rejected"
@@ -2483,6 +2502,13 @@ async def _open_paper_trade_with_provider(
         raise HTTPException(status_code=409, detail="Paper account could not be initialized")
     account = locked_account
     _require_consistent_paper_ledger(session, account)
+    if body.expiry_test_only and any(
+        row.entry_rule_snapshot.get("testing_only") is True
+        for row in session.scalars(select(PaperTrade).where(
+            PaperTrade.user_id == user.id, PaperTrade.status == "OPEN",
+        ))
+    ):
+        raise HTTPException(409, "Close or settle the existing expiry test before opening another")
     if account.kill_switch_enabled:
         raise HTTPException(
             status_code=423, detail="Paper kill switch is active; new trades are paused"
@@ -2536,7 +2562,8 @@ async def _open_paper_trade_with_provider(
         account_id=account.id,
         user_id=user.id,
         strategy_key=strategy_key,
-        strategy_name=strategy_name,
+        strategy_name=(f"TEST ONLY · Expiry · {strategy_name}"
+                       if body.expiry_test_only else strategy_name),
         underlying=index.symbol,
         expiry=body.expiry,
         reference_strike=reference_strike,

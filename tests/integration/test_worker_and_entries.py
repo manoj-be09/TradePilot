@@ -236,6 +236,37 @@ def test_explicit_expiry_test_holds_at_cutoff_but_retains_manual_close(client, m
     ] == "MATCHED"
 
 
+def test_expiry_test_entry_is_bounded_labeled_and_idempotent(client, monkeypatch):
+    provider, headers, payload, trade, factory = setup_position(
+        client, monkeypatch, expiry_test_only=True,
+    )
+    assert trade["strategy_name"].startswith("TEST ONLY")
+    with factory() as session:
+        saved = session.get(PaperTrade, UUID(trade["id"]))
+        assert saved.entry_rule_snapshot["testing_only"] is True
+        assert saved.entry_rule_snapshot["exit_policy"]["version"] == "nifty-option-expiry-test-v1"
+    assert client.post("/paper/trades", headers=headers, json=payload).json()["id"] == trade["id"]
+    assert client.post("/paper/trades", headers={
+        **headers, "Idempotency-Key": "second-expiry-test",
+    }, json=payload).status_code == 409
+    assert client.post("/paper/deployments", headers=headers, json=payload).status_code == 422
+    for changes in ({"lots": 2}, {"strategy_key": "bear_call_spread"},
+                    {"stop_loss_amount": "100"}, {"underlying": "SENSEX"}):
+        assert client.post("/paper/trades", headers=headers,
+                           json=payload | changes).status_code == 422
+    assert client.get("/paper/expiry-test-policy").status_code == 401
+    assert client.get("/paper/expiry-test-policy", headers=headers).json()["lots"] == 1
+    provider.price_adjustment = Decimal("1000")
+    expensive = client.post("/paper/trades", headers={
+        **headers, "Idempotency-Key": "expensive-expiry-test",
+    }, json=payload)
+    assert expensive.status_code == 409
+    assert "10000 rupees" in expensive.json()["detail"]
+    assert client.get("/paper/account/ledger-reconciliation", headers=headers).json()[
+        "status"
+    ] == "MATCHED"
+
+
 def test_expiry_square_off_uses_trade_cutoff_after_runtime_change(client, monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "paper_expiry_square_off_minutes_before_close", 20)

@@ -158,12 +158,15 @@ class PaperTradeCreateRequest(BaseModel):
 
     strategy_version_id: UUID | None = None
     underlying: str = Field(default="NIFTY", min_length=1, max_length=128)
+    expiry_test_only: bool = False
 
     @model_serializer(mode="wrap")
     def serialize_index(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
         if self.underlying == "NIFTY":
             data.pop("underlying", None)
+        if not self.expiry_test_only:
+            data.pop("expiry_test_only", None)
         return data
     strategy_key: str = Field(min_length=1, max_length=64)
     expiry: date
@@ -179,6 +182,14 @@ class PaperTradeCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_strategy_legs(self) -> "PaperTradeCreateRequest":
+        if self.expiry_test_only and (
+            self.underlying != "NIFTY" or self.strategy_key not in {"long_call", "long_put"}
+            or self.lots != 1 or self.strategy_version_id is not None or self.entry_conditions
+            or any(value is not None for value in (
+                self.stop_loss_amount, self.target_profit_amount, self.trailing_stop_amount,
+            ))
+        ):
+            raise ValueError("Expiry test requires one NIFTY long call/put lot without saved rules")
         if self.strategy_key == "custom":
             if self.custom_legs is None:
                 raise ValueError("Custom strategies must include between one and four option legs")

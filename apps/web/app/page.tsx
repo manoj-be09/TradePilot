@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { WorkerStatus } from "./WorkerStatus";
+import { ExpiryTestControl } from "./ExpiryTestControl";
 import { InstrumentCatalog } from "./InstrumentCatalog";
 import { EquityStrategies } from "./EquityStrategies";
 import { OptionDeploymentDecisions } from "./OptionDeploymentDecisions";
@@ -2762,6 +2763,7 @@ export default function Home() {
 
             </details>
 
+            {selectedOptionIndex === "NIFTY" && token && <ExpiryTestControl key={token} token={token} apiUrl={API_URL} expiry={selectedExpiry} strike={selectedPaperStrike} disabled={paperBusy || !paperEntry.ready || !!paperAccount?.kill_switch_enabled} onApplied={() => setPaperRefreshCount(value => value + 1)} />}
             {expiredPaperTrades.length > 0 ? <details className="equity-history expiry-settlement" open>
               <summary>Expired paper positions needing settlement ({expiredPaperTrades.length})</summary>
               <p className="paper-warning">Expired options need settlement evidence instead of a current quote. Review the selected index’s official close and corrections. Fetching a reference never closes the position.</p>

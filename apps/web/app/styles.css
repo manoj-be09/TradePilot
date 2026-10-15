@@ -998,3 +998,20 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px
 .position-probability { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; padding: 10px 12px; margin: 12px 0; border-radius: 8px; background: #eff4fc; font-size: 11px; color: #475569; }
 .position-probability strong { font-size: 12px; color: #334155; }
 .position-probability small { grid-column: 1 / -1; line-height: 1.5; font-size: 10px; }
+
+/* Read-only observed-results report; table scroll remains local on phones. */
+.observed-performance { margin-top: 20px; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: #fff; min-width: 0; }
+.observed-performance h3 { font-size: 17px; margin: 0 0 6px; }
+.observed-performance p, .observed-performance-scope { color: var(--ink-muted); font-size: 12px; line-height: 1.6; }
+.observed-performance-scroll { overflow-x: auto; margin: 14px 0; }
+.observed-performance-scroll:focus-visible { outline: 2px solid #419477; outline-offset: 3px; }
+.observed-performance table { width: 100%; min-width: 1080px; border-collapse: collapse; font-size: 12px; text-align: left; }
+.observed-performance caption { text-align: left; padding: 0 0 12px; color: var(--ink-muted); font-size: 11px; }
+.observed-performance th, .observed-performance td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.observed-performance thead { background: #f1f5f9; }
+.observed-performance tbody th { min-width: 200px; max-width: 260px; font-weight: 500; }
+.observed-performance small { display: block; margin-top: 6px; color: var(--ink-muted); font-size: 10px; line-height: 1.5; }
+.observed-performance details { margin-top: 10px; }
+.observed-performance summary { cursor: pointer; font-size: 11px; }
+.observed-performance code { display: block; max-width: 240px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; }
+@media (max-width: 680px) { .observed-performance { padding: 14px; } .observed-performance .trading-dashboard-activity-heading { align-items: flex-start; flex-direction: column; } }

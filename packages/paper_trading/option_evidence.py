@@ -53,7 +53,8 @@ def qualifies_automated_option_outcome(
 ) -> bool:
     """Accept only a complete, quote-backed, rule-driven paper round trip."""
     if (
-        trade.status != "CLOSED"
+        trade.entry_rule_snapshot.get("testing_only") is True
+        or trade.status != "CLOSED"
         or trade.realized_pnl is None
         or trade.closed_at is None
         or trade.max_loss <= 0

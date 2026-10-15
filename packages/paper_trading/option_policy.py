@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 OPTION_EXIT_POLICY_VERSION = "nifty-option-exit-v1"
+EXPIRY_TEST_POLICY_VERSION = "nifty-option-expiry-test-v1"
 
 
 @dataclass(frozen=True)
@@ -12,13 +13,17 @@ class OptionExitPolicy:
     version: str = OPTION_EXIT_POLICY_VERSION
 
     def __post_init__(self) -> None:
-        if self.version != OPTION_EXIT_POLICY_VERSION:
+        if self.version not in {OPTION_EXIT_POLICY_VERSION, EXPIRY_TEST_POLICY_VERSION}:
             raise ValueError("Unknown NIFTY option paper exit policy version")
         if (
             type(self.square_off_minutes_before_close) is not int
             or not 5 <= self.square_off_minutes_before_close <= 60
         ):
             raise ValueError("NIFTY option square-off cutoff must be 5–60 minutes")
+
+    @property
+    def holds_for_expiry_test(self) -> bool:
+        return self.version == EXPIRY_TEST_POLICY_VERSION
 
     def as_dict(self) -> dict[str, Any]:
         return {

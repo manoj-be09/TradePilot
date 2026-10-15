@@ -469,6 +469,11 @@ async def monitor_exits(
                 saved_policy,
                 legacy_cutoff=settings.paper_expiry_square_off_minutes_before_close,
             )
+            if exit_policy.holds_for_expiry_test and (
+                trade.underlying != "NIFTY"
+                or trade.entry_rule_snapshot.get("testing_only") is not True
+            ):
+                raise ValueError("Expiry hold requires an explicitly labeled NIFTY test trade")
         except ValueError:
             session.rollback()
             warnings.append(f"Exit policy for trade {trade.id} is invalid; no paper exit recorded.")
@@ -504,12 +509,15 @@ async def monitor_exits(
             target_profit_amount=trade.target_profit_amount,
             trailing_stop_amount=trade.trailing_stop_amount,
         )
-        if decision.reason is None and expiry_square_off_due(
-            trade.expiry,
-            nfo_session,
-            now=evaluation_instant,
-            minutes_before_close=exit_policy.square_off_minutes_before_close,
-            expected_exchange=index.derivatives_exchange,
+        if (
+            decision.reason is None and not exit_policy.holds_for_expiry_test
+            and expiry_square_off_due(
+                trade.expiry,
+                nfo_session,
+                now=evaluation_instant,
+                minutes_before_close=exit_policy.square_off_minutes_before_close,
+                expected_exchange=index.derivatives_exchange,
+            )
         ):
             decision = ExitDecision(decision.peak_pnl, "EXPIRY_SQUARE_OFF")
         _record_exit_observation(session, user_id, trade.id, {

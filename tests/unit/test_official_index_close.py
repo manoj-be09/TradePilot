@@ -44,6 +44,23 @@ def test_selected_index_never_borrows_nifty_close():
             archive.parse_nse_index_close(bad, EXPIRY, name)
 
 
+def test_underlying_routes_to_exact_official_name_and_unknown_fails_closed(monkeypatch):
+    seen = []
+
+    async def fetch(expiry, name):
+        seen.append((expiry, name))
+        return name
+
+    monkeypatch.setattr(archive, "fetch_nse_index_close", fetch)
+    for symbol, name in archive.NSE_INDEX_NAMES.items():
+        assert asyncio.run(archive.fetch_index_close(EXPIRY, symbol)) == name
+    assert len(seen) == 5
+    for unsupported in ("SENSEX", "BANKEX", "NIFTYFPI", "banknifty", "UNKNOWN"):
+        with pytest.raises(archive.OfficialCloseUnavailable):
+            asyncio.run(archive.fetch_index_close(EXPIRY, unsupported))
+    assert len(seen) == 5
+
+
 def test_fetch_is_bounded_to_fixed_archive_and_rejects_redirects(monkeypatch):
     original_client = httpx.AsyncClient
     seen: list[str] = []

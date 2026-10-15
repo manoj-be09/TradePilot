@@ -11,6 +11,14 @@ import httpx
 
 MAX_ARCHIVE_BYTES = 512_000
 INDEX_NAME = "Nifty 50"
+# NSE's published underlying names; no fuzzy match or cross-exchange fallback.
+NSE_INDEX_NAMES = {
+    "NIFTY": INDEX_NAME,
+    "BANKNIFTY": "Nifty Bank",
+    "FINNIFTY": "Nifty Financial Services",
+    "MIDCPNIFTY": "Nifty Midcap Select",
+    "NIFTYNXT50": "Nifty Next 50",
+}
 REQUIRED_COLUMNS = {
     "Index Name", "Index Date", "Open Index Value", "High Index Value",
     "Low Index Value", "Closing Index Value",
@@ -81,6 +89,13 @@ def parse_nse_index_close(raw: bytes, expiry: date, index_name: str) -> Decimal:
 
 async def fetch_nifty_close(expiry: date) -> OfficialIndexClose:
     return await fetch_nse_index_close(expiry, INDEX_NAME)
+
+
+async def fetch_index_close(expiry: date, underlying: str) -> OfficialIndexClose:
+    index_name = NSE_INDEX_NAMES.get(underlying)
+    if index_name is None:
+        raise OfficialCloseUnavailable("No verified official archive mapping for this index.")
+    return await fetch_nse_index_close(expiry, index_name)
 
 
 async def fetch_nse_index_close(expiry: date, index_name: str) -> OfficialIndexClose:

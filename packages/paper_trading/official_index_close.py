@@ -27,6 +27,7 @@ class OfficialIndexClose:
     source_url: str
     sha256: str
     retrieved_at: datetime
+    index_name: str = INDEX_NAME
 
 
 def archive_url(expiry: date) -> str:
@@ -79,6 +80,12 @@ def parse_nse_index_close(raw: bytes, expiry: date, index_name: str) -> Decimal:
 
 
 async def fetch_nifty_close(expiry: date) -> OfficialIndexClose:
+    return await fetch_nse_index_close(expiry, INDEX_NAME)
+
+
+async def fetch_nse_index_close(expiry: date, index_name: str) -> OfficialIndexClose:
+    if not index_name or len(index_name) > 128:
+        raise OfficialCloseUnavailable("An exact NSE archive index name is required.")
     url = archive_url(expiry)
     try:
         async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
@@ -101,6 +108,7 @@ async def fetch_nifty_close(expiry: date) -> OfficialIndexClose:
         raise OfficialCloseUnavailable("NSE daily index archive could not be reached.") from error
     raw = b"".join(chunks)
     return OfficialIndexClose(
-        close=parse_nifty_close(raw, expiry), source_url=url,
+        close=parse_nse_index_close(raw, expiry, index_name), source_url=url,
         sha256=hashlib.sha256(raw).hexdigest(), retrieved_at=datetime.now(timezone.utc),
+        index_name=index_name,
     )

@@ -63,6 +63,25 @@ def test_fetch_is_bounded_to_fixed_archive_and_rejects_redirects(monkeypatch):
     assert seen == [archive.archive_url(EXPIRY)]
     assert result.close == Decimal("22716.20")
     assert len(result.sha256) == 64
+    assert result.index_name == "Nifty 50"
+
+    # A selected index must be present; a valid Nifty row is never a fallback.
+    with pytest.raises(archive.OfficialCloseUnavailable):
+        asyncio.run(archive.fetch_nse_index_close(EXPIRY, "Nifty Bank"))
+
+    def selected_client(**kwargs):
+        bank_row = "Nifty Bank,29-09-2026,50000,50500,49500,50100\n"
+        return original_client(transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, headers={"content-type": "text/csv"},
+                                     content=(HEADER + ROW + bank_row).encode())
+        ), **kwargs)
+
+    monkeypatch.setattr(archive.httpx, "AsyncClient", selected_client)
+    selected = asyncio.run(archive.fetch_nse_index_close(EXPIRY, "Nifty Bank"))
+    assert selected.close == Decimal("50100.00")
+    assert selected.index_name == "Nifty Bank"
+    assert selected.source_url == archive.archive_url(EXPIRY)
+    assert selected.sha256 != result.sha256
 
     def redirect_factory(**kwargs):
         return original_client(transport=httpx.MockTransport(

@@ -2322,7 +2322,18 @@ export default function Home() {
             <section className={`equities-workspace app-section-page${activeSection === "dashboard" ? " dashboard-detail-section" : ""}`} aria-label="Equities workspace">
               {activeSection !== "dashboard" ? <div className="equities-heading"><div><div className="panel-kicker">{activeSection.toUpperCase()}</div><h2>{activeSection === "charts" ? "Equity & ETF charts" : activeSection === "algo" ? "Equity algo strategies" : activeSection === "broker" ? "Equity broker panel" : activeSection === "backtest" ? "Equity backtest" : "Equity bridge tool"}</h2></div><span className="paper-mode-badge">PAPER TRADING</span></div> : null}
               {activeSection === "dashboard" ? <><MarketOutlook token={token} apiUrl={API_URL} /><div id="equity-instruments"><InstrumentCatalog token={token} apiUrl={API_URL} compact /></div></> : null}
-              {activeSection === "charts" ? <ChartWorkspace token={token} apiUrl={API_URL} /> : null}
+              {activeSection === "broker" ? <section className="paper-workspace" aria-label="Broker connection">
+            <div className="paper-heading"><div><span className="panel-kicker">BROKER PANEL</span><h2>Market-data connection</h2><p className="muted">Upstox supplies data. Your paper account is simulated.</p></div><span className="paper-mode-badge">LIVE ORDERS DISABLED</span></div>
+            <div className="connection-row" aria-live="polite"><span className="connection-state">{connectionBusy ? "Checking…" : connectionStatus?.healthy ? "Connection available" : "Connection not verified"}</span><span className="connection-detail">{connectionError || connectionStatus?.detail || "Check access to read-only market data."}</span><button className="refresh-button" disabled={connectionBusy} onClick={() => void checkConnection()} type="button">Check connection</button></div>
+            <p className="features-note">Connection availability does not verify bid/ask book timestamps. Quote quality and session checks still apply to every paper entry.</p>
+            <button className="inline-button" onClick={() => setActiveSection("charts")} type="button">View market data</button>
+          </section> : null}
+          {activeSection === "bridge" ? <section className="paper-workspace" aria-label="Bridge availability">
+            <div className="paper-heading"><div><span className="panel-kicker">BRIDGE TOOL</span><h2>External routing disabled</h2><p className="muted">No broker execution or external signal bridge is enabled.</p></div><span className="paper-mode-badge">PAPER MODE</span></div>
+            <p className="features-note">Manage simulated entries, positions and exit rules in Strategies. This screen cannot route orders.</p>
+            <button className="refresh-button" onClick={() => setActiveSection("algo")} type="button">View paper strategies</button>
+          </section> : null}
+          {activeSection === "charts" ? <ChartWorkspace token={token} apiUrl={API_URL} /> : null}
               {activeSection === "algo" ? <EquityStrategies token={token} apiUrl={API_URL} /> : null}
               {activeSection === "broker" ? <section className="empty-section-card"><h3>Paper account only</h3><p className="muted">This page will hold broker connection, account, and order-routing controls for equities. For now, live broker orders remain disabled and equity paper trading uses the local wallet.</p></section> : null}
               {activeSection === "backtest" ? <section className="empty-section-card"><h3>Replay not available yet</h3><p className="muted">Equity strategy replay will use saved equity candles and paper-trade history. The current build has the F&O replay engine first; equity replay is planned next.</p></section> : null}
@@ -2340,8 +2351,19 @@ export default function Home() {
           </label>
           {indexCatalogError ? <p role="alert">{indexCatalogError}</p> : null}
           {selectedOptionIndex !== "NIFTY" ? <p role="status">Market-data preview. Paper entry for this index is pending venue and settlement validation.</p> : null}
+          {activeSection === "broker" ? <section className="paper-workspace" aria-label="Broker connection">
+            <div className="paper-heading"><div><span className="panel-kicker">BROKER PANEL</span><h2>Market-data connection</h2><p className="muted">Upstox supplies data. Your paper account is simulated.</p></div><span className="paper-mode-badge">LIVE ORDERS DISABLED</span></div>
+            <div className="connection-row" aria-live="polite"><span className="connection-state">{connectionBusy ? "Checking…" : connectionStatus?.healthy ? "Connection available" : "Connection not verified"}</span><span className="connection-detail">{connectionError || connectionStatus?.detail || "Check access to read-only market data."}</span><button className="refresh-button" disabled={connectionBusy} onClick={() => void checkConnection()} type="button">Check connection</button></div>
+            <p className="features-note">Connection availability does not verify bid/ask book timestamps. Quote quality and session checks still apply to every paper entry.</p>
+            <button className="inline-button" onClick={() => setActiveSection("charts")} type="button">View market data</button>
+          </section> : null}
+          {activeSection === "bridge" ? <section className="paper-workspace" aria-label="Bridge availability">
+            <div className="paper-heading"><div><span className="panel-kicker">BRIDGE TOOL</span><h2>External routing disabled</h2><p className="muted">No broker execution or external signal bridge is enabled.</p></div><span className="paper-mode-badge">PAPER MODE</span></div>
+            <p className="features-note">Manage simulated entries, positions and exit rules in Strategies. This screen cannot route orders.</p>
+            <button className="refresh-button" onClick={() => setActiveSection("algo")} type="button">View paper strategies</button>
+          </section> : null}
           {activeSection === "charts" ? <ChartWorkspace token={token} apiUrl={API_URL} /> : null}
-          {["charts", "broker"].includes(activeSection) ? <>
+          {activeSection === "charts" ? <>
           <section className="market-toolbar">
             <div>
               <div className="panel-kicker">LIVE MARKET DATA</div>
@@ -2405,7 +2427,7 @@ export default function Home() {
           </section>
 
           </> : null}
-          {["algo", "bridge"].includes(activeSection) ? <>
+          {activeSection === "algo" ? <>
           <section className="paper-workspace" aria-label="Paper trading workspace">
             <div className="paper-heading">
               <div>
@@ -3170,7 +3192,7 @@ export default function Home() {
           </section>
 
           </> : null}
-          {["charts", "broker"].includes(activeSection) ? <>
+          {activeSection === "charts" ? <>
           {chain ? (
             <section className="features-panel" aria-label="Option chain analytics">
               <div className="features-heading">

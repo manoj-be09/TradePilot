@@ -893,7 +893,12 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px
 .trading-dashboard-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .trading-dashboard-metric, .trading-dashboard-metric.net, .trading-dashboard-metric.gain, .trading-dashboard-metric.loss { grid-column: auto; min-height: 108px; padding: 20px; border: 1px solid #e4e9ef; border-radius: 14px; background: #fff; color: var(--ink); box-shadow: none; }
 .trading-dashboard-metric.net span, .trading-dashboard-metric.net small { color: var(--ink-muted); }
-.trading-dashboard-metric strong, .trading-dashboard-metric.net strong { font-size: 26px; margin: 12px 0 6px; }
+.trading-dashboard-metric strong, .trading-dashboard-metric.net strong { font-size: 22px; margin: 10px 0 6px; }
+.trading-dashboard-metric.net { background: #eef4fc; border-color: #d9e5f5; }
+.trading-dashboard-metric.gain { background: #eff8f3; border-color: #d7eadd; }
+.trading-dashboard-metric.gain strong { color: #166548; }
+.trading-dashboard-metric.loss { background: #fff5ee; border-color: #f0dfd3; }
+.trading-dashboard-metric.loss strong { color: #a54235; }
 .trading-dashboard-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 14px; }
 .trading-dashboard-list article { flex-direction: column; padding: 20px; border-radius: 12px; border-color: #e4e9ef; gap: 14px; }
 .trading-dashboard-list article strong { font-size: 16px; }

@@ -36,3 +36,15 @@ Use the eight priorities in PROJECT_PLAN.md as the acceptance list. These eviden
 
 ### 15 October 2026 — focused monitoring UI refinement
 REA re-analysis of the saved public AlgoCrab artifact again returned summary evidence ev_1818c02b19a414aafc07880e8c1cbf94de456ece188c79fc85a993a2591433d2 (22 modules; partial graph,1951 unknown semantic relations). This does not establish authenticated dashboard layout. Runtime REA requires a CDP endpoint/target not provided by the current Edge extension; initial calls without that schema were rejected, no browser target analyzed. Design decisions below use existing owner references and TradingPilot browser observations, not a claim of recovered competitor UI: default to open positions, separate closed history with counted tabs, surface contract identities, improve typographic hierarchy and light surfaces. Graphify index remains a6fc594; connector exposes no refresh/reindex operation. Source verified directly against current checkout.
+
+
+### 15 October 2026 — authorized signed-in Edge review
+The owner authorized inspecting the signed-in AlgoCrab account in connected Edge. Reviewed all six main navigation destinations: Dashboard, Algo Trading, Broker Panel, Backtest, Bridge Tool and Help Center. This supersedes the earlier runtime-access limitation for browser observation only; it is not REA CDP analysis or recovered private source.
+
+Observed compact persistent navigation, restrained white surfaces, small headings, a prominent summary metric, counted/tabbed work areas and separated activity/marketwatch panels. Strategy and bridge screens separate catalogs from logs/order history. Backtest exposes four steps (strategy, symbol, properties, optional properties), with Continue disabled before selection. Help separates broker setup guides from searchable help. Broker Panel separates balances, orderbook, tradebook, net positions and holdings.
+
+The account has no connected broker or active strategies and an expired subscription. Populated trade states, execution, strategy configuration and paid workflows were not verified. No broker connection, strategy application, purchase, webhook inspection or competitor account mutation was performed. No private account identifiers or source code are retained here.
+
+TradingPilot application: preserve compact summary/metric hierarchy, distinct screen purposes and expandable evidence. Use light blue for the net summary, pale green for gross profit and pale peach for gross loss, with smaller numbers and text labels that remain meaningful without color. Keep provenance and disabled-live-order warnings visible.
+
+Graphify recheck: promoted graph still c24ea1be3f83372b87f95759d38ffd8b007faabd (indexed 13:22 UTC), behind local 0788f5d before this increment. Current source was checked directly; no refresh is claimed.

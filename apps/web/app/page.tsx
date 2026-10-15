@@ -184,6 +184,7 @@ type PaperAccount = {
 };
 
 type PaperTrade = {
+  underlying: string;
   id: string;
   strategy_name: string;
   expiry: string;
@@ -1107,6 +1108,8 @@ export default function Home() {
     trade.status === "OPEN" && trade.expiry < indiaCalendarDate(),
   );
   const settlementTrade = expiredPaperTrades.find((trade) => trade.id === settlementTradeId);
+  const settlementSupported = !!settlementTrade &&
+    ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"].includes(settlementTrade.underlying);
   const settlementCloseDifference = officialIndexCloseReference?.status === "available"
     && officialIndexCloseReference.trade_id === settlementTrade?.id
     && officialIndexCloseReference.preview?.final_index_value != null
@@ -2761,13 +2764,14 @@ export default function Home() {
 
             {expiredPaperTrades.length > 0 ? <details className="equity-history expiry-settlement" open>
               <summary>Expired paper positions needing settlement ({expiredPaperTrades.length})</summary>
-              <p className="paper-warning">An expired NIFTY option has no current market quote. Review the NSE daily index close for its expiry and any corrections before recording paper cash settlement. Fetching a reference never closes the position.</p>
+              <p className="paper-warning">Expired options need settlement evidence instead of a current quote. Review the selected index’s official close and corrections. Fetching a reference never closes the position.</p>
+              {settlementTrade && !settlementSupported ? <p className="paper-warning">Settlement for {settlementTrade.underlying} is not supported yet. This position stays open until its official settlement route is available.</p> : null}
               <div className="settlement-reference-actions">
-                <button className="inline-button" disabled={!settlementTrade || indexCloseBusy} onClick={() => void checkOfficialIndexCloseReference()} type="button">{indexCloseBusy ? "Checking…" : "Check NSE daily close"}</button>
-                <button className="inline-button" disabled={!settlementTrade || indexCloseBusy} onClick={() => void checkIndexCloseReference()} type="button">Check broker candle</button>
+                <button className="inline-button" disabled={!settlementSupported || indexCloseBusy} onClick={() => void checkOfficialIndexCloseReference()} type="button">{indexCloseBusy ? "Checking…" : "Check NSE daily close"}</button>
+                <button className="inline-button" disabled={settlementTrade?.underlying !== "NIFTY" || indexCloseBusy} onClick={() => void checkIndexCloseReference()} type="button">Check broker candle (NIFTY only)</button>
               </div>
               {officialIndexCloseReference && officialIndexCloseReference.trade_id === settlementTrade?.id && officialIndexCloseReference.status === "available" ? <div className="settlement-reference-result" role="status">
-                <p>NSE daily Nifty 50 close for {officialIndexCloseReference.expiry}: <strong>{formatPrice(officialIndexCloseReference.preview?.final_index_value)}</strong>. <a href={officialIndexCloseReference.source_url ?? undefined} rel="noreferrer" target="_blank">Open archive ↗</a></p>
+                <p>NSE daily {settlementTrade?.underlying} close for {officialIndexCloseReference.expiry}: <strong>{formatPrice(officialIndexCloseReference.preview?.final_index_value)}</strong>. <a href={officialIndexCloseReference.source_url ?? undefined} rel="noreferrer" target="_blank">Open archive ↗</a></p>
                 <p className="features-note">{officialIndexCloseReference.warning}</p>
                 <p className="features-note">If you record this NSE-based candidate, the server checks the archive fingerprint and close again. A changed archive stops the record so you can review it.</p>
                 <details className="features-note"><summary>Archive fingerprint</summary><code>{officialIndexCloseReference.archive_sha256}</code></details>
@@ -2782,17 +2786,17 @@ export default function Home() {
                   <label>Expired position
                     <select disabled={settlementBusy} onChange={(event) => { setSettlementTradeId(event.target.value); setSettlementValue(""); setSettlementSource(""); setSettlementPreview(null); setIndexCloseReference(null); setOfficialIndexCloseReference(null); setSettlementError(""); }} value={settlementTradeId}>
                       <option value="">Choose a position</option>
-                      {expiredPaperTrades.map((trade) => <option key={trade.id} value={trade.id}>{trade.strategy_name} · {trade.expiry} · {trade.id.slice(0, 8)}</option>)}
+                      {expiredPaperTrades.map((trade) => <option key={trade.id} value={trade.id}>{trade.underlying} · {trade.strategy_name} · {trade.expiry} · {trade.id.slice(0, 8)}</option>)}
                     </select>
                   </label>
-                  <label>Final NIFTY index value
+                  <label>Final {settlementTrade?.underlying ?? "selected index"} value
                     <input disabled={settlementBusy} min="0.01" onChange={(event) => { setSettlementValue(event.target.value); setSettlementPreview(null); }} placeholder="e.g. 25000.00" required step="0.01" type="number" value={settlementValue} />
                   </label>
                   <label>Official source reference
                     <input disabled={settlementBusy} maxLength={500} minLength={8} onChange={(event) => { setSettlementSource(event.target.value); setSettlementPreview(null); }} placeholder="NSE report URL or report identifier" required type="text" value={settlementSource} />
                   </label>
                 </div>
-                <button className="refresh-button" disabled={settlementBusy || !settlementTrade} type="submit">{settlementBusy ? "Checking…" : "Preview paper settlement"}</button>
+                <button className="refresh-button" disabled={settlementBusy || !settlementSupported} type="submit">{settlementBusy ? "Checking…" : "Preview paper settlement"}</button>
               </form>
               {settlementError ? <p className="error-banner paper-error" role="alert">{settlementError}</p> : null}
               {settlementPreview ? <div className="strategy-preview expiry-settlement-preview">

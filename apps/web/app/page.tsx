@@ -222,6 +222,33 @@ type PaperTrade = {
   }[];
 };
 
+function PositionMaximumProfit({ trade, token }: { trade: PaperTrade; token: string }) {
+  const [profit, setProfit] = useState<string>("Calculating…");
+  const legs = JSON.stringify(trade.legs);
+  const underlying = trade.underlying;
+  useEffect(() => {
+    const controller = new AbortController();
+    setProfit("Calculating…");
+    const savedLegs = JSON.parse(legs) as PaperTrade["legs"];
+    fetch(`${API_URL}/analytics/payoff`, {
+      method: "POST", signal: controller.signal,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ underlying, multiplier: 1, price_min: "0",
+        price_max: String(2 * Math.max(...savedLegs.map(leg => Number(leg.strike)))), grid_points: 2,
+        legs: savedLegs.map(leg => ({ option_type: leg.option_type, strike: leg.strike,
+          quantity: leg.quantity_units * (leg.side === "BUY" ? 1 : -1), entry_premium: leg.entry_price })),
+      }),
+    }).then(async response => {
+      if (!response.ok) throw new Error("Payoff unavailable");
+      return response.json() as Promise<PayoffEstimate>;
+    }).then(result => {
+      if (!controller.signal.aborted) setProfit(result.maximum_profit_unbounded ? "Unbounded" : result.maximum_profit == null ? "Unavailable" : `₹${formatPrice(result.maximum_profit)}`);
+    }).catch(() => { if (!controller.signal.aborted) setProfit("Unavailable"); });
+    return () => controller.abort();
+  }, [token, underlying, legs]);
+  return <div className="position-metric--profit"><span>Max modeled profit</span><strong>{profit}</strong></div>;
+}
+
 type RuleMetric =
   | "put_call_ratio_oi"
   | "put_call_ratio_volume"
@@ -2440,7 +2467,7 @@ export default function Home() {
               </div> : null}
             </details>
 
-            <details className="strategy-builder strategy-composer"><summary>＋ Add a paper strategy</summary>
+            <details className="strategy-builder strategy-composer"><summary>Add a paper strategy</summary>
               <div className={`strategy-controls ${isCustomStrategy ? "custom-strategy-controls" : ""}`}>
                 <label>
                   Strategy
@@ -2725,11 +2752,11 @@ export default function Home() {
                 <div className="workspace-section-heading"><strong>{trade.strategy_name}</strong><span className={`trade-state trade-${trade.status.toLowerCase()}`}>{trade.status}</span></div>
                 <small>{trade.underlying} · Expiry {trade.expiry} · {trade.lots} lot(s)</small>
                 <div className="position-contracts" aria-label="Position contracts">{trade.legs.map(leg => <span key={`${leg.side}-${leg.strike}-${leg.option_type}`}>{leg.side} {formatPrice(leg.strike)} {leg.option_type}</span>)}</div>
-                <div className="position-card-metrics"><div><span>{Number(trade.entry_cash_flow) < 0 ? "Entry debit" : "Entry credit"}</span><strong>₹{formatPrice(String(Math.abs(Number(trade.entry_cash_flow))))}</strong></div><div><span>{trade.status === "OPEN" ? "Marked P&L" : "Realized P&L"}</span><strong className={changeClass(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}>{formatSignedPrice(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}</strong></div><div><span>Maximum modeled loss</span><strong>₹{formatPrice(trade.max_loss)}</strong></div></div>
+                <div className="position-card-metrics"><div><span>{Number(trade.entry_cash_flow) < 0 ? "Entry debit" : "Entry credit"}</span><strong>₹{formatPrice(String(Math.abs(Number(trade.entry_cash_flow))))}</strong></div><div><span>{trade.status === "OPEN" ? "Marked P&L" : "Realized P&L"}</span><strong className={changeClass(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}>{formatSignedPrice(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}</strong></div><div className="position-metric--risk"><span>Max modeled loss</span><strong>₹{formatPrice(trade.max_loss)}</strong></div><PositionMaximumProfit trade={trade} token={token} /></div><small className="position-model-note">Expiry model · entry fills · before costs; not a profit forecast.</small>
                 {trade.valuation_warning ? <p className="table-warning">{trade.valuation_warning}</p> : null}
                 {trade.execution_warnings.length ? <p className="table-warning">{trade.execution_warnings.join(" · ")}</p> : null}
                 {trade.exit_reason ? <small>{trade.exit_reason.replaceAll("_", " ")}</small> : null}
-                <details><summary>＋ Legs, stops &amp; evidence</summary><p>{trade.legs.map(leg => `${leg.side} ${formatPrice(leg.strike)} ${leg.option_type} ×${formatCount(leg.quantity_units / trade.lot_size)} lots`).join(" / ")}</p><p>Stop {trade.stop_loss_amount ? `₹${formatPrice(trade.stop_loss_amount)}` : "Off"} · Target {trade.target_profit_amount ? `₹${formatPrice(trade.target_profit_amount)}` : "Off"} · Trail {trade.trailing_stop_amount ? `₹${formatPrice(trade.trailing_stop_amount)}` : "Off"}</p><OptionTradeObservations tradeId={trade.id} apiUrl={API_URL} token={token} /></details>
+                <details><summary>Legs, stops &amp; evidence</summary><p>{trade.legs.map(leg => `${leg.side} ${formatPrice(leg.strike)} ${leg.option_type} ×${formatCount(leg.quantity_units / trade.lot_size)} lots`).join(" / ")}</p><p>Stop {trade.stop_loss_amount ? `₹${formatPrice(trade.stop_loss_amount)}` : "Off"} · Target {trade.target_profit_amount ? `₹${formatPrice(trade.target_profit_amount)}` : "Off"} · Trail {trade.trailing_stop_amount ? `₹${formatPrice(trade.trailing_stop_amount)}` : "Off"}</p><OptionTradeObservations tradeId={trade.id} apiUrl={API_URL} token={token} /></details>
                 {trade.status === "OPEN" ? <button className="inline-button" disabled={paperBusy || (trade.expiry < indiaCalendarDate() && settlementBusy)} onClick={() => { if (trade.expiry < indiaCalendarDate()) { setSettlementTradeId(trade.id); setSettlementValue(""); setSettlementSource(""); setSettlementPreview(null); setIndexCloseReference(null); setOfficialIndexCloseReference(null); setSettlementError(""); } else { void closePaperTrade(trade.id); } }} type="button">{trade.expiry < indiaCalendarDate() ? "Review expiry settlement" : "Close paper position"}</button> : null}
               </article>)}</div>
               {!paperTrades.length ? <p className="workspace-empty">No positions yet. Add a strategy to begin monitoring.</p> : null}

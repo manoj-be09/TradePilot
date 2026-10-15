@@ -47,3 +47,17 @@ def test_iron_condor_returns_two_breakevens_and_defined_maximums():
     assert result.maximum_loss == Decimal(200)
     assert result.maximum_profit_unbounded is False
     assert result.maximum_loss_unbounded is False
+
+
+def test_saved_unit_quantities_match_lot_scaled_expiry_profit():
+    # Position cards send saved filled units with multiplier=1, never lot-scale twice.
+    result = calculate_expiry_payoff(PayoffRequest(
+        underlying="NIFTY", multiplier=1, price_min=0, price_max=45300, grid_points=2,
+        legs=[
+            {"option_type": "PE", "strike": 22650, "quantity": 65, "entry_premium": 158},
+            {"option_type": "PE", "strike": 22600, "quantity": -65, "entry_premium": 133},
+        ],
+    ))
+    assert result.maximum_profit == Decimal("1625")
+    assert result.maximum_loss == Decimal("1625")
+    assert result.maximum_profit_unbounded is False

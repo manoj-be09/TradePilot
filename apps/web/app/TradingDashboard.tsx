@@ -298,7 +298,7 @@ export function TradingDashboard({ token, apiUrl, workspace, onOpenStrategies, o
         {equityLedger.cash_journal.issues.length > 0 ? <details><summary>Cash journal issues</summary><ul>{equityLedger.cash_journal.issues.map((issue, index) => <li key={`${index}-${issue}`}>{issue}</li>)}</ul></details> : null}
       </div> : null}
     </details> : null}
-    {workspace === "derivatives" && options !== null ? <ObservedStrategyPerformance trades={options} stale={Boolean(error)} /> : null}
+    {workspace === "derivatives" && options !== null ? <ObservedStrategyPerformance trades={options} stale={Boolean(error)} apiUrl={apiUrl} token={token} /> : null}
     <details className="trading-dashboard-method"><summary>About these results</summary><p className="trading-dashboard-note">Realized figures exclude open positions and unfilled deployments. Strategy totals combine saved versions with the same name. {workspace === "equities" ? `The activity list shows the latest 200 deployments. ${equitySelected?.closed_unpriced ?? 0} closed records without a valid P&L are excluded. Opt-in indicative fills may appear in P&L but cannot improve verified strategy feedback. ` : ""}Open marks may be unavailable when verified quotes cannot be obtained.</p></details>
   </section>;
 }

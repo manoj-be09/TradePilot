@@ -2898,11 +2898,25 @@ def paper_worker_status(user: CurrentUser, session: SessionDep) -> dict[str, obj
     }
 
 
+def _require_supported_expired_index(trade: PaperTrade) -> None:
+    if trade.underlying not in NSE_INDEX_NAMES or not expiry_has_passed(trade.expiry):
+        raise HTTPException(409, "Only an expired supported NSE index trade can be settled")
+    if trade.underlying != "NIFTY":
+        try:
+            index = saved_option_index(
+                trade.underlying, trade.entry_rule_snapshot,
+                [str(leg["instrument_key"]) for leg in trade.legs["items"]],
+            )
+            if index.exchange != "NSE":
+                raise PaperSessionError("Official NSE close requires a pinned NSE index")
+        except PaperSessionError as error:
+            raise HTTPException(409, str(error)) from error
+
+
 def _expiry_settlement_preview(
     trade: PaperTrade, body: PaperExpirySettlementRequest
 ) -> tuple[PaperExpirySettlementPreviewResponse, ExpirySettlement]:
-    if trade.underlying != "NIFTY" or not expiry_has_passed(trade.expiry):
-        raise HTTPException(409, "Only an expired NIFTY options paper trade can be settled")
+    _require_supported_expired_index(trade)
     if body.settlement_date != trade.expiry:
         raise HTTPException(422, "Settlement date must equal the option expiry date")
     saved_legs = trade.legs.get("items") if isinstance(trade.legs, dict) else None
@@ -3007,16 +3021,7 @@ async def paper_official_index_close_reference(
         trade.expiry
     ):
         raise HTTPException(409, "Only an open expired supported NSE index trade can be checked")
-    if trade.underlying != "NIFTY":
-        try:
-            index = saved_option_index(
-                trade.underlying, trade.entry_rule_snapshot,
-                [str(leg["instrument_key"]) for leg in trade.legs["items"]],
-            )
-            if index.exchange != "NSE":
-                raise PaperSessionError("Official NSE close requires a pinned NSE index")
-        except PaperSessionError as error:
-            raise HTTPException(409, str(error)) from error
+    _require_supported_expired_index(trade)
     try:
         reference = (await fetch_nifty_close(trade.expiry) if trade.underlying == "NIFTY"
                      else await fetch_index_close(trade.expiry, trade.underlying))
@@ -3051,12 +3056,12 @@ async def paper_official_expiry_settlement_preview(
     ))
     if trade is None:
         raise HTTPException(404, "Paper trade not found")
-    if trade.status != "OPEN" or trade.underlying != "NIFTY" or not expiry_has_passed(
-        trade.expiry
-    ):
-        raise HTTPException(409, "Only an open expired NIFTY paper trade can be checked")
+    if trade.status != "OPEN":
+        raise HTTPException(409, "Only an open expired paper trade can be checked")
+    _require_supported_expired_index(trade)
     try:
-        reference = await fetch_nifty_close(trade.expiry)
+        reference = (await fetch_nifty_close(trade.expiry) if trade.underlying == "NIFTY"
+                     else await fetch_index_close(trade.expiry, trade.underlying))
     except OfficialCloseUnavailable as error:
         return PaperOfficialExpirySettlementPreviewResponse(
             status="unavailable", trade_id=trade.id, expiry=trade.expiry,
@@ -3069,13 +3074,16 @@ async def paper_official_expiry_settlement_preview(
     )
     preview, _ = _expiry_settlement_preview(trade, body)
     preview.warning = (
-        "NSE daily Nifty 50 close is a candidate, not a verified final settlement value. "
+        f"NSE daily {reference.index_name} close is a candidate, "
+        "not a verified final settlement value. "
         "This cash-intrinsic paper estimate excludes charges and may change after corrections."
     )
     return PaperOfficialExpirySettlementPreviewResponse(
         status="available", trade_id=trade.id, expiry=trade.expiry,
         source_url=reference.source_url, archive_sha256=reference.sha256,
         retrieved_at=reference.retrieved_at, preview=preview,
+        warning=(f"Read-only estimate from {reference.index_name}; "
+                 "review exchange corrections and final settlement evidence."),
     )
 
 
@@ -3116,7 +3124,8 @@ async def reconcile_paper_expiry_settlement(
     if prior is None:
         raise HTTPException(404, "Paper trade not found")
     if prior.status == "OPEN":
-        await _check_nse_settlement_reference(body)
+        _require_supported_expired_index(prior)
+        await _check_nse_settlement_reference(body, prior.underlying)
     account = lock_account(session, user.id)
     if account is None:
         raise HTTPException(404, "Paper account not found")
@@ -3165,7 +3174,9 @@ async def reconcile_paper_expiry_settlement(
         fill_snapshot={
             "paper_only": True,
             "quality_status": "OPERATOR_RECORDED",
-            "calculation_version": "nifty-index-cash-intrinsic-v1",
+            "calculation_version": ("nifty-index-cash-intrinsic-v1" if trade.underlying == "NIFTY"
+                                    else "nse-index-cash-intrinsic-v1"),
+            "underlying": trade.underlying,
             "settlement_reference": reference,
             "fills": [vars(leg) | {
                 "strike": str(leg.strike),
@@ -3185,14 +3196,18 @@ async def reconcile_paper_expiry_settlement(
     return _paper_trade_response(trade)
 
 
-async def _check_nse_settlement_reference(body: PaperExpirySettlementRequest) -> None:
+async def _check_nse_settlement_reference(
+    body: PaperExpirySettlementRequest, underlying: str = "NIFTY",
+) -> None:
     """Recheck an archive-backed candidate before any account lock or cash mutation."""
     official_url = archive_url(body.settlement_date)
     if body.source_reference == official_url:
         if body.archive_sha256 is None:
             raise HTTPException(422, "NSE archive fingerprint is required for this source")
         try:
-            current_archive = await fetch_nifty_close(body.settlement_date)
+            current_archive = (await fetch_nifty_close(body.settlement_date)
+                               if underlying == "NIFTY"
+                               else await fetch_index_close(body.settlement_date, underlying))
         except OfficialCloseUnavailable as error:
             raise HTTPException(
                 409, "NSE archive could not be rechecked; refresh the preview"

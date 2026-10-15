@@ -96,7 +96,10 @@ def test_manual_source_cannot_claim_an_nse_archive_fingerprint(monkeypatch):
     assert mismatched_source.value.status_code == 422
 
 
-def test_record_rechecks_archive_before_committing_and_preserves_idempotency(monkeypatch):
+@pytest.mark.parametrize("underlying", ["NIFTY", "BANKNIFTY"])
+def test_record_rechecks_archive_before_committing_and_preserves_idempotency(
+    monkeypatch, underlying,
+):
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     owner = uuid4()
@@ -109,6 +112,12 @@ def test_record_rechecks_archive_before_committing_and_preserves_idempotency(mon
         )
 
     monkeypatch.setattr(main, "fetch_nifty_close", official_close)
+
+    async def selected_close(day, symbol):
+        assert symbol == "BANKNIFTY"
+        return await official_close(day)
+
+    monkeypatch.setattr(main, "fetch_index_close", selected_close)
     try:
         with Session(engine) as session:
             account = PaperAccount(
@@ -117,10 +126,16 @@ def test_record_rechecks_archive_before_committing_and_preserves_idempotency(mon
             )
             trade = PaperTrade(
                 id=trade_id, account_id=account.id, user_id=owner,
-                strategy_key="long_call", strategy_name="Long call", underlying="NIFTY",
+                strategy_key="long_call", strategy_name="Long call", underlying=underlying,
                 expiry=EXPIRY, reference_strike=Decimal("25000"), lots=1, lot_size=25,
                 max_loss=Decimal("2525.00"), entry_cash_flow=Decimal("-2525.00"),
-                status="OPEN", entry_rule_snapshot={}, legs={"items": [{
+                status="OPEN", entry_rule_snapshot={} if underlying == "NIFTY" else {
+                    "option_index": {
+                        "symbol": "BANKNIFTY", "name": "Nifty Bank",
+                        "instrument_key": "NSE_INDEX|Nifty Bank", "exchange": "NSE",
+                        "derivatives_exchange": "NFO",
+                    },
+                }, legs={"items": [{
                     "instrument_key": "NSE_FO|TEST", "trading_symbol": "NIFTY TEST CE",
                     "option_type": "CE", "side": "BUY", "strike": "25000",
                     "quantity_units": 25, "entry_price": "101", "entry_bid": "100",
@@ -152,6 +167,7 @@ def test_record_rechecks_archive_before_committing_and_preserves_idempotency(mon
             )))
             assert len(closes) == 1
             assert closes[0].fill_snapshot["settlement_reference"]["archive_sha256"] == DIGEST
+            assert closes[0].fill_snapshot["underlying"] == underlying
 
             async def unavailable(_day):
                 raise OfficialCloseUnavailable("Archive temporarily unavailable")

@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -12,6 +12,7 @@ from apps.api.settings import get_settings
 from apps.paper_worker.main import run_cycle
 from packages.database.models import AuditEvent, PaperOrder, PaperTrade, WorkerLease
 from packages.market_data.contracts import ExchangeSession, UnconfiguredMarketDataProvider
+from packages.paper_trading.official_index_close import OfficialIndexClose, archive_url
 from packages.paper_trading.session import exchange_today
 from packages.paper_trading.transactions import lock_account
 from packages.paper_trading.worker_lease import WORKER_NAME, acquire, assert_owned, finish
@@ -301,6 +302,52 @@ def test_expiry_test_entry_is_bounded_labeled_and_idempotent(client, monkeypatch
     assert client.get("/paper/account/ledger-reconciliation", headers=headers).json()[
         "status"
     ] == "MATCHED"
+
+
+def test_expiry_test_full_settlement_cycle_isolated_and_repeat_safe(client, monkeypatch):
+    provider, headers, payload, trade, factory = setup_position(
+        client, monkeypatch, expiry_test_only=True,
+    )
+    assert asyncio.run(run_cycle(factory, provider, get_settings())) == "HEALTHY"
+    # Explicit historical-expiry fixture, never a mutation of the owner's account.
+    expiry = date(2020, 1, 1)
+    with factory() as session:
+        saved = session.get(PaperTrade, UUID(trade["id"]))
+        saved.expiry = expiry
+        session.commit()
+
+    async def official_close(day):
+        assert day == expiry
+        return OfficialIndexClose(
+            close=Decimal("25100.00"), source_url=archive_url(expiry),
+            sha256="a" * 64, retrieved_at=datetime.now(timezone.utc),
+        )
+
+    monkeypatch.setattr("apps.api.main.fetch_nifty_close", official_close)
+    endpoint = f"/paper/trades/{trade['id']}/expiry-settlement"
+    preview = client.get(endpoint + "/official-preview", headers=headers)
+    assert preview.status_code == 200
+    assert preview.json()["preview"]["settlement_cash_flow"] == "2500.00"
+    body = {"settlement_date": expiry.isoformat(), "final_index_value": "25100.00",
+            "source_reference": archive_url(expiry), "archive_sha256": "a" * 64,
+            "confirmed_final": True}
+    rejected = client.post(endpoint, headers=headers,
+                           json=body | {"archive_sha256": "b" * 64})
+    assert rejected.status_code == 409
+    settled = client.post(endpoint, headers=headers, json=body)
+    assert settled.status_code == 200
+    assert settled.json()["status"] == "CLOSED"
+    assert Decimal(settled.json()["realized_pnl"]) == Decimal(trade["entry_cash_flow"]) + 2500
+    assert client.post(endpoint, headers=headers, json=body).json()["id"] == trade["id"]
+    # Restarting the worker must not reopen or close a settled test again.
+    assert asyncio.run(run_cycle(factory, provider, get_settings())) == "HEALTHY"
+    with factory() as session:
+        saved = session.get(PaperTrade, UUID(trade["id"]))
+        assert saved.exit_reason == "EXPIRY_SETTLEMENT"
+        assert saved.entry_rule_snapshot["testing_only"] is True
+        assert len(list(session.scalars(select(PaperOrder)))) == 2
+    report = client.get("/paper/account/ledger-reconciliation", headers=headers).json()
+    assert report["status"] == "MATCHED"
 
 
 def test_expiry_square_off_uses_trade_cutoff_after_runtime_change(client, monkeypatch):

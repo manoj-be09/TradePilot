@@ -1,14 +1,22 @@
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from packages.backtesting.contracts import ScheduledOptionsBacktestResult
 from packages.database.base import Base
-from packages.database.models import ResearchBudgetSlot, ResearchTrial, User
+from packages.database.models import (
+    BacktestRun,
+    ResearchBudgetSlot,
+    ResearchStudy,
+    ResearchTrial,
+    User,
+)
 from packages.regime.candidate_registry import (
     CandidateDefinition,
     TrialManifest,
@@ -18,6 +26,7 @@ from packages.regime.candidate_registry import (
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
 from packages.regime.nifty_study_replay import assess_nifty_scheduled_replay
 from packages.regime.registered_evaluator import record_registered_nifty_replay
+from packages.regime.research_studies import freeze_nifty_study
 
 
 def study(**changes):
@@ -99,6 +108,58 @@ def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
         assert record_registered_nifty_replay(
             session, owner, trial.id, frozen, replay(trade_count=20),
         ).result_digest == saved.result_digest
+    engine.dispose()
+
+
+def test_authenticated_route_records_only_owned_stored_replay():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    owner, other = uuid4(), uuid4()
+    frozen = study()
+    manifest = TrialManifest(
+        dataset_digest=frozen.dataset_digest, calculation_digest=frozen.calculation_digest,
+        cost_model_id=frozen.cost_model_id, experiment_family="nifty-route-fixture",
+        trial_number=1, declared_search_budget=2, seed=0,
+        train_start=frozen.train_start, train_end=frozen.train_end,
+        validation_start=frozen.validation_start, validation_end=frozen.validation_end,
+        holdout_start=frozen.holdout_start, holdout_end=frozen.holdout_end,
+    )
+    definition = CandidateDefinition(
+        name="Route NIFTY options hypothesis", family="nifty-options",
+        market="NIFTY_OPTIONS", hypothesis="Route fixture only; never trading evidence.",
+        source_url="https://example.org/nifty-route", source_license="UNREVIEWED",
+        entry_rule="Use frozen incumbent.", exit_rule="Use scheduled replay.",
+        limitation="Synthetic fixture; not eligible for trading.",
+    )
+    with Session(engine) as session:
+        session.add_all([
+            User(id=owner, email="route-owner@example.org", password_hash="fixture"),
+            User(id=other, email="route-other@example.org", password_hash="fixture"),
+        ])
+        session.commit()
+        study_row = freeze_nifty_study(session, owner, frozen)
+        candidate = register_candidate(session, owner, definition)
+        trial = declare_trial(session, owner, candidate.id, manifest)
+        run_id = uuid4()
+        session.add(BacktestRun(id=run_id, user_id=owner,
+                                result_data=replay().model_dump(mode="json")))
+        session.commit()
+        from apps.api.research_routes import NiftyReplayRecordRequest, record_nifty_replay
+
+        visible = record_nifty_replay(
+            trial.id, NiftyReplayRecordRequest(study_id=study_row.id, run_id=run_id),
+            SimpleNamespace(id=owner), session,
+        )
+        assert visible["engine_evaluation"]["result"]["report"]["status"] == (
+            "INSUFFICIENT_SAMPLE")
+        assert visible["result"] is None
+        with pytest.raises(HTTPException) as denied:
+            record_nifty_replay(
+                trial.id, NiftyReplayRecordRequest(study_id=study_row.id, run_id=run_id),
+                SimpleNamespace(id=other), session,
+            )
+        assert denied.value.status_code == 404
+        assert session.get(ResearchStudy, study_row.id).user_id == owner
     engine.dispose()
 
 

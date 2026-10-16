@@ -3,10 +3,13 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
 from apps.api.auth import CurrentUser, SessionDep
+from packages.backtesting.contracts import ScheduledOptionsBacktestResult
 from packages.database.models import (
+    BacktestRun,
     ResearchCandidate,
     ResearchEvaluation,
     ResearchEvidence,
@@ -23,6 +26,7 @@ from packages.regime.candidate_registry import (
     register_candidate,
 )
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
+from packages.regime.registered_evaluator import record_registered_nifty_replay
 from packages.regime.research_evidence import EvidenceRecord, record_evidence
 from packages.regime.research_readiness import assess_trial
 from packages.regime.research_recommendations import (
@@ -33,6 +37,13 @@ from packages.regime.research_recommendations import (
 from packages.regime.research_studies import freeze_nifty_study, study_view
 
 router = APIRouter(prefix="/research", tags=["research registry"])
+
+
+class NiftyReplayRecordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    study_id: UUID
+    run_id: UUID
 
 
 @router.post("/studies")
@@ -149,6 +160,40 @@ def trials(candidate_id: UUID, user: CurrentUser, session: SessionDep, response:
             ResearchEvaluation.trial_id == ResearchTrial.id).where(
         ResearchTrial.user_id == user.id, ResearchTrial.candidate_id == candidate_id,
     ).order_by(ResearchTrial.created_at, ResearchTrial.id).offset(offset).limit(limit))]
+
+
+@router.post("/trials/{trial_id}/nifty-replay")
+def record_nifty_replay(trial_id: UUID, body: NiftyReplayRecordRequest,
+                        user: CurrentUser, session: SessionDep) -> dict[str, Any]:
+    """Attach an existing stored scheduled replay to a frozen NIFTY trial.
+
+    This endpoint never fetches market data or runs a provider. It only reads
+    the caller's own backtest run, validates it against the frozen study and
+    records an unqualified engine result with promotion disabled.
+    """
+    trial = session.scalar(select(ResearchTrial).where(
+        ResearchTrial.id == trial_id, ResearchTrial.user_id == user.id,
+    ))
+    if trial is None:
+        raise HTTPException(404, "Trial not found")
+    study_row = session.scalar(select(ResearchStudy).where(
+        ResearchStudy.id == body.study_id, ResearchStudy.user_id == user.id,
+    ))
+    if study_row is None:
+        raise HTTPException(404, "Study not found")
+    run = session.scalar(select(BacktestRun).where(
+        BacktestRun.id == body.run_id, BacktestRun.user_id == user.id,
+    ))
+    if run is None:
+        raise HTTPException(404, "Backtest run not found")
+    try:
+        replay = ScheduledOptionsBacktestResult.model_validate(run.result_data)
+        study = FrozenNiftyStudy.model_validate(study_row.manifest)
+        saved = record_registered_nifty_replay(session, user.id, trial_id, study, replay)
+    except ValueError:
+        raise HTTPException(409, "Stored replay does not match the frozen NIFTY study") from None
+    return trial_view(trial, saved, list(session.scalars(select(ResearchEvidence).where(
+        ResearchEvidence.trial_id == trial.id).order_by(ResearchEvidence.key))))
 
 
 @router.post("/trials/{trial_id}/result")

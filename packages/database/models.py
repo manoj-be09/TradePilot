@@ -565,3 +565,16 @@ class ResearchEvidence(Base):
     allowed_use: Mapped[str] = mapped_column(String(32))
     evidence_digest: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ResearchStudy(Base):
+    """Immutable account-scoped parent study contract and search budget."""
+    __tablename__ = "research_studies"
+    __table_args__ = (UniqueConstraint("user_id", "study_key",
+                                       name="uq_research_study_key"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    study_key: Mapped[str] = mapped_column(String(100))
+    manifest_digest: Mapped[str] = mapped_column(String(64))
+    manifest: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

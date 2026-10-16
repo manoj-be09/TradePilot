@@ -11,7 +11,7 @@ def study(**changes):
                        "comparator on later unseen sessions."),
         "incumbent_rule_version": "nifty-paper-v1", "dataset_digest": "a" * 64,
         "calculation_digest": "b" * 64, "cost_model_id": "option-close-illustrative-v1",
-        "capital": "100000.00", "review_interval_days": 30,
+        "capital": "100000.00", "parent_search_budget": 10, "review_interval_days": 30,
         "uncertainty_note": ("Results remain indicative until source rights, fill timing "
                              "and expiry evidence are reviewed."),
         "train_start": "2020-01-01", "train_end": "2022-12-31",

@@ -10,6 +10,7 @@ from packages.database.models import (
     ResearchCandidate,
     ResearchEvaluation,
     ResearchEvidence,
+    ResearchStudy,
     ResearchTrial,
 )
 from packages.regime.candidate_registry import (
@@ -20,10 +21,31 @@ from packages.regime.candidate_registry import (
     finalize_trial,
     register_candidate,
 )
+from packages.regime.frozen_nifty_study import FrozenNiftyStudy
 from packages.regime.research_evidence import EvidenceRecord, record_evidence
 from packages.regime.research_readiness import assess_trial
+from packages.regime.research_studies import freeze_nifty_study, study_view
 
 router = APIRouter(prefix="/research", tags=["research registry"])
+
+
+@router.post("/studies")
+def create_study(body: FrozenNiftyStudy, user: CurrentUser,
+                session: SessionDep) -> dict[str, Any]:
+    try:
+        return study_view(freeze_nifty_study(session, user.id, body))
+    except ValueError:
+        raise HTTPException(409, "Study key already has a different immutable contract") from None
+
+
+@router.get("/studies")
+def studies(user: CurrentUser, session: SessionDep, response: Response,
+            limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)
+            ) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    return [study_view(row) for row in session.scalars(select(ResearchStudy).where(
+        ResearchStudy.user_id == user.id,
+    ).order_by(ResearchStudy.created_at, ResearchStudy.id).offset(offset).limit(limit))]
 
 
 def candidate_view(row: ResearchCandidate) -> dict[str, Any]:

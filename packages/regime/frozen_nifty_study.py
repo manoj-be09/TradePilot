@@ -20,6 +20,7 @@ class FrozenNiftyStudy(BaseModel):
     calculation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     cost_model_id: str = Field(min_length=3, max_length=100)
     capital: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    parent_search_budget: int = Field(ge=1, le=10000)
     review_interval_days: int = Field(ge=1, le=365)
     uncertainty_note: str = Field(min_length=20, max_length=1000)
     train_start: date

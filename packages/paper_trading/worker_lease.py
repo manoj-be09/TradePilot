@@ -76,6 +76,27 @@ def assert_owned(session: Session, token: LeaseToken) -> bool:
     return lease is not None
 
 
+def renew(session: Session, token: LeaseToken, seconds: int) -> bool:
+    """Extend a live lease only for its current fenced owner."""
+    now = datetime.now(timezone.utc)
+    renewed_generation = session.execute(
+        update(WorkerLease).execution_options(synchronize_session=False)
+        .where(
+            WorkerLease.name == token.name,
+            WorkerLease.owner == token.owner,
+            WorkerLease.generation == token.generation,
+            WorkerLease.lease_until > now,
+        )
+        .values(
+            lease_until=now + timedelta(seconds=seconds),
+            heartbeat_at=now,
+        )
+        .returning(WorkerLease.generation)
+    ).scalar_one_or_none()
+    session.commit()
+    return renewed_generation is not None
+
+
 def finish(session: Session, token: LeaseToken, status: str, detail: str) -> None:
     now = datetime.now(timezone.utc)
     values: dict[str, object] = dict(

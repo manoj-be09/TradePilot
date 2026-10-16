@@ -10,6 +10,7 @@ from packages.regime.research_scheduler_lease import (
     acquire_research_lease,
     assert_research_lease,
     finish_research_lease,
+    renew_research_lease,
     run_research_job,
 )
 
@@ -20,6 +21,7 @@ def test_research_lease_fences_takeover_and_stale_finish():
     with Session(engine) as session:
         old = acquire_research_lease(session, "old-research", 60)
         assert old is not None and assert_research_lease(session, old)
+        assert renew_research_lease(session, old, 120)
         current = session.get(WorkerLease, RESEARCH_WORKER_NAME)
         assert current is not None
         session.execute(update(WorkerLease).where(
@@ -29,6 +31,7 @@ def test_research_lease_fences_takeover_and_stale_finish():
         new = acquire_research_lease(session, "new-research", 60)
         assert new is not None and new.generation > old.generation
         assert not assert_research_lease(session, old)
+        assert not renew_research_lease(session, old, 120)
         assert assert_research_lease(session, new)
         finish_research_lease(session, old, "ERROR", "stale result")
         current = session.get(WorkerLease, RESEARCH_WORKER_NAME)

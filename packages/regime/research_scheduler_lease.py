@@ -5,7 +5,7 @@ from typing import Callable, Literal
 
 from sqlalchemy.orm import Session
 
-from packages.paper_trading.worker_lease import LeaseToken, acquire, assert_owned, finish
+from packages.paper_trading.worker_lease import LeaseToken, acquire, assert_owned, finish, renew
 
 RESEARCH_WORKER_NAME = "research-evaluator"
 
@@ -24,6 +24,11 @@ def acquire_research_lease(session: Session, owner: str, seconds: int) -> LeaseT
 def assert_research_lease(session: Session, token: LeaseToken) -> bool:
     """Reject stale research workers before a future scheduler mutation."""
     return token.name == RESEARCH_WORKER_NAME and assert_owned(session, token)
+
+
+def renew_research_lease(session: Session, token: LeaseToken, seconds: int) -> bool:
+    """Keep a live research reservation fenced to its current owner."""
+    return token.name == RESEARCH_WORKER_NAME and renew(session, token, seconds)
 
 
 def finish_research_lease(session: Session, token: LeaseToken, status: str, detail: str) -> None:

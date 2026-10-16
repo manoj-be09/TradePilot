@@ -78,6 +78,8 @@ def assert_owned(session: Session, token: LeaseToken) -> bool:
 
 def renew(session: Session, token: LeaseToken, seconds: int) -> bool:
     """Extend a live lease only for its current fenced owner."""
+    if seconds <= 0:
+        return False
     now = datetime.now(timezone.utc)
     renewed_generation = session.execute(
         update(WorkerLease).execution_options(synchronize_session=False)

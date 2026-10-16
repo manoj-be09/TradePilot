@@ -46,6 +46,8 @@ def run_research_job(session: Session, owner: str, seconds: int,
     bounded status updates; PostgreSQL concurrency and crash recovery remain
     deployment acceptance gates.
     """
+    if seconds <= 0:
+        return ResearchJobOutcome("FAILED", "Research lease duration must be positive.")
     token = acquire_research_lease(session, owner, seconds)
     if token is None:
         return ResearchJobOutcome("SKIPPED", "Another research worker owns the lease.")

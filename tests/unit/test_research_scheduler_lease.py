@@ -66,3 +66,19 @@ def test_research_job_runner_handles_completion_busy_and_failure():
         assert lease is not None and lease.status == "DEGRADED"
         assert "secret detail" not in lease.detail
     engine.dispose()
+
+
+def test_research_job_runner_rejects_invalid_lease_duration():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        calls: list[str] = []
+        outcome = run_research_job(session, "research-invalid", 0,
+                                   lambda: calls.append("wrong"))
+        assert outcome.status == "FAILED"
+        assert calls == []
+        token = acquire_research_lease(session, "research-valid", 60)
+        assert token is not None
+        assert not renew_research_lease(session, token, 0)
+        assert assert_research_lease(session, token)
+    engine.dispose()

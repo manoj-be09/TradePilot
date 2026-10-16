@@ -124,6 +124,22 @@ def test_registered_replay_retains_engine_evidence_separately_and_consumes_failu
         assert success.result["report"]["holdout_evaluated"] is False
         assert success.result["evidence_origin"] == "ENGINE_RESEARCH_REPLAY"
         assert session.get(ResearchTrial, trial.id).result is None
+        from types import SimpleNamespace
+
+        from fastapi import HTTPException, Response
+
+        from apps.api.research_routes import trials
+
+        response = Response()
+        visible = trials(candidate.id, SimpleNamespace(id=owner), session, response, 25, 0)
+        assert response.headers["Cache-Control"] == "no-store"
+        assert visible[0]["engine_evaluation"]["result"]["evidence_origin"] == (
+            "ENGINE_RESEARCH_REPLAY")
+        assert visible[0]["result"] is None
+        assert trials(candidate.id, SimpleNamespace(id=owner), session, Response(), 25, 25) == []
+        with pytest.raises(HTTPException) as denied:
+            trials(candidate.id, SimpleNamespace(id=other), session, Response(), 25, 0)
+        assert denied.value.status_code == 404
         saved_digest = success.result_digest
         assert run_registered_equity(session, owner, trial.id, raw).result_digest == saved_digest
         failed = declare_trial(session, owner, candidate.id, TrialManifest.model_validate(

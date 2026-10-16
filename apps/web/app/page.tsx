@@ -12,6 +12,7 @@ import { MarketOutlook } from "./MarketOutlook";
 import { BuildUpdateNotice } from "./BuildUpdateNotice";
 import { TradingDashboard } from "./TradingDashboard";
 import { ChartWorkspace } from "./ChartWorkspace";
+import { ResearchWorkspace } from "./ResearchWorkspace";
 import { usePaperEntry } from "./usePaperEntry";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
@@ -137,7 +138,7 @@ type StrikeRow = {
   put?: OptionContractQuote;
 };
 
-type SidebarSection = "dashboard" | "charts" | "algo" | "broker" | "backtest" | "bridge";
+type SidebarSection = "dashboard" | "charts" | "algo" | "broker" | "backtest" | "bridge" | "research";
 
 type PaperStrategy = {
   key: string;
@@ -2221,6 +2222,7 @@ export default function Home() {
             <button aria-current={activeSection === "broker" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "broker" ? "active" : ""}`} onClick={() => { setActiveSection("broker"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">▣</span> Broker Panel</button>
             <button aria-current={activeSection === "backtest" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "backtest" ? "active" : ""}`} onClick={() => { setActiveSection("backtest"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">◷</span> Backtest</button>
             <button aria-current={activeSection === "bridge" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "bridge" ? "active" : ""}`} onClick={() => { setActiveSection("bridge"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">◇</span> Bridge Tool</button>
+            <button aria-current={activeSection === "research" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "research" ? "active" : ""}`} onClick={() => { setActiveSection("research"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">⌕</span> Research</button>
             <a className="dashboard-sidebar-item" href={`${API_URL}/docs`} rel="noreferrer" target="_blank"><span aria-hidden="true">?</span> Help Center</a>
             <div className="dashboard-sidebar-footer">
               <div className="sidebar-account-card">
@@ -2318,7 +2320,7 @@ export default function Home() {
               {securityActivity.length ? <ul>{securityActivity.map((event) => <li key={event.id}><span>{SECURITY_ACTIVITY_LABELS[event.event_type]}</span><time dateTime={event.created_at}>{formatTime(event.created_at)}</time></li>)}</ul> : !securityActivityBusy && !securityActivityError ? <p className="muted">No activity available yet.</p> : null}
             </div>
           </section> : null}
-          {workspace === "equities" ? (
+          {activeSection === "research" ? <ResearchWorkspace key={token} token={token} apiUrl={API_URL} /> : workspace === "equities" ? (
             <section className={`equities-workspace app-section-page${activeSection === "dashboard" ? " dashboard-detail-section" : ""}`} aria-label="Equities workspace">
               {activeSection !== "dashboard" ? <div className="equities-heading"><div><div className="panel-kicker">{activeSection.toUpperCase()}</div><h2>{activeSection === "charts" ? "Equity & ETF charts" : activeSection === "algo" ? "Equity algo strategies" : activeSection === "broker" ? "Equity broker panel" : activeSection === "backtest" ? "Equity backtest" : "Equity bridge tool"}</h2></div><span className="paper-mode-badge">PAPER TRADING</span></div> : null}
               {activeSection === "dashboard" ? <><MarketOutlook token={token} apiUrl={API_URL} /><div id="equity-instruments"><InstrumentCatalog token={token} apiUrl={API_URL} compact /></div></> : null}

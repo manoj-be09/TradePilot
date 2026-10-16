@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy import select
 
 from apps.api.auth import CurrentUser, SessionDep
-from packages.database.models import ResearchCandidate, ResearchTrial
+from packages.database.models import ResearchCandidate, ResearchEvaluation, ResearchTrial
 from packages.regime.candidate_registry import (
     CandidateDefinition,
     TrialManifest,
@@ -25,11 +25,17 @@ def candidate_view(row: ResearchCandidate) -> dict[str, Any]:
             "source_review": "UNREVIEWED", "execution_enabled": False}
 
 
-def trial_view(row: ResearchTrial) -> dict[str, Any]:
+def trial_view(row: ResearchTrial, evaluation: ResearchEvaluation | None = None) -> dict[str, Any]:
     return {"id": row.id, "candidate_id": row.candidate_id, "manifest": row.manifest,
             "manifest_digest": row.manifest_digest, "result": row.result,
             "result_digest": row.result_digest, "created_at": row.created_at,
-            "completed_at": row.completed_at, "promotion_eligible": False}
+            "completed_at": row.completed_at, "promotion_eligible": False,
+            "engine_evaluation": None if evaluation is None else {
+                "adapter": evaluation.adapter, "adapter_digest": evaluation.adapter_digest,
+                "result": evaluation.result, "result_digest": evaluation.result_digest,
+                "created_at": evaluation.created_at, "completed_at": evaluation.completed_at,
+                "binding_review": "UNREVIEWED", "promotion_eligible": False,
+            }}
 
 
 @router.post("/candidates")
@@ -66,7 +72,9 @@ def trials(candidate_id: UUID, user: CurrentUser, session: SessionDep, response:
         ResearchCandidate.id == candidate_id, ResearchCandidate.user_id == user.id,
     )) is None:
         raise HTTPException(404, "Candidate not found")
-    return [trial_view(row) for row in session.scalars(select(ResearchTrial).where(
+    return [trial_view(row, evaluation) for row, evaluation in session.execute(
+        select(ResearchTrial, ResearchEvaluation).outerjoin(ResearchEvaluation,
+            ResearchEvaluation.trial_id == ResearchTrial.id).where(
         ResearchTrial.user_id == user.id, ResearchTrial.candidate_id == candidate_id,
     ).order_by(ResearchTrial.created_at, ResearchTrial.id).offset(offset).limit(limit))]
 

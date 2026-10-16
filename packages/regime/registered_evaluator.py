@@ -134,6 +134,7 @@ def bind_nifty_replay(session: Session, owner: UUID, trial_id: UUID,
         "study_manifest_digest": study.manifest_digest,
         "strategy_version": study.incumbent_rule_version,
         "cost_model_id": study.cost_model_id,
+        "cost_artifact_digest": study.cost_artifact_digest,
         "parent_search_budget": study.parent_search_budget,
     }
     digest = fingerprint(payload)

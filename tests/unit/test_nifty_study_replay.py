@@ -149,6 +149,39 @@ def test_declared_holdout_artifact_must_match_frozen_study():
     engine.dispose()
 
 
+def test_declared_cost_artifact_is_retained_in_frozen_adapter():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    owner = uuid4()
+    frozen = study(cost_artifact_digest="d" * 64)
+    manifest = TrialManifest(
+        dataset_digest=frozen.dataset_digest, calculation_digest=frozen.calculation_digest,
+        cost_model_id=frozen.cost_model_id, cost_artifact_digest=frozen.cost_artifact_digest,
+        experiment_family="cost-artifact-binding-fixture", trial_number=1,
+        declared_search_budget=frozen.parent_search_budget, seed=0,
+        train_start=frozen.train_start, train_end=frozen.train_end,
+        validation_start=frozen.validation_start, validation_end=frozen.validation_end,
+        holdout_start=frozen.holdout_start, holdout_end=frozen.holdout_end,
+    )
+    definition = CandidateDefinition(
+        name="Cost artifact binding hypothesis", family="nifty-options",
+        market="NIFTY_OPTIONS", hypothesis="Test that frozen cost identity stays visible.",
+        source_url="https://example.org/cost-artifact-binding", source_license="UNREVIEWED",
+        entry_rule="Use the frozen incumbent.", exit_rule="Use the scheduled replay.",
+        limitation="Synthetic fixture; not eligible for trading.",
+    )
+    with Session(engine) as session:
+        session.add(User(id=owner, email="cost-artifact@example.org", password_hash="fixture"))
+        session.commit()
+        candidate = register_candidate(session, owner, definition)
+        trial = declare_trial(session, owner, candidate.id, manifest)
+        from packages.regime.registered_evaluator import bind_nifty_replay
+
+        bound = bind_nifty_replay(session, owner, trial.id, frozen)
+        assert bound.adapter["cost_artifact_digest"] == "d" * 64
+    engine.dispose()
+
+
 def test_authenticated_route_records_only_owned_stored_replay():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)

@@ -90,13 +90,39 @@ def assess_trial(row: ResearchTrial,
     report = result.get("report") if result_ok and result is not None else None
     costs = report.get("cost_model") if isinstance(report, dict) else None
     illustrative = isinstance(costs, dict) and costs.get("illustrative") is True
-    checks.append(ReadinessCheck(key="costs", label="Costs and capital",
-        status="FAIL" if illustrative else "UNKNOWN",
-        detail="Recorded costs are illustrative; complete charges and capital are unqualified."
-        if illustrative else "No reviewed full-cost and capital assessment is recorded.",
-        evidence_ref=result_ref if illustrative else None,
-        evidence_recorded_at=result_time if illustrative else None))
     reviewed = {item.key: item for item in (evidence or [])}
+    cost_item = reviewed.get("costs")
+    if cost_item is None:
+        checks.append(ReadinessCheck(key="costs", label="Costs and capital",
+            status="FAIL" if illustrative else "UNKNOWN",
+            detail="Recorded costs are illustrative; complete charges and capital are unqualified."
+            if illustrative else "No reviewed full-cost and capital assessment is recorded.",
+            evidence_ref=result_ref if illustrative else None,
+            evidence_recorded_at=result_time if illustrative else None))
+    else:
+        cost_status = cost_item.status
+        cost_detail = cost_item.detail
+        cost_integrity = persisted_evidence_digest(cost_item) == cost_item.evidence_digest
+        if not cost_integrity:
+            cost_status = "FAIL"
+            cost_detail = "Stored evidence fields do not match their immutable evidence digest."
+        elif illustrative:
+            cost_status = "FAIL"
+            cost_detail = ("A reviewed cost reference exists, but the stored engine report "
+                           "still uses illustrative charges; complete historical charges "
+                           "remain unqualified.")
+        elif (cost_status == "PASS"
+              and cost_item.artifact_version != row.manifest.get("cost_model_id")):
+            cost_status = "FAIL"
+            cost_detail = ("Reviewed cost evidence version does not match the trial's frozen cost "
+                           "model; qualification remains blocked.")
+        checks.append(ReadinessCheck(
+            key="costs", label="Costs and capital", status=cost_status, detail=cost_detail,
+            evidence_ref=(f"evidence:{cost_item.id}:artifact:"
+                          f"{cost_item.artifact_digest or cost_item.artifact_ref}"),
+            evidence_recorded_at=cost_item.recorded_at, artifact_digest=cost_item.artifact_digest,
+            artifact_version=cost_item.artifact_version, allowed_use=cost_item.allowed_use,
+        ))
     manifest_artifacts = {
         "data": row.manifest.get("dataset_digest"),
         "binding": row.manifest.get("calculation_digest"),
@@ -136,11 +162,7 @@ def assess_trial(row: ResearchTrial,
             status = "FAIL"
             detail = (f"Reviewed artifact identity does not match the trial's immutable {key} "
                       "digest; qualification remains blocked.")
-        if key == "costs" and illustrative:
-            status = "FAIL"
-            detail = ("A reviewed cost reference exists, but the stored engine report still uses "
-                      "illustrative charges; complete historical charges remain unqualified.")
-        elif not identity_mismatch and evidence_integrity and not holdout_unbound:
+        if not identity_mismatch and evidence_integrity and not holdout_unbound:
             detail = item.detail
         checks.append(ReadinessCheck(
             key=key, label=label, status=status, detail=detail,

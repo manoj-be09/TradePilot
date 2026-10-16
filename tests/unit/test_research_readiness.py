@@ -127,3 +127,27 @@ def test_protected_holdout_pass_requires_declared_artifact_identity():
     row.manifest_digest = fingerprint(row.manifest)
     checks = {check.key: check for check in assess_trial(row, evaluation, [evidence]).checks}
     assert checks["holdout"].status == "PASS"
+
+
+def test_cost_review_must_match_frozen_cost_model_version():
+    row, evaluation = records()
+    row.manifest["cost_model_id"] = "frozen-cost-v1"
+    row.manifest_digest = fingerprint(row.manifest)
+    evaluation.result["report"]["cost_model"]["illustrative"] = False
+    evaluation.result_digest = fingerprint(evaluation.result)
+    stamp = datetime(2020, 1, 2, tzinfo=timezone.utc)
+    reviewed = EvidenceRecord(
+        key="costs", status="PASS", detail="Reviewed cost model.",
+        artifact_ref="artifact://cost-model", artifact_digest="c" * 64,
+        artifact_version="other-cost-v1", recorded_at=stamp, allowed_use="RESEARCH_ONLY",
+    )
+    evidence = ResearchEvidence(
+        id=uuid4(), user_id=uuid4(), trial_id=row.id, key="costs", status="PASS",
+        detail=reviewed.detail, artifact_ref=reviewed.artifact_ref,
+        artifact_digest=reviewed.artifact_digest, artifact_version=reviewed.artifact_version,
+        recorded_at=stamp, allowed_use=reviewed.allowed_use,
+        evidence_digest=fingerprint(reviewed.model_dump(mode="json")), created_at=stamp,
+    )
+    checks = {check.key: check for check in assess_trial(row, evaluation, [evidence]).checks}
+    assert checks["costs"].status == "FAIL"
+    assert "frozen cost model" in checks["costs"].detail

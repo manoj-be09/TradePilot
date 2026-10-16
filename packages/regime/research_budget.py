@@ -37,6 +37,7 @@ def reserve_trial_slot(session: Session, owner: UUID, trial_id: UUID) -> Researc
         raise ValueError("Stored trial manifest identity differs")
     scope = fingerprint({key: payload.get(key) for key in (
         "dataset_digest", "calculation_digest", "holdout_artifact_digest", "cost_model_id",
+        "cost_artifact_digest",
         "holdout_start", "holdout_end",
     )})
     query = select(ResearchExperiment).where(

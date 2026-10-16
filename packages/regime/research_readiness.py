@@ -91,6 +91,12 @@ def assess_trial(row: ResearchTrial,
     costs = report.get("cost_model") if isinstance(report, dict) else None
     illustrative = isinstance(costs, dict) and costs.get("illustrative") is True
     reviewed = {item.key: item for item in (evidence or [])}
+    manifest_artifacts = {
+        "data": row.manifest.get("dataset_digest"),
+        "binding": row.manifest.get("calculation_digest"),
+        "holdout": row.manifest.get("holdout_artifact_digest"),
+        "costs": row.manifest.get("cost_artifact_digest"),
+    }
     cost_item = reviewed.get("costs")
     if cost_item is None:
         checks.append(ReadinessCheck(key="costs", label="Costs and capital",
@@ -116,6 +122,11 @@ def assess_trial(row: ResearchTrial,
             cost_status = "FAIL"
             cost_detail = ("Reviewed cost evidence version does not match the trial's frozen cost "
                            "model; qualification remains blocked.")
+        elif (cost_status == "PASS" and manifest_artifacts["costs"]
+              and cost_item.artifact_digest != manifest_artifacts["costs"]):
+            cost_status = "FAIL"
+            cost_detail = ("Reviewed cost evidence artifact does not match the trial's immutable "
+                           "cost artifact digest; qualification remains blocked.")
         checks.append(ReadinessCheck(
             key="costs", label="Costs and capital", status=cost_status, detail=cost_detail,
             evidence_ref=(f"evidence:{cost_item.id}:artifact:"
@@ -123,11 +134,6 @@ def assess_trial(row: ResearchTrial,
             evidence_recorded_at=cost_item.recorded_at, artifact_digest=cost_item.artifact_digest,
             artifact_version=cost_item.artifact_version, allowed_use=cost_item.allowed_use,
         ))
-    manifest_artifacts = {
-        "data": row.manifest.get("dataset_digest"),
-        "binding": row.manifest.get("calculation_digest"),
-        "holdout": row.manifest.get("holdout_artifact_digest"),
-    }
     for key, label, detail in (
         ("rights", "Source and data rights", "Declared licenses are not recorded rights approval."),
         ("data", "Historical data and timestamps",

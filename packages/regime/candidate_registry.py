@@ -42,6 +42,7 @@ class TrialManifest(BaseModel):
     calculation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     holdout_artifact_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     cost_model_id: str = Field(min_length=3, max_length=100)
+    cost_artifact_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     experiment_family: str = Field(min_length=3, max_length=100)
     trial_number: int = Field(ge=1, le=10000)
     declared_search_budget: int = Field(ge=1, le=10000)

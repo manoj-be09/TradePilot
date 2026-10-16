@@ -122,8 +122,8 @@ def recommend_from_trial(study_id: UUID, trial_id: UUID,
     try:
         frozen = FrozenNiftyStudy.model_validate(study.manifest)
         manifest = TrialManifest.model_validate(trial.manifest)
-        for key in ("dataset_digest", "calculation_digest", "cost_model_id", "validation_end",
-                    "holdout_start", "holdout_end"):
+        for key in ("dataset_digest", "calculation_digest", "holdout_artifact_digest",
+                    "cost_model_id", "validation_end", "holdout_start", "holdout_end"):
             if getattr(manifest, key) != getattr(frozen, key):
                 raise ValueError("Trial manifest differs from the frozen NIFTY study")
         if manifest.declared_search_budget != frozen.parent_search_budget:

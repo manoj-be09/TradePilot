@@ -16,6 +16,7 @@ from packages.regime.candidate_registry import (
     TrialResult,
     declare_trial,
     finalize_trial,
+    fingerprint,
     register_candidate,
 )
 
@@ -51,6 +52,8 @@ def test_registry_preserves_failures_replays_and_owner_boundaries():
         assert register_candidate(session, other, definition()).id != row.id
         attempt = declare_trial(session, owner, row.id, manifest())
         assert declare_trial(session, owner, row.id, manifest()).id == attempt.id
+        assert attempt.manifest_digest == fingerprint(
+            manifest().model_dump(mode="json", exclude_none=True))
         assert attempt.result is None
         with pytest.raises(LookupError):
             declare_trial(session, other, row.id, manifest())

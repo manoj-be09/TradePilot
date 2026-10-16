@@ -18,6 +18,7 @@ class FrozenNiftyStudy(BaseModel):
     no_trade_comparator: Literal["NO_TRADE"] = "NO_TRADE"
     dataset_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     calculation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    holdout_artifact_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     cost_model_id: str = Field(min_length=3, max_length=100)
     capital: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
     parent_search_budget: int = Field(ge=1, le=10000)

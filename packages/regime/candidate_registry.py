@@ -40,6 +40,7 @@ class TrialManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     dataset_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     calculation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    holdout_artifact_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     cost_model_id: str = Field(min_length=3, max_length=100)
     experiment_family: str = Field(min_length=3, max_length=100)
     trial_number: int = Field(ge=1, le=10000)
@@ -116,7 +117,8 @@ def declare_trial(session: Session, owner: UUID, candidate_id: UUID,
         ResearchCandidate.id == candidate_id, ResearchCandidate.user_id == owner,
     )) is None:
         raise LookupError("Candidate not found")
-    payload = manifest.model_dump(mode="json")
+    # Omit optional additions so legacy manifests retain their original digest.
+    payload = manifest.model_dump(mode="json", exclude_none=True)
     digest = fingerprint(payload)
     query = select(ResearchTrial).where(ResearchTrial.user_id == owner,
         ResearchTrial.candidate_id == candidate_id, ResearchTrial.manifest_digest == digest)

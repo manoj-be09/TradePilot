@@ -31,11 +31,13 @@ def reserve_trial_slot(session: Session, owner: UUID, trial_id: UUID) -> Researc
     if trial.result_digest is not None:
         raise ValueError("Cannot reserve a budget after trial finalization")
     manifest = TrialManifest.model_validate(trial.manifest)
-    payload = manifest.model_dump(mode="json")
+    # Preserve hashes for legacy manifests that predate optional holdout identity.
+    payload = manifest.model_dump(mode="json", exclude_none=True)
     if fingerprint(payload) != trial.manifest_digest:
         raise ValueError("Stored trial manifest identity differs")
-    scope = fingerprint({key: payload[key] for key in (
-        "dataset_digest", "calculation_digest", "cost_model_id", "holdout_start", "holdout_end",
+    scope = fingerprint({key: payload.get(key) for key in (
+        "dataset_digest", "calculation_digest", "holdout_artifact_digest", "cost_model_id",
+        "holdout_start", "holdout_end",
     )})
     query = select(ResearchExperiment).where(
         ResearchExperiment.user_id == owner,

@@ -121,8 +121,8 @@ def bind_nifty_replay(session: Session, owner: UUID, trial_id: UUID,
     if fingerprint(candidate.definition) != candidate.definition_digest:
         raise ValueError("Candidate definition identity differs")
     manifest = TrialManifest.model_validate(trial.manifest)
-    for key in ("dataset_digest", "calculation_digest", "cost_model_id", "validation_end",
-                "holdout_start", "holdout_end"):
+    for key in ("dataset_digest", "calculation_digest", "holdout_artifact_digest",
+                "cost_model_id", "validation_end", "holdout_start", "holdout_end"):
         if getattr(manifest, key) != getattr(study, key):
             raise ValueError("Trial manifest differs from the frozen NIFTY study")
     if manifest.declared_search_budget != study.parent_search_budget:

@@ -79,7 +79,7 @@ def evaluate_fixed_equity(
     metrics = {name: summarize(trades) for name, trades in partitions.items()}
     report = {
         "schema_version": 1, "evidence_origin": "OFFLINE_FIXED_RULE_REPLAY",
-        "manifest_digest": fingerprint(manifest.model_dump(mode="json")),
+        "manifest_digest": fingerprint(manifest.model_dump(mode="json", exclude_none=True)),
         "adapter": spec_payload, "adapter_digest": frozen_spec_digest,
         "cost_model": {"id": COST_MODEL_ID, "fee_fraction": str(FEE),
                        "slippage_fraction": str(SLIPPAGE), "illustrative": True},

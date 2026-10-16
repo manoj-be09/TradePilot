@@ -93,3 +93,22 @@ def test_reviewed_artifact_identity_must_match_immutable_trial_digest():
     evidence.artifact_digest = row.manifest["dataset_digest"]
     checks = {check.key: check for check in assess_trial(row, evaluation, [evidence]).checks}
     assert checks["data"].status == "PASS"
+
+
+def test_protected_holdout_pass_requires_declared_artifact_identity():
+    row, evaluation = records()
+    stamp = datetime(2020, 1, 2, tzinfo=timezone.utc)
+    evidence = ResearchEvidence(
+        id=uuid4(), user_id=uuid4(), trial_id=row.id, key="holdout", status="PASS",
+        detail="Protected holdout review.", artifact_ref="artifact://holdout",
+        artifact_digest="c" * 64, artifact_version="holdout-v1", recorded_at=stamp,
+        allowed_use="RESEARCH_ONLY", evidence_digest="d" * 64, created_at=stamp,
+    )
+    checks = {check.key: check for check in assess_trial(row, evaluation, [evidence]).checks}
+    assert checks["holdout"].status == "FAIL"
+    assert "immutable trial artifact digest" in checks["holdout"].detail
+
+    row.manifest["holdout_artifact_digest"] = "c" * 64
+    row.manifest_digest = fingerprint(row.manifest)
+    checks = {check.key: check for check in assess_trial(row, evaluation, [evidence]).checks}
+    assert checks["holdout"].status == "PASS"

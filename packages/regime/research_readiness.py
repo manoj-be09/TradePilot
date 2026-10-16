@@ -99,6 +99,7 @@ def assess_trial(row: ResearchTrial,
     manifest_artifacts = {
         "data": row.manifest.get("dataset_digest"),
         "binding": row.manifest.get("calculation_digest"),
+        "holdout": row.manifest.get("holdout_artifact_digest"),
     }
     for key, label, detail in (
         ("rights", "Source and data rights", "Declared licenses are not recorded rights approval."),
@@ -119,6 +120,11 @@ def assess_trial(row: ResearchTrial,
             continue
         status = item.status
         expected_digest = manifest_artifacts.get(key)
+        holdout_unbound = key == "holdout" and status == "PASS" and not expected_digest
+        if holdout_unbound:
+            status = "FAIL"
+            detail = ("A protected holdout PASS record is not bound to an immutable trial "
+                      "artifact digest; qualification remains blocked.")
         identity_mismatch = (status == "PASS" and expected_digest
                              and item.artifact_digest != expected_digest)
         if identity_mismatch:
@@ -129,7 +135,7 @@ def assess_trial(row: ResearchTrial,
             status = "FAIL"
             detail = ("A reviewed cost reference exists, but the stored engine report still uses "
                       "illustrative charges; complete historical charges remain unqualified.")
-        elif not identity_mismatch:
+        elif not identity_mismatch and not holdout_unbound:
             detail = item.detail
         checks.append(ReadinessCheck(
             key=key, label=label, status=status, detail=detail,

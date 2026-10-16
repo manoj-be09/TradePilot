@@ -125,12 +125,15 @@ def bind_nifty_replay(session: Session, owner: UUID, trial_id: UUID,
                 "holdout_start", "holdout_end"):
         if getattr(manifest, key) != getattr(study, key):
             raise ValueError("Trial manifest differs from the frozen NIFTY study")
+    if manifest.declared_search_budget != study.parent_search_budget:
+        raise ValueError("Trial search budget must match the frozen NIFTY parent budget")
     payload = {
         "type": "NIFTY_SCHEDULED_REPLAY",
         "study_key": study.study_key,
         "study_manifest_digest": study.manifest_digest,
         "strategy_version": study.incumbent_rule_version,
         "cost_model_id": study.cost_model_id,
+        "parent_search_budget": study.parent_search_budget,
     }
     digest = fingerprint(payload)
     existing = session.get(ResearchEvaluation, trial_id)

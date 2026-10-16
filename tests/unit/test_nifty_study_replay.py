@@ -80,7 +80,7 @@ def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
     manifest = TrialManifest(
         dataset_digest=frozen.dataset_digest, calculation_digest=frozen.calculation_digest,
         cost_model_id=frozen.cost_model_id, experiment_family="nifty-study-fixture",
-        trial_number=1, declared_search_budget=2, seed=0,
+        trial_number=1, declared_search_budget=10, seed=0,
         train_start=frozen.train_start, train_end=frozen.train_end,
         validation_start=frozen.validation_start, validation_end=frozen.validation_end,
         holdout_start=frozen.holdout_start, holdout_end=frozen.holdout_end,
@@ -101,6 +101,7 @@ def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
         trial = declare_trial(session, owner, candidate.id, manifest)
         saved = record_registered_nifty_replay(session, owner, trial.id, frozen, replay())
         assert saved.adapter["type"] == "NIFTY_SCHEDULED_REPLAY"
+        assert saved.adapter["parent_search_budget"] == frozen.parent_search_budget
         assert saved.result["report"]["status"] == "INSUFFICIENT_SAMPLE"
         assert saved.result["promotion_eligible"] is False
         assert session.get(ResearchTrial, trial.id).result is None
@@ -108,6 +109,10 @@ def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
         assert record_registered_nifty_replay(
             session, owner, trial.id, frozen, replay(trade_count=20),
         ).result_digest == saved.result_digest
+        mismatched = declare_trial(session, owner, candidate.id, TrialManifest.model_validate(
+            manifest.model_dump() | {"trial_number": 2, "declared_search_budget": 2}))
+        with pytest.raises(ValueError, match="parent budget"):
+            record_registered_nifty_replay(session, owner, mismatched.id, frozen, replay())
     engine.dispose()
 
 
@@ -119,7 +124,7 @@ def test_authenticated_route_records_only_owned_stored_replay():
     manifest = TrialManifest(
         dataset_digest=frozen.dataset_digest, calculation_digest=frozen.calculation_digest,
         cost_model_id=frozen.cost_model_id, experiment_family="nifty-route-fixture",
-        trial_number=1, declared_search_budget=2, seed=0,
+        trial_number=1, declared_search_budget=10, seed=0,
         train_start=frozen.train_start, train_end=frozen.train_end,
         validation_start=frozen.validation_start, validation_end=frozen.validation_end,
         holdout_start=frozen.holdout_start, holdout_end=frozen.holdout_end,

@@ -89,13 +89,17 @@ def test_registered_replay_retains_engine_evidence_separately_and_consumes_failu
         declare_trial,
         register_candidate,
     )
-    from packages.regime.registered_evaluator import bind_fixed_equity, run_registered_equity
+    from packages.regime.registered_evaluator import (
+        bind_fixed_equity,
+        run_registered_equity,
+        run_registered_equity_job,
+    )
 
     engine = create_engine(f"sqlite:///{tmp_path / 'registered.sqlite'}")
     Base.metadata.create_all(engine)
     owner, other = uuid4(), uuid4()
     raw, manifest, spec, _ = inputs()
-    manifest = TrialManifest.model_validate(manifest.model_dump() | {"declared_search_budget": 2})
+    manifest = TrialManifest.model_validate(manifest.model_dump() | {"declared_search_budget": 3})
     definition = CandidateDefinition(
         name="Fixture trend hypothesis", family="trend", market="EQUITY",
         hypothesis="Test a fixed rule with synthetic data, not qualified performance evidence.",
@@ -163,6 +167,19 @@ def test_registered_replay_retains_engine_evidence_separately_and_consumes_failu
         assert run_registered_equity(session, owner, failed.id, raw).result_digest == (
             failure.result_digest)
         assert len(list(session.scalars(select(ResearchBudgetSlot)))) == 2
+        job_trial = declare_trial(session, owner, candidate.id, TrialManifest.model_validate(
+            manifest.model_dump() | {"trial_number": 3}))
+        bind_fixed_equity(session, owner, job_trial.id, spec)
+        outcome, job_result = run_registered_equity_job(
+            session, owner, job_trial.id, raw, "research-job", 60,
+        )
+        assert outcome.status == "COMPLETED"
+        assert job_result is not None and job_result.result["promotion_eligible"] is False
+        invalid_outcome, invalid_result = run_registered_equity_job(
+            session, owner, job_trial.id, raw, "research-job-2", 0,
+        )
+        assert invalid_outcome.status == "FAILED"
+        assert invalid_result is None
     with Session(engine) as session:
         assert session.get(ResearchEvaluation, trial_id).result_digest == saved_digest
         assert session.get(ResearchTrial, trial_id).result is None

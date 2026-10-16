@@ -25,7 +25,10 @@ from packages.regime.candidate_registry import (
 )
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
 from packages.regime.nifty_study_replay import assess_nifty_scheduled_replay
-from packages.regime.registered_evaluator import record_registered_nifty_replay
+from packages.regime.registered_evaluator import (
+    record_registered_nifty_replay,
+    record_registered_nifty_replay_job,
+)
 from packages.regime.research_studies import freeze_nifty_study
 
 
@@ -109,8 +112,20 @@ def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
         assert record_registered_nifty_replay(
             session, owner, trial.id, frozen, replay(trade_count=20),
         ).result_digest == saved.result_digest
+        job_trial = declare_trial(session, owner, candidate.id, TrialManifest.model_validate(
+            manifest.model_dump() | {"trial_number": 2}))
+        outcome, job_result = record_registered_nifty_replay_job(
+            session, owner, job_trial.id, frozen, replay(), "nifty-research-job", 60,
+        )
+        assert outcome.status == "COMPLETED"
+        assert job_result is not None and job_result.result["promotion_eligible"] is False
+        invalid_outcome, invalid_result = record_registered_nifty_replay_job(
+            session, owner, job_trial.id, frozen, replay(), "nifty-research-job-2", 0,
+        )
+        assert invalid_outcome.status == "FAILED"
+        assert invalid_result is None
         mismatched = declare_trial(session, owner, candidate.id, TrialManifest.model_validate(
-            manifest.model_dump() | {"trial_number": 2, "declared_search_budget": 2}))
+            manifest.model_dump() | {"trial_number": 1, "declared_search_budget": 2}))
         with pytest.raises(ValueError, match="parent budget"):
             record_registered_nifty_replay(session, owner, mismatched.id, frozen, replay())
     engine.dispose()

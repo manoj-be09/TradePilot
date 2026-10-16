@@ -14,6 +14,7 @@ from packages.regime.fixed_rule_evaluator import FixedEquitySpec, evaluate_fixed
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
 from packages.regime.nifty_study_replay import assess_nifty_scheduled_replay
 from packages.regime.research_budget import reserve_trial_slot
+from packages.regime.research_scheduler_lease import ResearchJobOutcome, run_research_job
 
 
 def owned_trial(session: Session, owner: UUID, trial_id: UUID) -> ResearchTrial:
@@ -107,6 +108,27 @@ def run_registered_equity(session: Session, owner: UUID, trial_id: UUID,
     if saved.result_digest != digest:
         raise ValueError("Evaluation already finalized with different evidence")
     return saved
+
+
+def run_registered_equity_job(
+    session: Session, owner: UUID, trial_id: UUID, raw: bytes,
+    job_owner: str, lease_seconds: int,
+) -> tuple[ResearchJobOutcome, ResearchEvaluation | None]:
+    """Run the fixed evaluator under a fenced research lease.
+
+    This is an offline composition boundary for a future scheduler. It keeps
+    the evaluator's account-scoped budget/evidence rules and returns no result
+    when the lease is busy, stale or invalid. It does not expose HTTP execution
+    or grant trading/order capability.
+    """
+    saved: ResearchEvaluation | None = None
+
+    def evaluate() -> None:
+        nonlocal saved
+        saved = run_registered_equity(session, owner, trial_id, raw)
+
+    outcome = run_research_job(session, job_owner, lease_seconds, evaluate)
+    return outcome, saved
 
 
 def bind_nifty_replay(session: Session, owner: UUID, trial_id: UUID,
@@ -203,3 +225,23 @@ def record_registered_nifty_replay(
     if saved.result_digest != digest:
         raise ValueError("Evaluation already finalized with different evidence")
     return saved
+
+
+def record_registered_nifty_replay_job(
+    session: Session, owner: UUID, trial_id: UUID, study: FrozenNiftyStudy,
+    replay: ScheduledOptionsBacktestResult, job_owner: str, lease_seconds: int,
+) -> tuple[ResearchJobOutcome, ResearchEvaluation | None]:
+    """Record one supplied NIFTY replay under a fenced research lease.
+
+    The replay/provider call remains outside this boundary. This only combines
+    the existing frozen-study recorder with the offline lease and preserves its
+    unqualified, promotion-ineligible result semantics.
+    """
+    saved: ResearchEvaluation | None = None
+
+    def record() -> None:
+        nonlocal saved
+        saved = record_registered_nifty_replay(session, owner, trial_id, study, replay)
+
+    outcome = run_research_job(session, job_owner, lease_seconds, record)
+    return outcome, saved

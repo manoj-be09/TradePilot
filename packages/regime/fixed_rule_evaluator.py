@@ -93,6 +93,6 @@ def evaluate_fixed_equity(
                         "Daily OHLC replay uses illustrative costs and stop-first ambiguity.",
                         "Closed-trade drawdown excludes open equity and is not account drawdown.",
                         "Win frequency is descriptive, not calibrated profit probability.",
-                        "No durable search budget or registry finalization is enforced here."],
+                        "The offline adapter alone enforces no durable budget or finalization."],
     }
     return report | {"report_digest": fingerprint(report)}

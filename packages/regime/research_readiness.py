@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from packages.database.models import ResearchEvaluation, ResearchEvidence, ResearchTrial
 from packages.regime.candidate_registry import fingerprint
+from packages.regime.research_evidence import persisted_evidence_digest
 
 
 class ReadinessCheck(BaseModel):
@@ -120,6 +121,10 @@ def assess_trial(row: ResearchTrial,
             continue
         status = item.status
         expected_digest = manifest_artifacts.get(key)
+        evidence_integrity = persisted_evidence_digest(item) == item.evidence_digest
+        if not evidence_integrity:
+            status = "FAIL"
+            detail = "Stored evidence fields do not match their immutable evidence digest."
         holdout_unbound = key == "holdout" and status == "PASS" and not expected_digest
         if holdout_unbound:
             status = "FAIL"
@@ -135,7 +140,7 @@ def assess_trial(row: ResearchTrial,
             status = "FAIL"
             detail = ("A reviewed cost reference exists, but the stored engine report still uses "
                       "illustrative charges; complete historical charges remain unqualified.")
-        elif not identity_mismatch and not holdout_unbound:
+        elif not identity_mismatch and evidence_integrity and not holdout_unbound:
             detail = item.detail
         checks.append(ReadinessCheck(
             key=key, label=label, status=status, detail=detail,

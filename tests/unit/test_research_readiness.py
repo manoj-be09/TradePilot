@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from packages.database.models import ResearchEvaluation, ResearchEvidence, ResearchTrial
 from packages.regime.candidate_registry import fingerprint
+from packages.regime.research_evidence import EvidenceRecord
 from packages.regime.research_readiness import assess_trial
 
 
@@ -81,16 +82,24 @@ def test_reviewed_artifact_identity_must_match_immutable_trial_digest():
     row.manifest["calculation_digest"] = "b" * 64
     row.manifest_digest = fingerprint(row.manifest)
     stamp = datetime(2020, 1, 2, tzinfo=timezone.utc)
+    reviewed = EvidenceRecord(
+        key="data", status="PASS", detail="Reviewed dataset identity.",
+        artifact_ref="artifact://dataset", artifact_digest="c" * 64,
+        artifact_version="dataset-v1", recorded_at=stamp, allowed_use="RESEARCH_ONLY",
+    )
     evidence = ResearchEvidence(
         id=uuid4(), user_id=uuid4(), trial_id=row.id, key="data", status="PASS",
         detail="Reviewed dataset identity.", artifact_ref="artifact://dataset",
         artifact_digest="c" * 64, artifact_version="dataset-v1", recorded_at=stamp,
-        allowed_use="RESEARCH_ONLY", evidence_digest="d" * 64, created_at=stamp,
+        allowed_use="RESEARCH_ONLY", evidence_digest=fingerprint(reviewed.model_dump(mode="json")),
+        created_at=stamp,
     )
     checks = {check.key: check for check in assess_trial(row, evaluation, [evidence]).checks}
     assert checks["data"].status == "FAIL"
     assert "does not match" in checks["data"].detail
     evidence.artifact_digest = row.manifest["dataset_digest"]
+    reviewed.artifact_digest = evidence.artifact_digest
+    evidence.evidence_digest = fingerprint(reviewed.model_dump(mode="json"))
     checks = {check.key: check for check in assess_trial(row, evaluation, [evidence]).checks}
     assert checks["data"].status == "PASS"
 
@@ -98,11 +107,17 @@ def test_reviewed_artifact_identity_must_match_immutable_trial_digest():
 def test_protected_holdout_pass_requires_declared_artifact_identity():
     row, evaluation = records()
     stamp = datetime(2020, 1, 2, tzinfo=timezone.utc)
+    reviewed = EvidenceRecord(
+        key="holdout", status="PASS", detail="Protected holdout review.",
+        artifact_ref="artifact://holdout", artifact_digest="c" * 64,
+        artifact_version="holdout-v1", recorded_at=stamp, allowed_use="RESEARCH_ONLY",
+    )
     evidence = ResearchEvidence(
         id=uuid4(), user_id=uuid4(), trial_id=row.id, key="holdout", status="PASS",
         detail="Protected holdout review.", artifact_ref="artifact://holdout",
         artifact_digest="c" * 64, artifact_version="holdout-v1", recorded_at=stamp,
-        allowed_use="RESEARCH_ONLY", evidence_digest="d" * 64, created_at=stamp,
+        allowed_use="RESEARCH_ONLY", evidence_digest=fingerprint(reviewed.model_dump(mode="json")),
+        created_at=stamp,
     )
     checks = {check.key: check for check in assess_trial(row, evaluation, [evidence]).checks}
     assert checks["holdout"].status == "FAIL"

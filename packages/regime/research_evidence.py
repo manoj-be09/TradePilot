@@ -4,7 +4,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -55,6 +55,22 @@ class EvidenceRecord(BaseModel):
         if self.allowed_use == "QUALIFIED_PAPER" and self.status != "PASS":
             raise ValueError("Qualified paper use requires a passing evidence check")
         return self
+
+
+def persisted_evidence_digest(row: ResearchEvidence) -> str | None:
+    """Recompute an evidence row's canonical digest before readiness trusts it."""
+    recorded_at = row.recorded_at
+    if recorded_at.tzinfo is None:
+        recorded_at = recorded_at.replace(tzinfo=timezone.utc)
+    try:
+        record = EvidenceRecord(
+            key=row.key, status=row.status, detail=row.detail, artifact_ref=row.artifact_ref,
+            artifact_digest=row.artifact_digest, artifact_version=row.artifact_version,
+            recorded_at=recorded_at, allowed_use=row.allowed_use,
+        )
+    except (ValidationError, ValueError):
+        return None
+    return fingerprint(record.model_dump(mode="json"))
 
 
 def record_evidence(session: Session, owner: UUID, trial_id: UUID,

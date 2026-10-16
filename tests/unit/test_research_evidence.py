@@ -77,3 +77,17 @@ def test_evidence_route_is_owner_scoped_and_exposes_digest():
         assert rows[0]["evidence"][0]["artifact_version"] == "nifty-daily-v1"
     engine.dispose()
 
+
+def test_readiness_rejects_mutated_evidence_row():
+    engine, owner, _, trial = _fixture()
+    with Session(engine) as session:
+        saved = record_evidence(session, owner, trial, evidence())
+        saved.detail = "Tampered after the immutable record was written."
+        session.flush()
+        row = session.get(ResearchTrial, trial)
+        assessment = assess_trial(row, evidence=list(session.scalars(select(ResearchEvidence))))
+        check = next(item for item in assessment.checks if item.key == "data")
+        assert check.status == "FAIL"
+        assert "immutable evidence digest" in check.detail
+    engine.dispose()
+

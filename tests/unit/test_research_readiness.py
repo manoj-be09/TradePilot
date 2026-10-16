@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from packages.database.models import ResearchEvaluation, ResearchTrial
+from packages.database.models import ResearchEvaluation, ResearchEvidence, ResearchTrial
 from packages.regime.candidate_registry import fingerprint
 from packages.regime.research_readiness import assess_trial
 
@@ -74,3 +74,22 @@ def test_sqlite_record_metadata_keeps_registry_utc_convention():
     assessment = assess_trial(row, evaluation)
     recorded = next(check for check in assessment.checks if check.key == "engine_record")
     assert recorded.evidence_recorded_at.isoformat() == "2020-01-01T00:00:00+00:00"
+
+
+def test_reviewed_artifact_identity_must_match_immutable_trial_digest():
+    row, evaluation = records()
+    row.manifest["calculation_digest"] = "b" * 64
+    row.manifest_digest = fingerprint(row.manifest)
+    stamp = datetime(2020, 1, 2, tzinfo=timezone.utc)
+    evidence = ResearchEvidence(
+        id=uuid4(), user_id=uuid4(), trial_id=row.id, key="data", status="PASS",
+        detail="Reviewed dataset identity.", artifact_ref="artifact://dataset",
+        artifact_digest="c" * 64, artifact_version="dataset-v1", recorded_at=stamp,
+        allowed_use="RESEARCH_ONLY", evidence_digest="d" * 64, created_at=stamp,
+    )
+    checks = {check.key: check for check in assess_trial(row, evaluation, [evidence]).checks}
+    assert checks["data"].status == "FAIL"
+    assert "does not match" in checks["data"].detail
+    evidence.artifact_digest = row.manifest["dataset_digest"]
+    checks = {check.key: check for check in assess_trial(row, evaluation, [evidence]).checks}
+    assert checks["data"].status == "PASS"

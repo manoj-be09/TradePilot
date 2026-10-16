@@ -96,6 +96,10 @@ def assess_trial(row: ResearchTrial,
         evidence_ref=result_ref if illustrative else None,
         evidence_recorded_at=result_time if illustrative else None))
     reviewed = {item.key: item for item in (evidence or [])}
+    manifest_artifacts = {
+        "data": row.manifest.get("dataset_digest"),
+        "binding": row.manifest.get("calculation_digest"),
+    }
     for key, label, detail in (
         ("rights", "Source and data rights", "Declared licenses are not recorded rights approval."),
         ("data", "Historical data and timestamps",
@@ -114,11 +118,18 @@ def assess_trial(row: ResearchTrial,
             checks.append(ReadinessCheck(key=key, label=label, status="UNKNOWN", detail=detail))
             continue
         status = item.status
+        expected_digest = manifest_artifacts.get(key)
+        identity_mismatch = (status == "PASS" and expected_digest
+                             and item.artifact_digest != expected_digest)
+        if identity_mismatch:
+            status = "FAIL"
+            detail = (f"Reviewed artifact identity does not match the trial's immutable {key} "
+                      "digest; qualification remains blocked.")
         if key == "costs" and illustrative:
             status = "FAIL"
             detail = ("A reviewed cost reference exists, but the stored engine report still uses "
                       "illustrative charges; complete historical charges remain unqualified.")
-        else:
+        elif not identity_mismatch:
             detail = item.detail
         checks.append(ReadinessCheck(
             key=key, label=label, status=status, detail=detail,

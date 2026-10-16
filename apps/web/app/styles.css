@@ -1057,7 +1057,7 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px
 .research-readiness ul { list-style: none; padding: 0; }
 .research-readiness li { border-top: 1px solid #dce5f1; padding: 10px 0; }
 .research-readiness li > div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
-.research-readiness-summary { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 8px 10px; margin: 10px 0; border: 1px solid #dce5f1; border-radius: 7px; background: #fff; }
+.research-readiness-summary { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 10px; margin: 10px 0; border: 1px solid #dce5f1; border-radius: 7px; background: #fff; }
 .research-readiness-summary span { display: flex; align-items: center; gap: 8px; }
 .research-readiness-summary b { color: #345579; font-size: 11px; }
 .research-readiness-summary small { color: #61748a; font-size: 11px; }

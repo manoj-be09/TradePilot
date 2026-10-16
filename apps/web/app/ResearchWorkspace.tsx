@@ -29,10 +29,11 @@ export function ResearchReadiness({readiness}: {readiness?: Readiness}) {
   if (!readiness || readiness.schema_version !== 1) return <p className="research-notice">Evidence readiness is unavailable in this API response. No qualification can be inferred.</p>;
   const failures = readiness.checks.filter(check => check.status === "FAIL");
   const holdout = readiness.checks.find(check => check.key === "holdout");
+  const costs = readiness.checks.find(check => check.key === "costs");
   return <section className="research-readiness" aria-label="Data and evidence readiness">
     <strong>Evidence readiness · {failures.length ? "Blocked" : "Unverified"}</strong>
     <p>{failures.length ? failures[0].detail : "Required reviews are incomplete."} Research inspection only; no qualified recommendation.</p>
-    <div className="research-readiness-summary"><span><b>Protected holdout</b><em className={`readiness-label readiness-${(holdout?.status ?? "UNKNOWN").toLowerCase()}`}>{holdout?.status ?? "UNKNOWN"}</em></span><small>{holdout?.artifact_digest ? "Artifact identity bound" : "Artifact identity not declared"}</small></div>
+    <div className="research-readiness-summary"><span><b>Protected holdout</b><em className={`readiness-label readiness-${(holdout?.status ?? "UNKNOWN").toLowerCase()}`}>{holdout?.status ?? "UNKNOWN"}</em></span><small>{holdout?.artifact_digest ? "Artifact identity bound" : "Artifact identity not declared"}</small><span><b>Cost evidence</b><em className={`readiness-label readiness-${(costs?.status ?? "UNKNOWN").toLowerCase()}`}>{costs?.status ?? "UNKNOWN"}</em></span><small>{costs?.artifact_digest ? "Artifact identity bound" : "Artifact identity not declared"}</small></div>
     <details><summary>Review checks and missing evidence</summary>
       <p className="features-note">Assessment generated {new Date(readiness.assessed_at).toLocaleString("en-IN")}. Refreshing does not renew the evidence below. A matching record digest does not verify source data.</p>
       <ul>{readiness.checks.map(check => <li key={check.key}>

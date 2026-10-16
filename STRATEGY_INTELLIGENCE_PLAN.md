@@ -1,6 +1,6 @@
 # TradingPilot strategy intelligence: research and build plan
 
-Prepared 16 October 2026, India time. Source checkout reviewed: `f83ca65`.
+Prepared and revalidated 16 October 2026, India time. Revalidation baseline: `0775048` (runtime source unchanged from the initial review). Status: finalized implementation roadmap; individual studies still require their own frozen evaluation contracts.
 
 This is a proposed architecture and delivery plan, not a claim that these capabilities are implemented or that a profitable strategy has been found. The target is an auditable research-to-selection system that can improve its decisions as evidence arrives. There is no defensible public ranking of the world's best private trading systems, and their proprietary data, strategies and controls cannot be recovered from marketing pages. The benchmarks below are leading documented examples, not a returns leaderboard.
 
@@ -17,7 +17,7 @@ The most important additions are:
 5. A tested, conservative strategy-selection policy with an explicit no-trade option.
 6. Prospective challenger portfolios, reliable job execution, drift monitoring and reviewed promotion/rollback.
 
-Daily evaluation is desirable. Daily replacement is not the objective. Initially, learning can improve exclusion rules, cost estimates and evidence quality while the incumbent strategy remains unchanged.
+Daily health checks are useful; expensive reevaluation should run only when eligible inputs change. Daily replacement is not the objective. Initially, learning can improve exclusion rules, cost estimates and evidence quality while the incumbent strategy remains unchanged. Even an exclusion-rule change is a new policy version requiring evaluation. Improvement is an outcome to measure, never a promised property of the loop.
 
 ## 2. What the external evidence supports
 
@@ -52,7 +52,8 @@ The existing work is useful groundwork, not an autonomous investment engine. The
 | Data integrity | Exact byte/code hashes, bounded inputs, OHLC and chronological checks | Hashes prove identity, not authenticity, rights, point-in-time correctness or completeness |
 | Holdout boundary | Replay receives bars only through validation end | The same raw JSON still contains the holdout, and validation code reads it. This is not a sealed or independently controlled holdout |
 | Registered evaluator | Deterministic fixed equity rules, frozen settings and an isolated SQLite demo | A registered NIFTY options adapter and policy-matched historical evidence; generated hypotheses do not compile themselves into verified rules |
-| Existing options replay | Historical expired-contract/daily-candle paths, strike/lot handling and explicit assumptions | Daily candles cannot establish executable intraday depth or stop/target ordering. Do not present it as the forward worker's exact execution history |
+| Existing options replay | Historical expired-contract/daily-candle paths, strike/lot handling and explicit assumptions | Scheduled entry and daily option-close exit differ from the worker's intraday policy. An expiry-day option close is not official cash settlement; daily candles cannot establish intraday depth or stop/target ordering |
+| Validation partitions | One continuous equity replay followed by filtering trades into windows | An excluded crossing position can still suppress later entries. Fixed per-entry budgets are not a compounded account simulation. Boundary state and capital accounting require explicit tests before qualification |
 | Reproducibility | Declared source-set digest and partial environment metadata | Dependency/lockfile and image identity, input revision lineage, complete effective settings and reproducible clean-environment runs |
 | Costs | Durable, versioned illustrative F&O charge snapshots; equity replay assumptions | Effective-date broker/exchange/tax assumptions, settlement/financing treatment, realistic execution and capital use. Never retrofit new costs as old recorded facts |
 | Reporting | Configuration-separated descriptive reports, accounting linkage and exclusions | A full equity timeline including qualified open marks, capital movements, exposure, downtime and open-risk paths; marked drawdown remains distinct from closed-trade drawdown |
@@ -92,7 +93,7 @@ Keep the current API, PostgreSQL and modular engine. Initially use a single boun
 
 Each artifact needs provider, rights/restrictions, instrument and contract identity, covered period, acquisition time, hash, byte size, schema, quality report and parent revisions. Features need event time, first available time, local receipt time and calculation version. Corrections create a new revision; they do not silently rewrite history. Train on what was available at the simulated decision time, not what today's archive later corrected.
 
-For equities, account for splits, dividends, delistings and historical universe membership. For NIFTY options, retain historical contract masters, actual expiry/lot/tick conventions, expired chains and the contemporaneous underlying reference. Current constituents and current lot sizes must not be projected backwards.
+For equities, account for splits, dividends, delistings and historical universe membership. For NIFTY options, retain historical contract masters, actual expiry/lot/tick conventions, expired chains and the contemporaneous underlying reference. Current constituents and current lot sizes must not be projected backwards. Validate expected sessions against a versioned exchange calendar; the current ten-calendar-day gap check cannot establish completeness. Record missing/non-trading observations distinctly. Acquiring an archive today does not establish when its historical values first became available: unknown availability stays unknown. Never assign acquisition time as a fabricated historical availability time.
 
 Maintain a capability matrix by provider: index OHLC, expired option OHLC, bid/ask/depth history, trade ticks, OI/IV availability, retention and usage rights. Missing historical depth means an indicative replay, not verified fills. No subscription purchase is assumed; any paid data decision needs a separate concrete capability/cost review.
 
@@ -106,7 +107,7 @@ Use source-quality tiers with explicit capability flags rather than one vague fr
 
 Keep existing illustrative models immutable. Add separate researched, effective-date cost versions with verified tariff sources and explicit unknowns. Include each leg, bid/ask spread once, order charges, applicable taxes/fees, settlement effects and financing where relevant. Separate observed costs from estimates and stress assumptions.
 
-Replay conservative quantity and latency assumptions. Model rejects, unavailable quotes, insufficient depth and potential multi-leg timing risk rather than giving every signal a fill. Daily OHLC studies need an explicit same-bar ambiguity policy. Compare base, delayed-entry and wider-spread/cost-stress scenarios; choose scenarios before viewing final results.
+Replay conservative quantity and latency assumptions. Model rejects, unavailable quotes, insufficient depth and potential multi-leg timing risk rather than giving every signal a fill. Daily OHLC studies need an explicit same-bar ambiguity policy. Compare base, delayed-entry and wider-spread/cost-stress scenarios; choose scenarios before viewing final results. Independent option-leg daily opens may occur at different times and do not prove a simultaneously tradable spread. An official settlement adapter must use separately sourced settlement values and effective rules; an option's daily close must never substitute for them.
 
 Report risk against appropriate committed capital/margin, not just premium paid. Include portfolio exposure, simultaneous positions and adverse scenarios. An apparently high-return short-premium strategy can have poor tail behavior; a high win frequency cannot substitute for expected outcome and risk.
 
@@ -116,11 +117,13 @@ Report risk against appropriate committed capital/margin, not just premium paid.
 
 Create a canonical `StudyDefinition` containing objective, instrument universe, data snapshot, strategy family/lineage, allowed parameters/features, execution/cost model, training/validation/calibration/final-test policy, budgets and stopping rules. Add parent study and candidate IDs, external/manual experiments and the LLM/model/prompt/source versions used to propose hypotheses.
 
-A new name must not reset the scientific search history. Retries should not masquerade as independent evidence. Failed and abandoned trials count against resource/search accounting. Review code and artifact changes before resuming a study rather than silently updating its fingerprint.
+A new name must not reset the scientific search history. Require a stable server-assigned parent campaign and atomic parent-budget reservation; canonical hashes detect exact duplicates, not all semantically equivalent ideas. Cross-campaign lineage needs review. Retries should not masquerade as independent evidence. Retain failed and abandoned trials, while distinguishing resource-consuming execution attempts from scientifically distinct hypotheses and result-driven revisions. Review code and artifact changes before resuming a study rather than silently updating its fingerprint.
 
 ### 6.2 Protect evaluation boundaries
 
-Use nested chronological development and evaluation. Fit transforms, feature selection, model tuning and calibration only on their permitted earlier windows. Purge overlapping labels using actual event/holding intervals; an arbitrary fixed gap alone does not prove isolation. Preserve adequate past-only warmup and declare carry/reset behavior at boundaries. Count discarded/censored/open outcomes and opportunity costs rather than hiding them.
+Use nested chronological development and evaluation when tuning models or selectors; a fixed-rule baseline initially needs a frozen chronological protocol, not unused ML machinery. Fit transforms, feature selection, tuning and calibration only on permitted earlier windows. Purge overlapping labels using actual event/holding intervals; a fixed gap alone does not prove isolation. Past-only indicator warmup is allowed, but label maturity must precede each fit. Count discarded/censored/open outcomes and opportunity costs.
+
+For the first standalone validation fold, warm indicators with earlier data, start flat with the declared initial capital, prohibit warmup entries and score the full evaluation path including terminal open marks. Any assumed terminal liquidation needs costs and an explicit label. For continuous walk-forward evaluation, instead carry actual prior state and attribute boundary equity changes consistently. Do not mix these protocols. The present post-replay filtering is descriptive only: removing a crossing trade from a report does not undo its suppression of subsequent entries. Missing terminal marks make path metrics incomplete, not zero.
 
 Move the final holdout into a separate restricted artifact. Ordinary proposal/evaluation workers receive only approved development data. Log and authorize final-test access; once inspected, that period is no longer untouched for further optimization. New improvement waves eventually require new prospective data. Overlapping folds cannot be added up as independent observations.
 
@@ -130,7 +133,9 @@ AI introduces an additional leakage route: a pretrained model may know historica
 
 Start with the frozen incumbent and a no-trade baseline under comparable capital and cost assumptions. Compare paired time periods and evaluate net expectancy, continuous marked drawdown, downside/tail exposure, turnover, time in market, parameter stability, regime coverage and dependence on a few exceptional trades. Use appropriate time/dependence-aware uncertainty estimates.
 
-Track the complete search and use multiple-testing diagnostics where their assumptions/data requirements hold. DSR/PBO are additional diagnostics, not automatic pass buttons. Twenty closes per window is currently a display/review threshold, not proof of statistical significance, independence, calibration or deployability.
+Track the complete search and use multiple-testing diagnostics where their assumptions/data requirements hold. DSR/PBO are additional diagnostics, not automatic pass buttons. PBO's combinatorial splits are not a replacement for chronological deployment simulation; compute such diagnostics on development evidence only. A restricted holdout limits further access but cannot erase prior human or model knowledge of public history. Twenty closes per window is currently a display/review threshold, not proof of statistical significance, independence, calibration or deployability.
+
+Before outcome inspection, freeze a primary objective, comparison benchmark, capital normalization, minimum worthwhile effect, risk limits, observation/review schedule and uncertainty method. A reasonable initial objective is paired net portfolio outcome over the same sessions and capital, with drawdown, tail exposure and turnover as constraints. Do not optimize all report metrics and pick the flattering one. Numerical thresholds must be justified for the study rather than invented globally. Dependent positions sharing a session or expiry are not independent samples. Predeclare dependence-aware resampling and minimum coverage; insufficient coverage yields INCONCLUSIVE. Daily viewing does not authorize daily significance tests or stopping at the first favorable result. Equivalence requires a predeclared non-inferiority margin, not merely a non-significant difference.
 
 Evaluate each added feature by ablation against a simpler baseline. A more complex model must earn its extra costs and operational burden on later data. Prefer a stable parameter region to one isolated optimum. Retain honest negative findings.
 
@@ -162,7 +167,7 @@ The default card should show one suggested strategy or `No qualified strategy`, 
 
 Separate `research eligible`, `market fit`, `entry ready` and `account capacity`. This prevents a favorable strategy recommendation being confused with an immediately executable entry. A selection prepares the existing paper setup; it does not bypass entry checks or create a live broker order.
 
-Persist a `RecommendationSnapshot` before the next outcome: exact candidate/selector versions, available features and their times, qualified alternatives, rejected reasons, account/risk snapshot, selected action or abstention, expiry and artifact hashes. This supports honest later attribution of the actual selection policy.
+Persist a `RecommendationSnapshot` before the next outcome: exact candidate/selector versions, available features and their times, qualified alternatives, rejected reasons, account/risk snapshot, selected action or abstention, expiry and artifact hashes. This supports honest later attribution of the actual selection policy. Use the same decision schedule for comparisons; record every scheduled opportunity, including outages and abstentions. An unselected strategy has no observed execution outcome: any shadow counterfactual remains explicitly simulated. Actual owner-selected trades alone are a biased training sample for ranking alternatives.
 
 ## 8. Probability, portfolio learning and forward evidence
 
@@ -170,7 +175,7 @@ Persist a `RecommendationSnapshot` before the next outcome: exact candidate/sele
 
 If a probability is eventually displayed, define the event and horizon: for example, positive net realized P&L under a specific entry/exit policy and cost model. Expiry payoff probability is not the same event as winning under a stop/target policy. Loss and flat are separate outcomes; unresolved trades are not automatically losses. Record censoring and mark-to-market separately.
 
-Use chronological, disjoint model-fitting/calibration/evaluation windows and a simple base-rate baseline. Measure reliability, Brier score and log loss, including by policy and sufficiently supported regimes. The [scikit-learn calibration documentation](https://scikit-learn.org/stable/modules/calibration.html) explains why fitting the calibrator on biased training predictions is unsafe; ordinary random-fold defaults are not a time-series solution.
+Use chronological, disjoint model-fitting/calibration/evaluation windows and an earlier-data base-rate baseline. Measure reliability curves with bin counts/uncertainty alongside Brier score and log loss, by policy and sufficiently supported regimes. A lower Brier score alone does not establish better calibration; it also reflects discrimination and outcome uncertainty. The [scikit-learn calibration documentation](https://scikit-learn.org/stable/modules/calibration.html) supports these distinctions; ordinary random-fold defaults are not a time-series solution. Define probability conditional on entry/fill or as a full signal-to-outcome model explicitly. No-fill and no-trade are not fabricated win/loss labels. Revalidate calibration after selection/filtering changes, since the population being shown a forecast can change.
 
 Withhold a percentage outside validated feature/policy support, during drift or with insufficient evidence. A model's verbal confidence, IV-based payoff approximation and historical win frequency must remain distinct. A strategy winning 80% of the time can still have negative expectancy: 0.8 × 100 minus 0.2 × 600 is -40 before any additional costs.
 
@@ -184,7 +189,7 @@ Evaluate incremental account contribution and correlation. Three similarly expos
 
 Monitor data changes, unavailable/stale features, prediction calibration, execution discrepancies, costs and risk. Separate data failure, execution failure, selection failure and strategy failure. A bad feed should not trigger strategy retraining; a changed fee schedule should not rewrite old performance.
 
-Use reviewed state transitions: `DRAFT → RESEARCHABLE → TESTED → FORWARD_SHADOW → REVIEW_ELIGIBLE → APPROVED_PAPER`, with `REJECTED`, `INSUFFICIENT`, `STALE` and `RETIRED` available. Every transition needs a frozen policy and evidence; metrics cannot directly flip a deployment alias. Rollback applies to future entries, while existing positions retain their saved rules.
+Use reviewed state transitions: `DRAFT → RESEARCHABLE → TESTED → FORWARD_SHADOW → REVIEW_ELIGIBLE → APPROVED_PAPER`, with `REJECTED`, `INSUFFICIENT`, `STALE` and `RETIRED` available. Every transition needs a frozen policy and evidence; metrics cannot directly flip a deployment alias. Rollback applies to future entries, while existing positions retain their saved rules. Retaining a version must not disable existing independent emergency risk controls; explicit operational suspension is distinct from strategy optimization. Evidence qualification must carry its permitted use: indicative research, qualified paper and live readiness are separate, and this plan authorizes no live readiness transition.
 
 ## 9. Delivery order and acceptance gates
 
@@ -192,15 +197,15 @@ These are proposed work packages, not calendar promises. Software delivery canno
 
 | Order | Deliverable | Acceptance evidence |
 |---|---|---|
-| A | Research operations and evidence inventory | PostgreSQL migration/concurrency tests in an isolated schema; duplicate/crash/cancellation tests; complete artifact and source rights inventory; no owner-account synthetic writes |
+| A | Readiness inventory and one bounded offline vertical slice | Evidence references/unknowns, owner isolation and existing replay checks; PostgreSQL migration/concurrency acceptance before enabling a scheduled/shared worker; no owner-account synthetic writes |
 | B | Data/cost foundation and sealed study contracts | Point-in-time correction/late-arrival tests; contract/expiry/lot fixtures; immutable cost versions; restricted final holdout; canonical study/parent budgets and denied bypass tests |
 | C | Reproducible baseline and NIFTY registered adapter | Same data/code/settings reproduce outcomes; explicit daily/intraday fill limits; registered options replay remains distinct from qualified forward execution; full exclusion and cost coverage reports |
-| D | Conservative selection and forward logging | Frozen selector beats or matches predeclared incumbent/no-trade objectives on later data; unsupported cases abstain; recommendation saved before outcomes; risk gates tested independently |
+| D | Conservative selection and forward logging | Software acceptance: frozen rules, reasoned abstention, pre-outcome records and independent risk gates. Separate research acceptance: predeclared later-data improvement or justified non-inferiority; inconclusive results retain an eligible incumbent or abstain |
 | E | Isolated challenger portfolios and monitoring | Prospectively recorded comparisons with sample/period/dependence coverage; attribution of data/cost/execution failures; no owner position mutation; restart/idempotency acceptance |
 | F | Reviewed promotion and rollback | Reproducible promotion dossier, aggregate risk and stress checks, paper-only approved version pinning, audited rollback and immutable policy on already-open positions |
 | G | Calibrated probabilities and richer discovery | Base-rate/calibration benchmarks pass on unseen periods; support/drift checks withhold unsupported estimates; new features show incremental benefit; spending remains bounded |
 
-Begin with A and B. Some C engineering can proceed independently while waiting for licensed data and the remaining NIFTY evidence. Do not make richer AI, news or additional-index execution a dependency of completing current NIFTY paper acceptance.
+Begin with the small A/B slice below. Capture lawful prospective observations early without producing new forecasts or changing trades; delaying observation until the selector is complete wastes future evidence. Some C engineering can proceed while waiting for licensed data and remaining NIFTY evidence. Do not make richer AI, news or additional-index execution a dependency of completing current NIFTY paper acceptance. A lack of demonstrated advantage is a valid scientific result and does not mean the software is unfinished.
 
 The first useful release is a trustworthy baseline comparison and an honest recommendation/abstention record—not an automatically changing neural trading system. Keep additional-index execution default-off and live orders disabled.
 
@@ -224,8 +229,22 @@ Preserve all owner data, strategy logic and the existing actual TEST ONLY NIFTY2
 
 No live broker orders, extra-index execution, paid API jobs, subscriptions, database-volume deletion, historical cost backfills, friend-testing ZIP update or automatic promotion is authorized by this plan. Only documentation changed in preparing it.
 
-## 13. Proposed immediate next increment
+## 13. Finalized first release and definition of done
 
-Build a read-only **Data and Evidence Readiness** report for each study: source/rights review, historical coverage, timestamp capabilities, corrections, cost coverage, runtime/migration checks, holdout-access status and specific failed gates. Then create the canonical study contract and restricted artifact path. This makes the real blockers visible and prevents a sophisticated selector being built on unqualified inputs.
+Build a read-only **Data and Evidence Readiness** report in the existing Research screen, backed by one small versioned assessment contract. Each check records PASS, FAIL, UNKNOWN or NOT_APPLICABLE, evidence reference, assessed artifact/version, check time and allowed use. Unsupported assertions remain UNKNOWN; a fresh page load does not refresh underlying evidence. Aggregate with hard gates rather than averaging a score. Check source/rights, coverage, timestamp capabilities, corrections, cost/capital coverage, runtime acceptance and holdout access. This is an assessment, not automatic qualification of old results.
 
-Follow with a small frozen NIFTY baseline study and a paper-only recommendation log. Keep `No qualified strategy` as the expected valid output until evidence supports another result.
+Next freeze one NIFTY study, incumbent configuration and no-trade comparator, with at most two reviewed challengers as an initial engineering scope cap (not a statistical threshold). Use the existing scheduled daily replay only as a separately labeled indicative study. It cannot qualify the intraday worker policy without a matching adapter and adequate data. Add the canonical parent budget and restricted holdout before exploratory parameter batches. Do not build a generalized model platform or discovery crawler for this release.
+
+The release is done when an isolated fixture and an actual read-only account view both render honest readiness; missing rights/costs/holdout controls prevent qualification; one frozen study can reproduce retained results and failures; recommendation snapshots can record abstention without creating orders; and desktop/phone views preserve all limitations. A populated fixture remains synthetic. Any real-data evaluation needs its own reviewed input evidence. Background scheduling additionally requires PostgreSQL atomic reservation, lease fencing, bounded retries, cancellation/crash recovery and idempotent finalization tests. A lease alone is not an exactly-once execution guarantee.
+
+If suitable options history is unavailable, finish the readiness, isolation, registry and abstention work, record the data gap and retain existing paper behavior. Do not silently switch the study to equities or substitute synthetic profitability. No qualified recommendation and no probability percentage are acceptable first-release outputs.
+
+## 14. Revalidation record and remaining uncertainty
+
+Rechecked the highest-risk methodology against primary documentation and current source on 16 October 2026. Graphify remains at `c24ea1b`, behind the reviewed `0775048`; no refresh or private-system inspection is claimed. No new REA run was necessary for available source and methodological references.
+
+Material corrections: separated software and scientific acceptance; specified fold boundary state and non-compounding limitations; distinguished option-close replay from official settlement; required predeclared objectives and sequential-review rules; added selection bias/no-fill handling; clarified calibration diagnostics; made search lineage limits explicit; and reduced the first release to a bounded vertical slice. These are plan corrections, not fixes to the runtime gaps.
+
+Verification: 29 existing isolated tests passed across research inputs/identity, budgets, fixed-rule/registered evaluation, candidate registry, rolling windows and PostgreSQL DDL compilation. The boundary test verifies filtering, not an independent validation account; the DDL test does not establish PostgreSQL runtime concurrency. No deployment, owner-account trade, external paid job or statistical performance experiment ran during revalidation.
+
+The external sources support the chosen mechanisms, not guaranteed financial results. Source licenses/data rights, actual archival quality, calibrated fill/cost assumptions, deployable NIFTY evidence, prospective sample maturity and the separate expiry/book-time gates remain open. Astra High remains suitable; changing the model does not resolve these evidence requirements.

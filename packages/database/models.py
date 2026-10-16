@@ -492,3 +492,33 @@ class ResearchTrial(Base):
     result: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ResearchExperiment(Base):
+    """Frozen account/family budget and study scope; not a promotion decision."""
+    __tablename__ = "research_experiments"
+    __table_args__ = (
+        UniqueConstraint("user_id", "family", name="uq_research_experiment_family"),
+        CheckConstraint("budget >= 1 AND budget <= 10000", name="ck_research_budget"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    family: Mapped[str] = mapped_column(String(100))
+    budget: Mapped[int] = mapped_column(Integer)
+    scope_digest: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ResearchBudgetSlot(Base):
+    """An occupied slot stays consumed after success, failure or interruption."""
+    __tablename__ = "research_budget_slots"
+    __table_args__ = (
+        UniqueConstraint("trial_id", name="uq_research_budget_trial"),
+        CheckConstraint("slot >= 1 AND slot <= 10000", name="ck_research_slot"),
+    )
+    experiment_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("research_experiments.id"), primary_key=True,
+    )
+    slot: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trial_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("research_trials.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

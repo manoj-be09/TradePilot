@@ -48,7 +48,10 @@ def test_worker_closes_without_browser_or_jwt_and_restart_does_not_repeat(client
         saved = session.get(PaperTrade, UUID(trade["id"]))
         assert saved.status == "CLOSED"
         assert saved.exit_reason == "STOP_LOSS"
-        assert len(list(session.scalars(select(PaperOrder)))) == 2
+        orders = list(session.scalars(select(PaperOrder)))
+        assert len(orders) == 2
+        assert all(order.fill_snapshot["modeled_costs"]["model_id"] ==
+                   "option-premium-turnover-illustrative-v1" for order in orders)
     assert client.get("/paper/worker").status_code == 401
     assert client.get("/paper/worker", headers=headers).json()["status"] == "HEALTHY"
 

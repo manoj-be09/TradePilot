@@ -177,6 +177,14 @@ def test_paper_workflow_is_authenticated_and_persists_simulated_fills(client, mo
     assert all(order["fill_snapshot"]["paper_only"] for order in orders.json())
     account_after_close = client.get("/paper/account", headers=headers).json()
     assert account_after_close["cash_balance"] == "1000225.00"
+    assert all(order["fill_snapshot"]["modeled_costs"]["model_id"] ==
+               "option-premium-turnover-illustrative-v1" for order in orders.json())
+    costs = client.get("/paper/trades", headers=headers).json()["trades"][0]["modeled_costs"]
+    assert costs["coverage"] == "COMPLETE"
+    assert costs["recorded_modeled_charges"] == "5.28"
+    assert costs["pnl_after_modeled_charges"] == "219.72"
+    assert costs["complete_broker_costs"] is False
+
     closed_ledger = client.get("/paper/account/ledger-reconciliation", headers=headers)
     assert closed_ledger.json()["status"] == "MATCHED"
     assert closed_ledger.json()["expected_cash_balance"] == "1000225.00"

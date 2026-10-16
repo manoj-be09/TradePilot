@@ -145,6 +145,7 @@ from packages.options.models import (
 )
 from packages.options.payoff import calculate_expiry_payoff
 from packages.options.pricing import calculate_greeks
+from packages.paper_trading.costs import cost_snapshot, summarize_costs
 from packages.paper_trading.daily_risk import daily_realized_pnl, daily_risk_budget
 from packages.paper_trading.expiry_settlement import (
     ExpirySettlement,
@@ -2602,6 +2603,7 @@ async def _open_paper_trade_with_provider(
                 "market_as_of": chain.as_of.isoformat(),
                 "quality_status": quality.status,
                 "entry_rule_snapshot": entry_rule_snapshot,
+                "modeled_costs": cost_snapshot(fills),
                 "fills": fills,
                 "method": (
                     "Immediate simulated fills: buys at ask and sells at bid; "
@@ -2745,9 +2747,17 @@ async def paper_trades(user: CurrentUser, session: SessionDep) -> PaperTradeList
                 f"Open positions expiring {expiry} could not be valued because "
                 "market data is unavailable."
             )
+    orders_by_trade: dict[UUID, list[PaperOrder]] = {}
+    for order in session.scalars(select(PaperOrder).where(
+        PaperOrder.account_id == account.id, PaperOrder.user_id == user.id,
+    )):
+        orders_by_trade.setdefault(order.trade_id, []).append(order)
     responses: list[PaperTradeResponse] = []
     for trade in trades:
         item = _paper_trade_response(trade)
+        item.modeled_costs = summarize_costs(
+            trade.status, trade.realized_pnl, orders_by_trade.get(trade.id, []),
+        )
         if trade.status == "OPEN":
             if trade.id in scope_errors:
                 item.valuation_warning = scope_errors[trade.id]
@@ -3204,6 +3214,8 @@ async def reconcile_paper_expiry_settlement(
         fill_snapshot={
             "paper_only": True,
             "quality_status": "OPERATOR_RECORDED",
+            "modeled_costs": {"coverage": "UNAVAILABLE",
+                              "reason": "Expiry settlement charges are not modeled"},
             "calculation_version": ("nifty-index-cash-intrinsic-v1" if trade.underlying == "NIFTY"
                                     else "nse-index-cash-intrinsic-v1"),
             "underlying": trade.underlying,
@@ -3402,6 +3414,7 @@ async def close_paper_trade(
                 "paper_only": True,
                 "market_as_of": chain.as_of.isoformat(),
                 "quality_status": quality.status,
+                "modeled_costs": cost_snapshot(fills),
                 "fills": fills,
                 "method": (
                     "Immediate simulated fills: closing sells at bid and buys at ask; "

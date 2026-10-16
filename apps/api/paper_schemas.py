@@ -384,6 +384,7 @@ class PaperTradeResponse(BaseModel):
     closed_at: datetime | None
     valuation_warning: str | None = None
     execution_warnings: list[str] = Field(default_factory=list)
+    modeled_costs: dict[str, Any] | None = None
 
     @classmethod
     def from_model(cls, model: Any) -> "PaperTradeResponse":

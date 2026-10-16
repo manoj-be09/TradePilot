@@ -48,3 +48,10 @@ assert.equal(equity[0].winRate, null); assert.equal(equity[0].averageWin, null);
 assert.equal(equity[1].winRate, 50); assert.equal(equity[1].averageWin, 75.25);
 assert.equal(equity[1].closed_unpriced, 1); assert.equal(equity[1].realized_net, "110.50");
 console.log("Equity all-time summary checks passed: diagnostic exclusion, empty samples, averages and missing evidence.");
+
+const modeled = {coverage: "COMPLETE", model_id: "option-premium-turnover-illustrative-v1", pnl_after_modeled_charges: "94.72", recorded_modeled_charges: "5.28", complete_broker_costs: false};
+assert.equal(strategyPerformance([trade("11", "100", {modeled_costs: modeled})]).rows[0].afterModeledCharges, 94.72);
+assert.equal(strategyPerformance([trade("11", "100", {modeled_costs: modeled}), trade("12", "50")]).rows[0].afterModeledCharges, null);
+assert.equal(strategyPerformance([trade("11", "100", {modeled_costs: {...modeled, coverage: "PARTIAL"}})]).rows[0].afterModeledCharges, null);
+assert.equal(strategyPerformance([trade("11", "100", {modeled_costs: {...modeled, model_id: "unknown"}})]).rows[0].afterModeledCharges, null);
+console.log("Modeled-charge reporting checks passed: complete-only coverage; no legacy reconstruction.");

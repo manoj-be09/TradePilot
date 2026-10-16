@@ -5,6 +5,7 @@ export type PerformanceTrade = {
   opened_at: string; closed_at: string | null;
   stop_loss_amount: string | null; target_profit_amount: string | null; trailing_stop_amount: string | null;
   entry_rule_snapshot: Record<string, unknown>;
+  modeled_costs?: {coverage: string; model_id: string; pnl_after_modeled_charges: string | null; recorded_modeled_charges: string | null; complete_broker_costs: boolean} | null;
 };
 
 const canonical = (value: unknown): string => {
@@ -37,6 +38,12 @@ export function strategyPerformance(trades: PerformanceTrade[]) {
     const first = group[0];
     const closed = group.filter(trade => trade.status === "CLOSED");
     const priced = closed.map(trade => ({trade, pnl: cents(trade.realized_pnl)})).filter((row): row is {trade: PerformanceTrade; pnl: number} => row.pnl !== null);
+    const costRows = closed.filter(trade => trade.modeled_costs?.coverage === "COMPLETE"
+      && trade.modeled_costs.complete_broker_costs === false
+      && trade.modeled_costs.model_id === "option-premium-turnover-illustrative-v1"
+      && cents(trade.modeled_costs.pnl_after_modeled_charges) !== null);
+    const afterCharges = costRows.reduce((sum, trade) => sum + (cents(trade.modeled_costs!.pnl_after_modeled_charges) ?? 0), 0);
+    const fullCostCoverage = closed.length > 0 && costRows.length === closed.length;
     const wins = priced.filter(row => row.pnl > 0), losses = priced.filter(row => row.pnl < 0);
     const total = priced.reduce((sum, row) => sum + row.pnl, 0);
     const grossWin = wins.reduce((sum, row) => sum + row.pnl, 0);
@@ -61,6 +68,8 @@ export function strategyPerformance(trades: PerformanceTrade[]) {
     return {key, name: first.strategy_name, underlying: first.underlying,
       provider: String(first.entry_rule_snapshot?.market_data_provider ?? "Unknown provider"),
       version: String(first.entry_rule_snapshot?.strategy_definition_hash ?? first.entry_rule_snapshot?.strategy_version_id ?? "Unversioned"),
+      afterModeledCharges: fullCostCoverage && Number.isSafeInteger(afterCharges) ? afterCharges / 100 : null,
+      costRecorded: costRows.length,
       stop: first.stop_loss_amount, target: first.target_profit_amount, trail: first.trailing_stop_amount,
       conditions: Array.isArray(first.entry_rule_snapshot?.conditions) ? first.entry_rule_snapshot.conditions.map(item => {
         if (!item || typeof item !== "object") return "Unrecognized condition";

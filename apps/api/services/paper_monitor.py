@@ -25,6 +25,7 @@ from packages.market_data.contracts import (
 )
 from packages.market_data.index_catalog import OptionIndex
 from packages.market_data.quality import assess_option_chain
+from packages.paper_trading.costs import cost_snapshot
 from packages.paper_trading.exits import ExitDecision, evaluate_exit
 from packages.paper_trading.index_scope import saved_option_index
 from packages.paper_trading.option_policy import parse_option_exit_policy
@@ -578,6 +579,7 @@ async def monitor_exits(
                     "market_as_of": trade_chain.as_of.isoformat(),
                     "quality_status": assess_option_chain(trade_chain).status,
                     "exit_reason": decision.reason,
+                    "modeled_costs": cost_snapshot(fills),
                     "fills": fills,
                     "method": (
                         "Paper risk-rule exit; simulated closing sells at bid and buys at ask; "

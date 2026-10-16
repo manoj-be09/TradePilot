@@ -81,3 +81,11 @@ export function strategyPerformance(trades: PerformanceTrade[]) {
   }).sort((a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key));
   return {rows, excludedTests};
 }
+
+export type EquityPerformanceSummary = {strategy: string; gross_profit: string; gross_loss: string; realized_net: string; closed_trades: number; winning_trades: number; closed_unpriced: number; active_strategies: number};
+export function equityPerformance(summaries: EquityPerformanceSummary[]) {
+  return summaries.filter(row => row.strategy.trim().toLowerCase() !== "test_pulse").map(row => ({...row,
+    winRate: row.closed_trades > 0 ? row.winning_trades / row.closed_trades * 100 : null,
+    averageWin: row.winning_trades > 0 ? Number(row.gross_profit) / row.winning_trades : null,
+  })).sort((a, b) => a.strategy.localeCompare(b.strategy));
+}

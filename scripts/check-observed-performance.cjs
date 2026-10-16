@@ -36,3 +36,15 @@ const entryB = {strategy_definition_hash: "abc", conditions: [{threshold: "1", m
 assert.equal(strategyPerformance([trade("11", "1", {entry_rule_snapshot: entryA}), trade("12", "2", {entry_rule_snapshot: entryB})]).rows.length, 1);
 assert.deepEqual(strategyPerformance([]), {rows: [], excludedTests: 0});
 console.log("Observed-performance checks passed: accounting, exclusions, chronology, ties, cohorts and unavailable evidence.");
+
+const summaries = [
+ {strategy: "test_pulse", closed_trades: 99, winning_trades: 99, gross_profit: "999", gross_loss: "0", realized_net: "999", closed_unpriced: 0, active_strategies: 1},
+ {strategy: "momentum", closed_trades: 4, winning_trades: 2, gross_profit: "150.50", gross_loss: "-40", realized_net: "110.50", closed_unpriced: 1, active_strategies: 0},
+ {strategy: "channel20", closed_trades: 0, winning_trades: 0, gross_profit: "0", gross_loss: "0", realized_net: "0", closed_unpriced: 0, active_strategies: 1},
+];
+const equity = mod.exports.equityPerformance(summaries);
+assert.equal(equity.length, 2); assert.equal(equity[0].strategy, "channel20");
+assert.equal(equity[0].winRate, null); assert.equal(equity[0].averageWin, null);
+assert.equal(equity[1].winRate, 50); assert.equal(equity[1].averageWin, 75.25);
+assert.equal(equity[1].closed_unpriced, 1); assert.equal(equity[1].realized_net, "110.50");
+console.log("Equity all-time summary checks passed: diagnostic exclusion, empty samples, averages and missing evidence.");

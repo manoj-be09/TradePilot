@@ -246,6 +246,33 @@ def record_nifty_replay(trial_id: UUID, body: NiftyReplayRecordRequest,
         ResearchEvidence.trial_id == trial.id).order_by(ResearchEvidence.key))))
 
 
+@router.get("/trials")
+def all_trials(user: CurrentUser, session: SessionDep, response: Response,
+               limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)
+               ) -> list[dict[str, Any]]:
+    """List an owner's trials across candidates for comparison only."""
+    response.headers["Cache-Control"] = "no-store"
+    rows = session.execute(
+        select(ResearchTrial, ResearchEvaluation, ResearchCandidate).outerjoin(
+            ResearchEvaluation, ResearchEvaluation.trial_id == ResearchTrial.id,
+        ).join(
+            ResearchCandidate, ResearchCandidate.id == ResearchTrial.candidate_id,
+        ).where(
+            ResearchTrial.user_id == user.id,
+            ResearchCandidate.user_id == user.id,
+        ).order_by(ResearchTrial.created_at.desc(), ResearchTrial.id.desc())
+        .offset(offset).limit(limit)
+    )
+    result = []
+    for trial, evaluation, candidate in rows:
+        evidence = list(session.scalars(select(ResearchEvidence).where(
+            ResearchEvidence.trial_id == trial.id).order_by(ResearchEvidence.key)))
+        item = trial_view(trial, evaluation, evidence)
+        item["candidate"] = candidate.definition
+        result.append(item)
+    return result
+
+
 @router.post("/trials/{trial_id}/result")
 def record_result(trial_id: UUID, body: TrialResult, user: CurrentUser,
                   session: SessionDep) -> dict[str, Any]:

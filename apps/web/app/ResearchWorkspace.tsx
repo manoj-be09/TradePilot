@@ -8,7 +8,7 @@ type EquityReport = {status: string; metrics: {training: Metrics; validation: Me
 type NiftyReplayReport = {status: string; study_key: string; study_manifest_digest: string; strategy_version: string; replay_input_digest: string; trade_count: number; holdout_evaluated: false; promotion_eligible: false; limitations: string[]};
 type Report = EquityReport | NiftyReplayReport;
 type TrialEvidence = {id: string; key: string; status: string; detail: string; artifact_ref: string; artifact_digest: string | null; artifact_version: string; recorded_at: string; allowed_use: string};
-type Trial = {id: string; manifest_digest: string; manifest: {experiment_family: string; trial_number: number; declared_search_budget: number; cost_model_id: string; rights_artifact_digest?: string | null; cost_artifact_digest?: string | null; train_start: string; train_end: string; validation_start: string; validation_end: string; holdout_start: string; holdout_end: string; holdout_artifact_digest?: string | null}; result: {outcome: string; reason_code: string} | null; evidence?: TrialEvidence[]; engine_evaluation?: {result_digest: string | null; result: {outcome: string; reason_code?: string; evidence_origin: string; report?: Report} | null} | null};
+type Trial = {id: string; manifest_digest: string; manifest: {experiment_family: string; trial_number: number; declared_search_budget: number; cost_model_id: string; rights_artifact_digest?: string | null; cost_artifact_digest?: string | null; train_start: string; train_end: string; validation_start: string; validation_end: string; holdout_start: string; holdout_end: string; holdout_artifact_digest?: string | null}; result: {outcome: string; reason_code: string} | null; candidate?: Candidate["definition"]; evidence?: TrialEvidence[]; engine_evaluation?: {result_digest: string | null; result: {outcome: string; reason_code?: string; evidence_origin: string; report?: Report} | null} | null};
 const PAGE_SIZE = 25;
 type Readiness = {schema_version: number; policy_version: string; assessed_at: string; status: string; checks: {key: string; label: string; status: string; detail: string; evidence_ref: string | null; evidence_recorded_at: string | null; artifact_digest?: string | null; artifact_version?: string | null; allowed_use?: string | null}[]};
 const money = (value: number) => Number.isFinite(value) ? new Intl.NumberFormat("en-IN", {style: "currency", currency: "INR", maximumFractionDigits: 2}).format(value) : "Unavailable";
@@ -52,7 +52,7 @@ export function ResearchTrialCard({trial}: {trial: Trial & {readiness?: Readines
   const report = result?.report;
   const state = result?.outcome === "COMPLETED" ? (report?.status === "INSUFFICIENT_SAMPLE" ? "Insufficient sample" : "Replay complete · Unqualified") : result ? "Evaluation failed" : evaluation ? "Awaiting evaluation" : "Not evaluated";
   return <article className="research-trial">
-    <div className="workspace-section-heading"><h3>Trial {trial.manifest.trial_number}</h3><span className="research-status">{state}</span></div>
+    <div className="workspace-section-heading"><h3>{trial.candidate ? `${trial.candidate.name} · ` : ""}Trial {trial.manifest.trial_number}</h3><span className="research-status">{state}</span></div>
     <p className="features-note">{trial.manifest.experiment_family} · Declared trial {trial.manifest.trial_number} of {trial.manifest.declared_search_budget}</p>
     <ResearchReadiness readiness={trial.readiness} />
     {trial.engine_evaluation === undefined ? <p className="paper-warning">This API does not expose engine evidence yet. An updated API is required.</p> : null}
@@ -88,16 +88,32 @@ export function ResearchWorkspace({apiUrl, token}: {apiUrl: string; token: strin
   const [trialBusy, setTrialBusy] = useState(false);
   const [error, setError] = useState("");
   const [trialError, setTrialError] = useState("");
+  const [compareAll, setCompareAll] = useState(false);
+  const [allTrials, setAllTrials] = useState<Trial[]>([]);
+  const [allTrialOffset, setAllTrialOffset] = useState(0);
+  const [allTrialBusy, setAllTrialBusy] = useState(false);
+  const [allTrialError, setAllTrialError] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
-    setBusy(true); setError(""); setCandidates([]); setSelected(""); setTrials([]); setTrialOffset(0);
+    setBusy(true); setError(""); setCandidates([]); setSelected(""); setTrials([]); setTrialOffset(0); setCompareAll(false); setAllTrials([]); setAllTrialOffset(0);
     readRows<Candidate>(`${apiUrl}/research/candidates?limit=${PAGE_SIZE}&offset=${candidateOffset}`, token, controller.signal)
       .then(rows => { if (!controller.signal.aborted) { setCandidates(rows); setSelected(rows[0]?.id ?? ""); } })
       .catch((failure: unknown) => { if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "Research could not be loaded. Check the API and retry."); })
       .finally(() => { if (!controller.signal.aborted) setBusy(false); });
     return () => controller.abort();
   }, [apiUrl, token, candidateOffset, refresh]);
+
+  useEffect(() => {
+    if (!compareAll) return;
+    const controller = new AbortController();
+    setAllTrialBusy(true); setAllTrialError("");
+    readRows<Trial>(`${apiUrl}/research/trials?limit=${PAGE_SIZE}&offset=${allTrialOffset}`, token, controller.signal)
+      .then(rows => { if (!controller.signal.aborted) setAllTrials(rows); })
+      .catch((failure: unknown) => { if (!controller.signal.aborted) setAllTrialError(failure instanceof Error ? failure.message : "All trials could not be loaded. Check the API and retry."); })
+      .finally(() => { if (!controller.signal.aborted) setAllTrialBusy(false); });
+    return () => controller.abort();
+  }, [apiUrl, token, allTrialOffset, compareAll]);
 
   useEffect(() => {
     setTrials([]); setTrialError("");
@@ -112,16 +128,16 @@ export function ResearchWorkspace({apiUrl, token}: {apiUrl: string; token: strin
   }, [apiUrl, token, selected, trialOffset]);
   const candidate = candidates.find(row => row.id === selected);
   return <section className="paper-workspace app-section-page research-workspace" aria-label="Strategy research">
-    <div className="workspace-section-heading"><div><span className="panel-kicker">RESEARCH · READ ONLY</span><h2>Strategy research</h2></div><button className="refresh-button" disabled={busy || trialBusy} onClick={() => setRefresh(value => value + 1)} type="button">Refresh evidence</button></div>
+    <div className="workspace-section-heading"><div><span className="panel-kicker">RESEARCH · READ ONLY</span><h2>Strategy research</h2></div><div><button className="refresh-button" disabled={busy || trialBusy || allTrialBusy} onClick={() => setRefresh(value => value + 1)} type="button">Refresh evidence</button> <button className="refresh-button" disabled={busy || trialBusy || allTrialBusy} onClick={() => { setCompareAll(value => !value); setAllTrialOffset(0); }} type="button">{compareAll ? "Selected hypothesis" : "Compare all trials"}</button></div></div>
     <p>Review hypotheses and chronological replay results before considering a strategy. Research results stay separate from your paper portfolio.</p>
     <div className="research-notice">Recommendations are not qualified yet. Profit probability is unavailable. Automatic promotion is disabled.</div>
     {error ? <p role="alert" className="error-banner">{error}</p> : null}
     {busy ? <p role="status">Loading research…</p> : !error && !candidates.length ? <p className="workspace-empty">{candidateOffset ? "No more hypotheses on this page." : "No research hypotheses are registered for this account. Your paper positions are unchanged; synthetic demonstrations are kept in a disposable database."}</p> : null}
-    {candidates.length ? <label className="research-picker">Research hypothesis<select value={selected} onChange={event => {setTrials([]); setTrialOffset(0); setSelected(event.target.value);}}>{candidates.map(row => <option key={row.id} value={row.id}>{row.definition.name} · {row.definition.market}</option>)}</select></label> : null}
+    {compareAll ? <><h3>All recorded trials</h3>{allTrialBusy ? <p role="status">Loading all trials…</p> : allTrialError ? <p role="alert" className="error-banner">{allTrialError}</p> : !allTrials.length ? <p className="workspace-empty">No trials are recorded across this account. No performance or probability can be inferred.</p> : <div className="research-trials">{allTrials.map(trial => <ResearchTrialCard key={trial.id} trial={trial} />)}</div>}<div className="research-pagination"><button type="button" disabled={allTrialBusy || allTrialOffset === 0} onClick={() => setAllTrialOffset(value => Math.max(0, value - PAGE_SIZE))}>Previous trials</button><span>Page {allTrialOffset / PAGE_SIZE + 1}</span><button type="button" disabled={allTrialBusy || allTrials.length < PAGE_SIZE} onClick={() => setAllTrialOffset(value => value + PAGE_SIZE)}>Next trials</button></div></> : <>{candidates.length ? <label className="research-picker">Research hypothesis<select value={selected} onChange={event => {setTrials([]); setTrialOffset(0); setSelected(event.target.value);}}>{candidates.map(row => <option key={row.id} value={row.id}>{row.definition.name} · {row.definition.market}</option>)}</select></label> : null}
     <div className="research-pagination"><button type="button" disabled={busy || candidateOffset === 0} onClick={() => setCandidateOffset(value => Math.max(0, value - PAGE_SIZE))}>Previous hypotheses</button><span>Page {candidateOffset / PAGE_SIZE + 1}</span><button type="button" disabled={busy || candidates.length < PAGE_SIZE} onClick={() => setCandidateOffset(value => value + PAGE_SIZE)}>Next hypotheses</button></div>
     {candidate ? <><details className="workspace-disclosure"><summary>Hypothesis &amp; declared rules · Unreviewed</summary><p>{candidate.definition.hypothesis}</p><p><strong>Entry:</strong> {candidate.definition.entry_rule}</p><p><strong>Exit:</strong> {candidate.definition.exit_rule}</p><p>{candidate.definition.limitation}</p><p>Declared license: {candidate.definition.source_license}. Source review: {candidate.source_review}. Text is not executable strategy code.</p></details>
       <h3>Recorded trials</h3>{trialBusy ? <p role="status">Loading trials…</p> : trialError ? <p role="alert" className="error-banner">{trialError}</p> : !trials.length ? <p className="workspace-empty">No trials on this page. No performance or probability can be inferred.</p> : <div className="research-trials">{trials.map(trial => <ResearchTrialCard key={trial.id} trial={trial} />)}</div>}
       <div className="research-pagination"><button type="button" disabled={trialBusy || trialOffset === 0} onClick={() => setTrialOffset(value => Math.max(0, value - PAGE_SIZE))}>Previous trials</button><span>Page {trialOffset / PAGE_SIZE + 1}</span><button type="button" disabled={trialBusy || trials.length < PAGE_SIZE} onClick={() => setTrialOffset(value => value + PAGE_SIZE)}>Next trials</button></div>
-    </> : null}
+    </> : null}</>}
   </section>;
 }

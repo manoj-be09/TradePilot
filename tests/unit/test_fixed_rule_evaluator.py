@@ -128,7 +128,7 @@ def test_registered_replay_retains_engine_evidence_separately_and_consumes_failu
 
         from fastapi import HTTPException, Response
 
-        from apps.api.research_routes import trials
+        from apps.api.research_routes import all_trials, trials
 
         response = Response()
         visible = trials(candidate.id, SimpleNamespace(id=owner), session, response, 25, 0)
@@ -139,6 +139,17 @@ def test_registered_replay_retains_engine_evidence_separately_and_consumes_failu
         assert visible[0]["readiness"]["status"] == "BLOCKED"
         assert visible[0]["readiness"]["allowed_uses"] == ["INSPECT_RESEARCH_RECORDS"]
         assert trials(candidate.id, SimpleNamespace(id=owner), session, Response(), 25, 25) == []
+        aggregate_response = Response()
+        aggregate = all_trials(SimpleNamespace(id=owner), session, aggregate_response, 25, 0)
+        assert aggregate_response.headers["Cache-Control"] == "no-store"
+        assert aggregate[0]["candidate"]["name"] == definition.name
+        assert aggregate[0]["engine_evaluation"]["result"]["evidence_origin"] == (
+            "ENGINE_RESEARCH_REPLAY")
+        other_candidate = register_candidate(session, other, CandidateDefinition.model_validate(
+            definition.model_dump() | {"name": "Other owner's hypothesis"}))
+        declare_trial(session, other, other_candidate.id, manifest)
+        assert len(all_trials(SimpleNamespace(id=owner), session, Response(), 25, 0)) == 1
+        assert len(all_trials(SimpleNamespace(id=other), session, Response(), 25, 0)) == 1
         with pytest.raises(HTTPException) as denied:
             trials(candidate.id, SimpleNamespace(id=other), session, Response(), 25, 0)
         assert denied.value.status_code == 404

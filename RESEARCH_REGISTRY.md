@@ -69,3 +69,4 @@ Checks:14 isolated evaluator/registry cases passed, including API view owner iso
 2026-10-16 — Graphify remains stale at c24ea1b (indexed 25h earlier); the renewal source is newer and no refresh operation is available, so no fresh-index claim is made.
 2026-10-16 — Research lease inputs reject non-positive durations before task execution or lease shortening. This is input hardening only; it does not add scheduling, evaluation or promotion.
 2026-10-16 — Graphify rechecked after lease-input hardening; indexed commit remains c24ea1b and no refresh operation is available. No fresh-index claim is made.
+2026-10-16 — Added a read-only account-scoped all-trials comparison view with newest-first pagination and candidate identity. The UI can compare recorded trial evidence across hypotheses without selecting or executing anything. Frontend deployment verification remains pending because the sandbox pnpm symlink is denied.

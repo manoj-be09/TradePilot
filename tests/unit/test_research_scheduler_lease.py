@@ -10,6 +10,7 @@ from packages.regime.research_scheduler_lease import (
     acquire_research_lease,
     assert_research_lease,
     finish_research_lease,
+    run_research_job,
 )
 
 
@@ -34,4 +35,31 @@ def test_research_lease_fences_takeover_and_stale_finish():
         assert current is not None and current.owner == "new-research"
         finish_research_lease(session, new, "HEALTHY", "review cycle complete")
         assert not assert_research_lease(session, new)
+    engine.dispose()
+
+
+def test_research_job_runner_handles_completion_busy_and_failure():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        calls: list[str] = []
+        completed = run_research_job(session, "research-one", 60,
+                                     lambda: calls.append("ran"))
+        assert completed.status == "COMPLETED"
+        assert calls == ["ran"]
+
+        held = acquire_research_lease(session, "research-held", 60)
+        assert held is not None
+        skipped = run_research_job(session, "research-two", 60,
+                                   lambda: calls.append("wrong-worker"))
+        assert skipped.status == "SKIPPED"
+        assert calls == ["ran"]
+        finish_research_lease(session, held, "HEALTHY", "released")
+
+        failed = run_research_job(session, "research-three", 60,
+                                  lambda: (_ for _ in ()).throw(RuntimeError("secret detail")))
+        assert failed.status == "FAILED"
+        lease = session.get(WorkerLease, RESEARCH_WORKER_NAME)
+        assert lease is not None and lease.status == "DEGRADED"
+        assert "secret detail" not in lease.detail
     engine.dispose()

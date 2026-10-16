@@ -17,9 +17,11 @@ WORKER_NAME = "paper-exits"
 class LeaseToken:
     owner: str
     generation: int
+    name: str = WORKER_NAME
 
 
-def acquire(session: Session, owner: str, seconds: int) -> LeaseToken | None:
+def acquire(session: Session, owner: str, seconds: int,
+            worker_name: str = WORKER_NAME) -> LeaseToken | None:
     now = datetime.now(timezone.utc)
     dialect = session.get_bind().dialect.name
     if dialect not in {"postgresql", "sqlite"}:
@@ -28,7 +30,7 @@ def acquire(session: Session, owner: str, seconds: int) -> LeaseToken | None:
     session.execute(
         insert(WorkerLease)
         .values(
-            name=WORKER_NAME,
+            name=worker_name,
             owner="",
             generation=0,
             lease_until=now,
@@ -41,7 +43,7 @@ def acquire(session: Session, owner: str, seconds: int) -> LeaseToken | None:
     generation = session.execute(
         update(WorkerLease)
         .where(
-            WorkerLease.name == WORKER_NAME,
+            WorkerLease.name == worker_name,
             WorkerLease.lease_until <= now,
         )
         .values(
@@ -55,7 +57,7 @@ def acquire(session: Session, owner: str, seconds: int) -> LeaseToken | None:
         .returning(WorkerLease.generation)
     ).scalar_one_or_none()
     session.commit()
-    return LeaseToken(owner, generation) if generation is not None else None
+    return LeaseToken(owner, generation, worker_name) if generation is not None else None
 
 
 def assert_owned(session: Session, token: LeaseToken) -> bool:
@@ -63,7 +65,7 @@ def assert_owned(session: Session, token: LeaseToken) -> bool:
     lease = session.scalar(
         select(WorkerLease)
         .where(
-            WorkerLease.name == WORKER_NAME,
+            WorkerLease.name == token.name,
             WorkerLease.owner == token.owner,
             WorkerLease.generation == token.generation,
             WorkerLease.lease_until > datetime.now(timezone.utc),
@@ -85,9 +87,9 @@ def finish(session: Session, token: LeaseToken, status: str, detail: str) -> Non
     if status == "HEALTHY":
         values["last_success_at"] = now
     session.execute(
-        update(WorkerLease)
+        update(WorkerLease).execution_options(synchronize_session=False)
         .where(
-            WorkerLease.name == WORKER_NAME,
+            WorkerLease.name == token.name,
             WorkerLease.owner == token.owner,
             WorkerLease.generation == token.generation,
             WorkerLease.lease_until > now,

@@ -136,6 +136,6 @@ def test_registry_routes_require_existing_auth_dependency():
     from apps.api.auth import get_current_user
     from apps.api.research_routes import router
 
-    assert len(router.routes) == 8
+    assert len(router.routes) == 10
     for route in router.routes:
         assert any(item.call is get_current_user for item in route.dependant.dependencies)

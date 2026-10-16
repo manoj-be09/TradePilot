@@ -578,3 +578,25 @@ class ResearchStudy(Base):
     manifest_digest: Mapped[str] = mapped_column(String(64))
     manifest: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ResearchRecommendation(Base):
+    """Immutable prospective review/abstention snapshot; never an order."""
+    __tablename__ = "research_recommendations"
+    __table_args__ = (
+        UniqueConstraint("user_id", "snapshot_digest",
+                         name="uq_research_recommendation_snapshot"),
+        CheckConstraint(
+            "decision IN ('ABSTAIN', 'REVIEW_CANDIDATE')",
+            name="ck_research_recommendation_decision",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    study_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("research_studies.id"), index=True)
+    decision: Mapped[str] = mapped_column(String(24))
+    reason_code: Mapped[str] = mapped_column(String(48))
+    snapshot: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    snapshot_digest: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

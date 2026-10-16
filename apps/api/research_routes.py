@@ -10,6 +10,7 @@ from packages.database.models import (
     ResearchCandidate,
     ResearchEvaluation,
     ResearchEvidence,
+    ResearchRecommendation,
     ResearchStudy,
     ResearchTrial,
 )
@@ -24,6 +25,11 @@ from packages.regime.candidate_registry import (
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
 from packages.regime.research_evidence import EvidenceRecord, record_evidence
 from packages.regime.research_readiness import assess_trial
+from packages.regime.research_recommendations import (
+    RecommendationSnapshot,
+    recommendation_view,
+    record_recommendation,
+)
 from packages.regime.research_studies import freeze_nifty_study, study_view
 
 router = APIRouter(prefix="/research", tags=["research registry"])
@@ -46,6 +52,33 @@ def studies(user: CurrentUser, session: SessionDep, response: Response,
     return [study_view(row) for row in session.scalars(select(ResearchStudy).where(
         ResearchStudy.user_id == user.id,
     ).order_by(ResearchStudy.created_at, ResearchStudy.id).offset(offset).limit(limit))]
+
+
+@router.post("/studies/{study_id}/recommendations")
+def create_recommendation(study_id: UUID, body: RecommendationSnapshot,
+                          user: CurrentUser, session: SessionDep) -> dict[str, Any]:
+    try:
+        return recommendation_view(record_recommendation(session, user.id, study_id, body))
+    except LookupError:
+        raise HTTPException(404, "Study not found") from None
+
+
+@router.get("/studies/{study_id}/recommendations")
+def recommendations(study_id: UUID, user: CurrentUser, session: SessionDep,
+                    response: Response, limit: int = Query(25, ge=1, le=100),
+                    offset: int = Query(0, ge=0)) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    if session.scalar(select(ResearchStudy.id).where(
+        ResearchStudy.id == study_id, ResearchStudy.user_id == user.id,
+    )) is None:
+        raise HTTPException(404, "Study not found")
+    return [recommendation_view(row) for row in session.scalars(select(
+        ResearchRecommendation,
+    ).where(
+        ResearchRecommendation.user_id == user.id,
+        ResearchRecommendation.study_id == study_id,
+    ).order_by(ResearchRecommendation.created_at, ResearchRecommendation.id)
+      .offset(offset).limit(limit))]
 
 
 def candidate_view(row: ResearchCandidate) -> dict[str, Any]:

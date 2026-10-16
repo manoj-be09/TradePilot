@@ -6,7 +6,12 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy import select
 
 from apps.api.auth import CurrentUser, SessionDep
-from packages.database.models import ResearchCandidate, ResearchEvaluation, ResearchTrial
+from packages.database.models import (
+    ResearchCandidate,
+    ResearchEvaluation,
+    ResearchEvidence,
+    ResearchTrial,
+)
 from packages.regime.candidate_registry import (
     CandidateDefinition,
     TrialManifest,
@@ -15,6 +20,7 @@ from packages.regime.candidate_registry import (
     finalize_trial,
     register_candidate,
 )
+from packages.regime.research_evidence import EvidenceRecord, record_evidence
 from packages.regime.research_readiness import assess_trial
 
 router = APIRouter(prefix="/research", tags=["research registry"])
@@ -26,12 +32,19 @@ def candidate_view(row: ResearchCandidate) -> dict[str, Any]:
             "source_review": "UNREVIEWED", "execution_enabled": False}
 
 
-def trial_view(row: ResearchTrial, evaluation: ResearchEvaluation | None = None) -> dict[str, Any]:
+def trial_view(row: ResearchTrial, evaluation: ResearchEvaluation | None = None,
+               evidence: list[ResearchEvidence] | None = None) -> dict[str, Any]:
     return {"id": row.id, "candidate_id": row.candidate_id, "manifest": row.manifest,
             "manifest_digest": row.manifest_digest, "result": row.result,
             "result_digest": row.result_digest, "created_at": row.created_at,
             "completed_at": row.completed_at, "promotion_eligible": False,
-            "readiness": assess_trial(row, evaluation).model_dump(mode="json"),
+            "readiness": assess_trial(row, evaluation, evidence).model_dump(mode="json"),
+            "evidence": [{"id": item.id, "key": item.key, "status": item.status,
+                          "detail": item.detail, "artifact_ref": item.artifact_ref,
+                          "artifact_digest": item.artifact_digest,
+                          "artifact_version": item.artifact_version,
+                          "recorded_at": item.recorded_at, "allowed_use": item.allowed_use}
+                        for item in (evidence or [])],
             "engine_evaluation": None if evaluation is None else {
                 "adapter": evaluation.adapter, "adapter_digest": evaluation.adapter_digest,
                 "result": evaluation.result, "result_digest": evaluation.result_digest,
@@ -74,7 +87,9 @@ def trials(candidate_id: UUID, user: CurrentUser, session: SessionDep, response:
         ResearchCandidate.id == candidate_id, ResearchCandidate.user_id == user.id,
     )) is None:
         raise HTTPException(404, "Candidate not found")
-    return [trial_view(row, evaluation) for row, evaluation in session.execute(
+    return [trial_view(row, evaluation, list(session.scalars(select(ResearchEvidence).where(
+            ResearchEvidence.trial_id == row.id).order_by(ResearchEvidence.key))))
+            for row, evaluation in session.execute(
         select(ResearchTrial, ResearchEvaluation).outerjoin(ResearchEvaluation,
             ResearchEvaluation.trial_id == ResearchTrial.id).where(
         ResearchTrial.user_id == user.id, ResearchTrial.candidate_id == candidate_id,
@@ -90,3 +105,19 @@ def record_result(trial_id: UUID, body: TrialResult, user: CurrentUser,
         raise HTTPException(404, "Trial not found") from None
     except ValueError:
         raise HTTPException(409, "Trial already finalized with different evidence") from None
+
+
+@router.post("/trials/{trial_id}/evidence")
+def record_trial_evidence(trial_id: UUID, body: EvidenceRecord, user: CurrentUser,
+                          session: SessionDep) -> dict[str, Any]:
+    try:
+        row = record_evidence(session, user.id, trial_id, body)
+    except LookupError:
+        raise HTTPException(404, "Trial not found") from None
+    except ValueError:
+        raise HTTPException(409, "Evidence key already has different immutable evidence") from None
+    return {"id": row.id, "trial_id": row.trial_id, "key": row.key, "status": row.status,
+            "detail": row.detail, "artifact_ref": row.artifact_ref,
+            "artifact_digest": row.artifact_digest, "artifact_version": row.artifact_version,
+            "recorded_at": row.recorded_at, "allowed_use": row.allowed_use,
+            "evidence_digest": row.evidence_digest}

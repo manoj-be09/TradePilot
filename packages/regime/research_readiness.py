@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from packages.database.models import ResearchEvaluation, ResearchTrial
+from packages.database.models import ResearchEvaluation, ResearchEvidence, ResearchTrial
 from packages.regime.candidate_registry import fingerprint
 
 
@@ -17,6 +17,11 @@ class ReadinessCheck(BaseModel):
     detail: str
     evidence_ref: str | None = None
     evidence_recorded_at: datetime | None = None
+    artifact_digest: str | None = None
+    artifact_version: str | None = None
+    allowed_use: Literal[
+        "INSPECT_RESEARCH_RECORDS", "RESEARCH_ONLY", "QUALIFIED_PAPER"
+    ] | None = None
 
     @field_validator("evidence_recorded_at")
     @classmethod
@@ -40,7 +45,8 @@ class ReadinessAssessment(BaseModel):
 
 
 def assess_trial(row: ResearchTrial,
-                 evaluation: ResearchEvaluation | None = None) -> ReadinessAssessment:
+                 evaluation: ResearchEvaluation | None = None,
+                 evidence: list[ResearchEvidence] | None = None) -> ReadinessAssessment:
     """Hashes attest stored JSON consistency only, not artifact bytes or authenticity.
 
     This assessment is recomputed on read. Its timestamp never replaces the time
@@ -89,6 +95,7 @@ def assess_trial(row: ResearchTrial,
         if illustrative else "No reviewed full-cost and capital assessment is recorded.",
         evidence_ref=result_ref if illustrative else None,
         evidence_recorded_at=result_time if illustrative else None))
+    reviewed = {item.key: item for item in (evidence or [])}
     for key, label, detail in (
         ("rights", "Source and data rights", "Declared licenses are not recorded rights approval."),
         ("data", "Historical data and timestamps",
@@ -102,7 +109,23 @@ def assess_trial(row: ResearchTrial,
         ("runtime", "Deployed research runtime",
          "No study-linked PostgreSQL concurrency and recovery acceptance is recorded."),
     ):
-        checks.append(ReadinessCheck(key=key, label=label, status="UNKNOWN", detail=detail))
+        item = reviewed.get(key)
+        if item is None:
+            checks.append(ReadinessCheck(key=key, label=label, status="UNKNOWN", detail=detail))
+            continue
+        status = item.status
+        if key == "costs" and illustrative:
+            status = "FAIL"
+            detail = ("A reviewed cost reference exists, but the stored engine report still uses "
+                      "illustrative charges; complete historical charges remain unqualified.")
+        else:
+            detail = item.detail
+        checks.append(ReadinessCheck(
+            key=key, label=label, status=status, detail=detail,
+            evidence_ref=f"evidence:{item.id}:artifact:{item.artifact_digest or item.artifact_ref}",
+            evidence_recorded_at=item.recorded_at, artifact_digest=item.artifact_digest,
+            artifact_version=item.artifact_version, allowed_use=item.allowed_use,
+        ))
     return ReadinessAssessment(
         assessed_at=datetime.now(timezone.utc), trial_id=str(row.id),
         manifest_digest=row.manifest_digest,

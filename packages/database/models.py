@@ -536,3 +536,32 @@ class ResearchEvaluation(Base):
     result_digest: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ResearchEvidence(Base):
+    """Immutable reviewed evidence references; never a promotion decision."""
+    __tablename__ = "research_evidence"
+    __table_args__ = (
+        UniqueConstraint("trial_id", "key", name="uq_research_evidence_trial_key"),
+        CheckConstraint(
+            "status IN ('PASS', 'FAIL', 'UNKNOWN', 'NOT_APPLICABLE')",
+            name="ck_research_evidence_status",
+        ),
+        CheckConstraint(
+            "allowed_use IN ('INSPECT_RESEARCH_RECORDS', 'RESEARCH_ONLY', 'QUALIFIED_PAPER')",
+            name="ck_research_evidence_allowed_use",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    trial_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("research_trials.id"), index=True)
+    key: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(20))
+    detail: Mapped[str] = mapped_column(String(1000))
+    artifact_ref: Mapped[str] = mapped_column(String(500))
+    artifact_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    artifact_version: Mapped[str] = mapped_column(String(128))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    allowed_use: Mapped[str] = mapped_column(String(32))
+    evidence_digest: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

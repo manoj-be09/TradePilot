@@ -5,9 +5,10 @@ import { useEffect, useState } from "react";
 type Candidate = {id: string; definition: {name: string; market: string; family: string; hypothesis: string; entry_rule: string; exit_rule: string; limitation: string; source_license: string}; source_review: string};
 type Metrics = {closed_trades: number; winning_trades: number; losing_trades: number; breakeven_trades: number; net_pnl: number; win_rate: number | null};
 type Report = {status: string; metrics: {training: Metrics; validation: Metrics}; cost_model: {id: string; fee_fraction: string; slippage_fraction: string}; boundary_or_gap_trades_excluded: number; open_trade_excluded: boolean; holdout_evaluated: boolean; limitations: string[]};
-type Trial = {id: string; manifest_digest: string; manifest: {experiment_family: string; trial_number: number; declared_search_budget: number; cost_model_id: string; train_start: string; train_end: string; validation_start: string; validation_end: string; holdout_start: string; holdout_end: string}; result: {outcome: string; reason_code: string} | null; engine_evaluation?: {result_digest: string | null; result: {outcome: string; reason_code?: string; evidence_origin: string; report?: Report} | null} | null};
+type TrialEvidence = {id: string; key: string; status: string; detail: string; artifact_ref: string; artifact_digest: string | null; artifact_version: string; recorded_at: string; allowed_use: string};
+type Trial = {id: string; manifest_digest: string; manifest: {experiment_family: string; trial_number: number; declared_search_budget: number; cost_model_id: string; train_start: string; train_end: string; validation_start: string; validation_end: string; holdout_start: string; holdout_end: string}; result: {outcome: string; reason_code: string} | null; evidence?: TrialEvidence[]; engine_evaluation?: {result_digest: string | null; result: {outcome: string; reason_code?: string; evidence_origin: string; report?: Report} | null} | null};
 const PAGE_SIZE = 25;
-type Readiness = {schema_version: number; policy_version: string; assessed_at: string; status: string; checks: {key: string; label: string; status: string; detail: string; evidence_ref: string | null; evidence_recorded_at: string | null}[]};
+type Readiness = {schema_version: number; policy_version: string; assessed_at: string; status: string; checks: {key: string; label: string; status: string; detail: string; evidence_ref: string | null; evidence_recorded_at: string | null; artifact_digest?: string | null; artifact_version?: string | null; allowed_use?: string | null}[]};
 const money = (value: number) => Number.isFinite(value) ? new Intl.NumberFormat("en-IN", {style: "currency", currency: "INR", maximumFractionDigits: 2}).format(value) : "Unavailable";
 
 async function readRows<T>(url: string, token: string, signal: AbortSignal): Promise<T[]> {
@@ -33,7 +34,7 @@ export function ResearchReadiness({readiness}: {readiness?: Readiness}) {
       <ul>{readiness.checks.map(check => <li key={check.key}>
         <div><strong>{check.label}</strong><span className={`readiness-label readiness-${check.status.toLowerCase()}`}>{check.status.replaceAll("_", " ")}</span></div>
         <p>{check.detail}</p>
-        {check.evidence_ref ? <small className="research-digest">{check.evidence_ref}<br />Recorded {check.evidence_recorded_at ? new Date(check.evidence_recorded_at).toLocaleString("en-IN") : "time unavailable"}</small> : <small>No recorded assessment evidence</small>}
+        {check.evidence_ref ? <small className="research-digest">{check.evidence_ref}<br />Artifact {check.artifact_version ?? "version unavailable"} · Use {check.allowed_use ?? "unspecified"}<br />Recorded {check.evidence_recorded_at ? new Date(check.evidence_recorded_at).toLocaleString("en-IN") : "time unavailable"}</small> : <small>No recorded assessment evidence</small>}
       </li>)}</ul>
       <small className="research-digest">Assessment policy: {readiness.policy_version}</small>
     </details>
@@ -63,6 +64,7 @@ export function ResearchTrialCard({trial}: {trial: Trial & {readiness?: Readines
       <dl className="research-facts"><dt>Training</dt><dd>{trial.manifest.train_start} → {trial.manifest.train_end}</dd><dt>Validation</dt><dd>{trial.manifest.validation_start} → {trial.manifest.validation_end}</dd><dt>Reserved holdout</dt><dd>{trial.manifest.holdout_start} → {trial.manifest.holdout_end}</dd><dt>Cost model</dt><dd>{trial.manifest.cost_model_id}</dd><dt>Engine evidence</dt><dd>{result?.evidence_origin ?? "Not recorded"}</dd><dt>Operator evidence</dt><dd>{trial.result ? `${trial.result.outcome} · ${trial.result.reason_code}` : "Not recorded"}</dd></dl>
       {report ? <><p className="features-note">Holdout evaluated: {report.holdout_evaluated ? "Yes — requires review" : "No"}. Boundary/gap trades excluded: {report.boundary_or_gap_trades_excluded}. Open trade excluded: {report.open_trade_excluded ? "Yes" : "No"}.</p><p className="features-note">Illustrative fee {report.cost_model.fee_fraction}, slippage {report.cost_model.slippage_fraction} (fractions per engine policy; not a complete broker charge schedule).</p><ul>{report.limitations.map(note => <li key={note}>{note}</li>)}</ul></> : null}
       <p className="features-note">Operator records and engine replay evidence are separate. Source, data quality and the hypothesis-to-rule binding remain unreviewed. No automatic promotion.</p>
+      {trial.evidence?.length ? <><h4>Reviewed evidence references</h4><ul>{trial.evidence.map(item => <li key={item.id}><strong>{item.key}</strong> · {item.status} · {item.artifact_version} · {item.allowed_use}<br /><small>{item.detail}</small></li>)}</ul></> : null}
       <small className="research-digest">Manifest: {trial.manifest_digest}<br />Engine result: {evaluation?.result_digest ?? "Not recorded"}</small>
     </details>
   </article>;

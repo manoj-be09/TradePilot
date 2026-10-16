@@ -14,6 +14,7 @@ FILES = (
     "packages/regime/chronological_validation.py",
     "packages/regime/equity_policy_trials.py",
     "packages/regime/research_identity.py",
+    "packages/regime/research_inputs.py",
 )
 
 

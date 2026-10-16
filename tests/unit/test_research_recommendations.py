@@ -97,6 +97,25 @@ def test_recommendation_is_account_scoped_idempotent_and_non_executable():
     engine.dispose()
 
 
+def test_identical_snapshots_are_scoped_to_their_study():
+    engine, owner, _, first_study_id = _fixture()
+    with Session(engine) as session:
+        second = ResearchStudy(
+            id=uuid4(), user_id=owner, study_key="nifty50-paper-v2",
+            manifest=study(study_key="nifty50-paper-v2").manifest,
+            manifest_digest=study(study_key="nifty50-paper-v2").manifest_digest,
+            created_at=datetime.now(timezone.utc),
+        )
+        session.add(second)
+        session.commit()
+        first = record_recommendation(session, owner, first_study_id, snapshot())
+        other = record_recommendation(session, owner, second.id, snapshot())
+        assert other.id != first.id
+        assert other.study_id == second.id
+        assert len(list(session.scalars(select(ResearchRecommendation)))) == 2
+    engine.dispose()
+
+
 def test_snapshot_rejects_naive_expiry_and_probability_claims():
     with pytest.raises(ValidationError):
         snapshot(expires_at="2026-02-01T10:00:00")

@@ -88,10 +88,12 @@ def record_recommendation(session: Session, owner: UUID, study_id: UUID,
     )) is None:
         raise LookupError("Study not found")
     payload = snapshot.model_dump(mode="json")
-    digest = fingerprint(payload)
+    digest = fingerprint({"study_id": str(study_id), "snapshot": payload})
+    legacy_digest = fingerprint(payload)
     existing = session.scalar(select(ResearchRecommendation).where(
         ResearchRecommendation.user_id == owner,
-        ResearchRecommendation.snapshot_digest == digest,
+        ResearchRecommendation.study_id == study_id,
+        ResearchRecommendation.snapshot_digest.in_((digest, legacy_digest)),
     ))
     if existing is not None:
         return existing
@@ -107,7 +109,8 @@ def record_recommendation(session: Session, owner: UUID, study_id: UUID,
         session.rollback()
         existing = session.scalar(select(ResearchRecommendation).where(
             ResearchRecommendation.user_id == owner,
-            ResearchRecommendation.snapshot_digest == digest,
+            ResearchRecommendation.study_id == study_id,
+            ResearchRecommendation.snapshot_digest.in_((digest, legacy_digest)),
         ))
         if existing is None:
             raise

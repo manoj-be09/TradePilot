@@ -464,3 +464,31 @@ class WorkerLease(Base):
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(24))
     detail: Mapped[str] = mapped_column(String(512), default="")
+
+
+class ResearchCandidate(Base):
+    """Frozen account-owned hypotheses; never executable strategy deployments."""
+    __tablename__ = "research_candidates"
+    __table_args__ = (UniqueConstraint("user_id", "definition_digest",
+                                       name="uq_research_candidate_definition"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    definition_digest: Mapped[str] = mapped_column(String(64))
+    definition: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ResearchTrial(Base):
+    """Predeclared attempts with single-finalization evidence, including failures."""
+    __tablename__ = "research_trials"
+    __table_args__ = (UniqueConstraint("user_id", "candidate_id", "manifest_digest",
+                                       name="uq_research_trial_manifest"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    candidate_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("research_candidates.id"))
+    manifest_digest: Mapped[str] = mapped_column(String(64))
+    manifest: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    result_digest: Mapped[str | None] = mapped_column(String(64))
+    result: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

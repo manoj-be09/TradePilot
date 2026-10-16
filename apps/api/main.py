@@ -64,6 +64,7 @@ from apps.api.paper_schemas import (
     StrategyLegDefinitionResponse,
     UserNotificationResponse,
 )
+from apps.api.research_routes import router as research_router
 from apps.api.schemas import (
     ChangePasswordRequest,
     InstrumentInput,
@@ -189,6 +190,7 @@ from packages.regime.classifier import MarketRegimeResult, classify_market_regim
 
 app = FastAPI(title="Trading Platform API", version="0.8.0")
 app.include_router(equity_router)
+app.include_router(research_router)
 app.include_router(market_outlook_router)
 app.add_middleware(
     CORSMiddleware,

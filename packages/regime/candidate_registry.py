@@ -38,6 +38,7 @@ class CandidateDefinition(BaseModel):
 
 class TrialManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    rights_artifact_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     dataset_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     calculation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     holdout_artifact_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")

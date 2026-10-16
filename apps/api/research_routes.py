@@ -122,7 +122,8 @@ def recommend_from_trial(study_id: UUID, trial_id: UUID,
     try:
         frozen = FrozenNiftyStudy.model_validate(study.manifest)
         manifest = TrialManifest.model_validate(trial.manifest)
-        for key in ("dataset_digest", "calculation_digest", "holdout_artifact_digest",
+        for key in ("rights_artifact_digest", "dataset_digest", "calculation_digest",
+                    "holdout_artifact_digest",
                     "cost_model_id", "cost_artifact_digest", "validation_end",
                     "holdout_start", "holdout_end"):
             if getattr(manifest, key) != getattr(frozen, key):

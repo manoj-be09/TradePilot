@@ -16,6 +16,7 @@ class FrozenNiftyStudy(BaseModel):
     objective: str = Field(min_length=20, max_length=1000)
     incumbent_rule_version: str = Field(min_length=1, max_length=64)
     no_trade_comparator: Literal["NO_TRADE"] = "NO_TRADE"
+    rights_artifact_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     dataset_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     calculation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     holdout_artifact_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")

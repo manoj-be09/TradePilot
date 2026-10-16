@@ -92,6 +92,7 @@ def assess_trial(row: ResearchTrial,
     illustrative = isinstance(costs, dict) and costs.get("illustrative") is True
     reviewed = {item.key: item for item in (evidence or [])}
     manifest_artifacts = {
+        "rights": row.manifest.get("rights_artifact_digest"),
         "data": row.manifest.get("dataset_digest"),
         "binding": row.manifest.get("calculation_digest"),
         "holdout": row.manifest.get("holdout_artifact_digest"),

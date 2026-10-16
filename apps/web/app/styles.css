@@ -1039,4 +1039,14 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px
 .research-pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 16px 0; font-size: 12px; }
 .research-pagination button { background: #f6f9fc; border: 1px solid #dce4ee; border-radius: 8px; padding: 8px 10px; color: #34516a; }
 .research-pagination button:disabled { opacity: .45; cursor: default; }
+.research-readiness { background: #f4f7fc; border: 1px solid #dce5f1; border-radius: 10px; padding: 12px; margin: 12px 0; font-size: 12px; }
+.research-readiness > strong { color: #345579; font-size: 13px; }
+.research-readiness p { margin: 6px 0; font-size: 12px; }
+.research-readiness summary { cursor: pointer; color: #345579; font-weight: 600; }
+.research-readiness ul { list-style: none; padding: 0; }
+.research-readiness li { border-top: 1px solid #dce5f1; padding: 10px 0; }
+.research-readiness li > div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.readiness-label { font-size: 10px; border-radius: 5px; padding: 2px 6px; background: #e8edf4; color: #4b5c70; }
+.readiness-fail { background: #fce8e5; color: #9b3939; }
+.readiness-pass { background: #e1f2eb; color: #216c51; }
 @media (max-width: 480px) { .research-trial { padding: 14px; } .research-metrics { grid-template-columns: 1fr; } }

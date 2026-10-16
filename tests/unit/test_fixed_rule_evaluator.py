@@ -136,6 +136,8 @@ def test_registered_replay_retains_engine_evidence_separately_and_consumes_failu
         assert visible[0]["engine_evaluation"]["result"]["evidence_origin"] == (
             "ENGINE_RESEARCH_REPLAY")
         assert visible[0]["result"] is None
+        assert visible[0]["readiness"]["status"] == "BLOCKED"
+        assert visible[0]["readiness"]["allowed_uses"] == ["INSPECT_RESEARCH_RECORDS"]
         assert trials(candidate.id, SimpleNamespace(id=owner), session, Response(), 25, 25) == []
         with pytest.raises(HTTPException) as denied:
             trials(candidate.id, SimpleNamespace(id=other), session, Response(), 25, 0)

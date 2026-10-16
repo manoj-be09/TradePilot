@@ -34,6 +34,7 @@ from packages.regime.registered_evaluator import (  # noqa: E402
     run_registered_equity,
 )
 from packages.regime.research_identity import research_code_digest  # noqa: E402
+from packages.regime.research_readiness import assess_trial  # noqa: E402
 
 
 def main() -> None:
@@ -89,6 +90,7 @@ def main() -> None:
                     "dataset_digest": manifest.dataset_digest, "calculation_digest": (
                         manifest.calculation_digest), "budget_slots_consumed": slots,
                     "idempotent_retry": True, "operator_result_untouched": operator_untouched,
+                    "readiness": assess_trial(trial, result).model_dump(mode="json"),
                     "engine_result": result.result, "result_digest": first_digest}, indent=2))
         finally:
             engine.dispose()

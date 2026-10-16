@@ -15,6 +15,7 @@ from packages.regime.candidate_registry import (
     finalize_trial,
     register_candidate,
 )
+from packages.regime.research_readiness import assess_trial
 
 router = APIRouter(prefix="/research", tags=["research registry"])
 
@@ -30,6 +31,7 @@ def trial_view(row: ResearchTrial, evaluation: ResearchEvaluation | None = None)
             "manifest_digest": row.manifest_digest, "result": row.result,
             "result_digest": row.result_digest, "created_at": row.created_at,
             "completed_at": row.completed_at, "promotion_eligible": False,
+            "readiness": assess_trial(row, evaluation).model_dump(mode="json"),
             "engine_evaluation": None if evaluation is None else {
                 "adapter": evaluation.adapter, "adapter_digest": evaluation.adapter_digest,
                 "result": evaluation.result, "result_digest": evaluation.result_digest,

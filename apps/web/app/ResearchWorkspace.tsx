@@ -7,6 +7,7 @@ type Metrics = {closed_trades: number; winning_trades: number; losing_trades: nu
 type Report = {status: string; metrics: {training: Metrics; validation: Metrics}; cost_model: {id: string; fee_fraction: string; slippage_fraction: string}; boundary_or_gap_trades_excluded: number; open_trade_excluded: boolean; holdout_evaluated: boolean; limitations: string[]};
 type Trial = {id: string; manifest_digest: string; manifest: {experiment_family: string; trial_number: number; declared_search_budget: number; cost_model_id: string; train_start: string; train_end: string; validation_start: string; validation_end: string; holdout_start: string; holdout_end: string}; result: {outcome: string; reason_code: string} | null; engine_evaluation?: {result_digest: string | null; result: {outcome: string; reason_code?: string; evidence_origin: string; report?: Report} | null} | null};
 const PAGE_SIZE = 25;
+type Readiness = {schema_version: number; policy_version: string; assessed_at: string; status: string; checks: {key: string; label: string; status: string; detail: string; evidence_ref: string | null; evidence_recorded_at: string | null}[]};
 const money = (value: number) => Number.isFinite(value) ? new Intl.NumberFormat("en-IN", {style: "currency", currency: "INR", maximumFractionDigits: 2}).format(value) : "Unavailable";
 
 async function readRows<T>(url: string, token: string, signal: AbortSignal): Promise<T[]> {
@@ -21,7 +22,25 @@ async function readRows<T>(url: string, token: string, signal: AbortSignal): Pro
   return rows as T[];
 }
 
-export function ResearchTrialCard({trial}: {trial: Trial}) {
+export function ResearchReadiness({readiness}: {readiness?: Readiness}) {
+  if (!readiness || readiness.schema_version !== 1) return <p className="research-notice">Evidence readiness is unavailable in this API response. No qualification can be inferred.</p>;
+  const failures = readiness.checks.filter(check => check.status === "FAIL");
+  return <section className="research-readiness" aria-label="Data and evidence readiness">
+    <strong>Evidence readiness · {failures.length ? "Blocked" : "Unverified"}</strong>
+    <p>{failures.length ? failures[0].detail : "Required reviews are incomplete."} Research inspection only; no qualified recommendation.</p>
+    <details><summary>Review checks and missing evidence</summary>
+      <p className="features-note">Assessment generated {new Date(readiness.assessed_at).toLocaleString("en-IN")}. Refreshing does not renew the evidence below. A matching record digest does not verify source data.</p>
+      <ul>{readiness.checks.map(check => <li key={check.key}>
+        <div><strong>{check.label}</strong><span className={`readiness-label readiness-${check.status.toLowerCase()}`}>{check.status.replaceAll("_", " ")}</span></div>
+        <p>{check.detail}</p>
+        {check.evidence_ref ? <small className="research-digest">{check.evidence_ref}<br />Recorded {check.evidence_recorded_at ? new Date(check.evidence_recorded_at).toLocaleString("en-IN") : "time unavailable"}</small> : <small>No recorded assessment evidence</small>}
+      </li>)}</ul>
+      <small className="research-digest">Assessment policy: {readiness.policy_version}</small>
+    </details>
+  </section>;
+}
+
+export function ResearchTrialCard({trial}: {trial: Trial & {readiness?: Readiness}}) {
   const evaluation = trial.engine_evaluation;
   const result = evaluation?.result;
   const report = result?.report;
@@ -29,6 +48,7 @@ export function ResearchTrialCard({trial}: {trial: Trial}) {
   return <article className="research-trial">
     <div className="workspace-section-heading"><h3>Trial {trial.manifest.trial_number}</h3><span className="research-status">{state}</span></div>
     <p className="features-note">{trial.manifest.experiment_family} · Declared trial {trial.manifest.trial_number} of {trial.manifest.declared_search_budget}</p>
+    <ResearchReadiness readiness={trial.readiness} />
     {trial.engine_evaluation === undefined ? <p className="paper-warning">This API does not expose engine evidence yet. An updated API is required.</p> : null}
     {result?.reason_code ? <p className="paper-warning">Reason: {result.reason_code.replaceAll("_", " ").toLowerCase()}. This attempt remains in the research history.</p> : null}
     {report ? <>

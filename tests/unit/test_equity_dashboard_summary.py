@@ -38,6 +38,9 @@ def test_all_time_loss_breakeven_missing_and_account_scope():
         report = equity_dashboard(SimpleNamespace(id=owner), session, response)
         stats = report["strategies"][0]
         assert report["scope"] == "all_time"
+        assert len(report["cohorts"]) == 207
+        assert all(row["configuration_evidence"] == "INCOMPLETE" for row in report["cohorts"])
+        assert sum(row["closed_trades"] for row in report["cohorts"]) == 205
         assert stats["closed_trades"] == 205
         assert stats["winning_trades"] == 203
         assert stats["losing_trades"] == 1
@@ -50,4 +53,36 @@ def test_all_time_loss_breakeven_missing_and_account_scope():
         isolated = equity_dashboard(SimpleNamespace(id=uuid4()), session, Response())
         assert isolated["totals"]["closed_trades"] == 0
         assert isolated["totals"]["average_loss"] is None
+    engine.dispose()
+
+
+def test_cohorts_separate_stock_version_policy_and_ignore_tests():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    owner = uuid4()
+    now = datetime.now(timezone.utc)
+    policy = {"atr_multiplier": "2", "minimum_distance_fraction": "0.01",
+              "target_r": "2", "trail_activation_r": "1", "trail_distance_r": "1"}
+    with Session(engine) as session:
+        for index, (instrument, version, target, testing) in enumerate([
+            ("A", "v1", "2", False), ("A", "v1", "2", False),
+            ("B", "v1", "2", False), ("A", "v2", "2", False),
+            ("A", "v1", "3", False), ("A", "v1", "2", True),
+        ]):
+            session.add(EquityDeployment(
+                user_id=owner, command_key=str(index), request_hash="0" * 64,
+                provider="test", instrument_key=instrument, symbol=instrument,
+                strategy="momentum", version=version, budget=Decimal("1000"),
+                risk_budget=Decimal("100"), status="CLOSED", created_at=now, updated_at=now,
+                state={"realized_pnl": "10", "testing_only": testing, "quote_mode": "VERIFIED",
+                       "position": {"calculation_version": "calc1", "exit_policy_version": "exit1",
+                                    "exit_policy": policy | {"target_r": target}}},
+            ))
+        session.commit()
+        report = equity_dashboard(SimpleNamespace(id=owner), session, Response())
+        assert len(report["cohorts"]) == 4
+        assert sorted(row["closed_trades"] for row in report["cohorts"]) == [1, 1, 1, 2]
+        assert sum(Decimal(row["realized_net"]) for row in report["cohorts"]) == Decimal("50")
+        assert report["totals"]["closed_trades"] == 6  # account totals retain test cash history
+        assert all(row["configuration_evidence"] == "RECORDED" for row in report["cohorts"])
     engine.dispose()

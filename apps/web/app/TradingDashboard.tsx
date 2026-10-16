@@ -27,7 +27,7 @@ type OptionTrade = PerformanceTrade & {
 type OptionDeployment = { id: string; strategy_key: string; status: string; trade_id: string | null; created_at: string; detail?: string; entry_conditions?: {metric: string; operator: string; threshold: string}[] };
 type EquitySummary = { strategy: string; gross_profit: string; gross_loss: string; realized_net: string; closed_trades: number; winning_trades: number; closed_unpriced: number; active_strategies: number };
 type DailyActivity = { date: string; strategy: string; closed_trades: number; realized_net: string };
-type EquityDashboardData = { scope: "all_time"; totals: EquitySummary; strategies: EquitySummary[]; daily: DailyActivity[] };
+type EquityDashboardData = { cohorts?: import("./observedPerformance").EquityPerformanceSummary[]; scope: "all_time"; totals: EquitySummary; strategies: EquitySummary[]; daily: DailyActivity[] };
 type EquityLedgerReconciliation = { status: "MATCHED" | "MISMATCH"; recorded_cash: string; expected_cash: string; cash_difference: string; deployment_count: number; reserved_count: number; closed_count: number; issue_count: number; issues: string[]; audit_coverage: "COMPLETE" | "INCOMPLETE"; audit_issue_count: number; audit_issues: string[]; cash_journal: { status: "MATCHED" | "LEGACY_CHECKPOINT" | "NOT_STARTED" | "MISMATCH"; entry_count: number; checkpoint_cash: string | null; journal_cash: string | null; issue_count: number; issues: string[] } };
 type DashboardRow = { entry?: string | null; currentPrice?: string | null; currentAt?: string | null; id: string; name: string; strategy: string; status: string; mark: string | null; markAt: string | null; note: string | null; at: string };
 type WatchItem = { id: string; provider: string; instrument_key: string; trading_symbol: string; exchange: string; instrument_type: string };
@@ -299,7 +299,7 @@ export function TradingDashboard({ token, apiUrl, workspace, onOpenStrategies, o
         {equityLedger.cash_journal.issues.length > 0 ? <details><summary>Cash journal issues</summary><ul>{equityLedger.cash_journal.issues.map((issue, index) => <li key={`${index}-${issue}`}>{issue}</li>)}</ul></details> : null}
       </div> : null}
     </details> : null}
-    {workspace === "equities" && equitySummary !== null ? <EquityPerformanceReport summaries={equitySummary.strategies} stale={Boolean(error)} /> : null}
+    {workspace === "equities" && equitySummary !== null ? <EquityPerformanceReport summaries={equitySummary.strategies} cohorts={equitySummary.cohorts} stale={Boolean(error)} /> : null}
     {workspace === "derivatives" && options !== null ? <ObservedStrategyPerformance trades={options} stale={Boolean(error)} apiUrl={apiUrl} token={token} /> : null}
     <details className="trading-dashboard-method"><summary>About these results</summary><p className="trading-dashboard-note">Realized figures exclude open positions and unfilled deployments. Strategy totals combine saved versions with the same name. {workspace === "equities" ? `The activity list shows the latest 200 deployments. ${equitySelected?.closed_unpriced ?? 0} closed records without a valid P&L are excluded. Opt-in indicative fills may appear in P&L but cannot improve verified strategy feedback. ` : ""}Open marks may be unavailable when verified quotes cannot be obtained.</p></details>
   </section>;

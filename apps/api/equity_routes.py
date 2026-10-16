@@ -1142,19 +1142,54 @@ def equity_dashboard(user: CurrentUser, session: SessionDep, response: Response)
     total = empty()
     by_strategy: dict[str, dict[str, Any]] = {}
     daily: dict[tuple[str, str], dict[str, Any]] = {}
+    cohorts: dict[str, dict[str, Any]] = {}
     recent_start = datetime.now(timezone.utc).astimezone(IST).date() - timedelta(days=13)
     rows = session.execute(
         select(
             EquityDeployment.strategy, EquityDeployment.status,
-            EquityDeployment.state, EquityDeployment.updated_at,
+            EquityDeployment.state, EquityDeployment.updated_at, EquityDeployment.id,
+            EquityDeployment.provider, EquityDeployment.instrument_key, EquityDeployment.symbol,
+            EquityDeployment.version, EquityDeployment.budget, EquityDeployment.risk_budget,
         )
         .where(EquityDeployment.user_id == user.id)
         .execution_options(yield_per=500)
     )
-    for strategy, status, state, updated_at in rows:
+    for (strategy, status, state, updated_at, deployment_id, provider, instrument_key,
+         symbol, version, allocation, risk_budget) in rows:
         strategy_name = str(strategy)
         group = by_strategy.setdefault(strategy_name, empty(strategy_name))
-        for item in (total, group):
+        saved = state if isinstance(state, dict) else {}
+        position = saved.get("position")
+        position = position if isinstance(position, dict) else {}
+        policy = position.get("exit_policy")
+        required = {"atr_multiplier", "minimum_distance_fraction", "target_r",
+                    "trail_activation_r", "trail_distance_r"}
+        complete = (isinstance(policy, dict) and required.issubset(policy)
+                    and bool(position.get("calculation_version"))
+                    and bool(position.get("exit_policy_version")) and bool(version)
+                    and saved.get("quote_mode") in {"INDICATIVE", "VERIFIED"})
+        identity = {"provider": provider, "instrument_key": instrument_key,
+                    "strategy": strategy_name, "strategy_version": version,
+                    "allocation": str(allocation), "risk_budget": str(risk_budget),
+                    "quote_mode": saved.get("quote_mode"),
+                    "calculation_version": position.get("calculation_version"),
+                    "exit_policy_version": position.get("exit_policy_version"),
+                    "exit_policy": policy if isinstance(policy, dict) else None}
+        if not complete:
+            identity["incomplete_deployment"] = str(deployment_id)
+        cohort_id = hashlib.sha256(json.dumps(
+            identity, sort_keys=True, separators=(",", ":"), default=str,
+        ).encode()).hexdigest()
+        targets: tuple[dict[str, Any], ...]
+        if strategy_name == "test_pulse" or saved.get("testing_only") is True:
+            targets = (total, group)
+        else:
+            cohort = cohorts.setdefault(cohort_id, empty(strategy_name) | {
+                **identity, "cohort_id": cohort_id, "symbol": symbol,
+                "configuration_evidence": "RECORDED" if complete else "INCOMPLETE",
+            })
+            targets = (total, group, cohort)
+        for item in targets:
             if status in ACTIVE:
                 item["active_strategies"] += 1
             if status != "CLOSED":
@@ -1208,6 +1243,13 @@ def equity_dashboard(user: CurrentUser, session: SessionDep, response: Response)
     return {
         "scope": "all_time", "recent_activity_days": 14, "totals": present(total),
         "strategies": [present(by_strategy[key]) for key in sorted(by_strategy)],
+        "cohorts": [present(cohorts[key]) | {
+            name: cohorts[key][name] for name in (
+                "cohort_id", "symbol", "provider", "instrument_key", "strategy_version",
+                "allocation", "risk_budget", "quote_mode", "configuration_evidence",
+                "exit_policy", "exit_policy_version",
+            )
+        } for key in sorted(cohorts)],
         "daily": [
             {**daily[key], "realized_net": str(daily[key]["realized_net"])}
             for key in sorted(daily)

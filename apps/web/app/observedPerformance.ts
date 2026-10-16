@@ -91,7 +91,7 @@ export function strategyPerformance(trades: PerformanceTrade[]) {
   return {rows, excludedTests};
 }
 
-export type EquityPerformanceSummary = {losing_trades?: number; breakeven_trades?: number; average_loss?: string | null; strategy: string; gross_profit: string; gross_loss: string; realized_net: string; closed_trades: number; winning_trades: number; closed_unpriced: number; active_strategies: number};
+export type EquityPerformanceSummary = {exit_policy?: Record<string, string> | null; exit_policy_version?: string | null; cohort_id?: string; symbol?: string; provider?: string; strategy_version?: string; allocation?: string; risk_budget?: string; quote_mode?: string | null; configuration_evidence?: string; losing_trades?: number; breakeven_trades?: number; average_loss?: string | null; strategy: string; gross_profit: string; gross_loss: string; realized_net: string; closed_trades: number; winning_trades: number; closed_unpriced: number; active_strategies: number};
 export function equityPerformance(summaries: EquityPerformanceSummary[]) {
   return summaries.filter(row => row.strategy.trim().toLowerCase() !== "test_pulse").map(row => ({...row,
     winRate: row.closed_trades > 0 ? row.winning_trades / row.closed_trades * 100 : null,

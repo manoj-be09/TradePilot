@@ -600,3 +600,14 @@ The paper worker now has a Docker healthcheck backed by `/ready/paper-worker`. C
 
 ### Owner scope update — 2026-10-15
 Finalize current NIFTY 50 paper trading first. Defer additional NSE/BSE index execution, discovery and settlement extensions until that acceptance is complete; preserve their default-off gates. Current acceptance is the owner-approved indicative paper mode with honest unverified-book warnings. Validate API/worker/UI deployment, automatic entry/exit, orders and cash reconciliation, duplicate/recovery behavior and reviewed expiry path. Actual held-through-expiry evidence and strict exchange-origin book timing remain separate pending evidence gates; do not represent them as passed or alter positions to manufacture proof.
+
+
+### 2026-10-16 owner direction: simple selection with evidence-driven daily research
+
+Extend the existing Research and strategy-evolution plan. The owner wants frequent discovery beyond the current catalog, reproducible backtests, daily evaluation and understandable recommendations using market conditions and other relevant factors. This is research capability authorization, not proof of profitability, permission to weaken execution gates, or a requirement to replace a strategy every day.
+
+Delivery order: finish version/configuration-separated performance; build a durable candidate/failure registry with public source/license and frozen typed rule specifications; run bounded chronological cost-aware evaluations with predeclared search budgets, leakage checks and untouched holdouts; compare candidates by net expectancy, drawdown, sample coverage, parameter stability and regime coverage; then run challengers in separate forward-paper observation before eligible promotion. Retain the incumbent or abstain when no challenger qualifies. Never optimize repeatedly against the final holdout or hide failed candidates.
+
+Any displayed probability must define the event (e.g. positive result after the declared modeled costs under the exact entry/exit policy and horizon), use point-in-time features and time-separated calibration/evaluation, and show sample coverage and uncertainty. Backtest win frequency and model-generated confidence are not calibrated future win probabilities. Separate expiry outcomes from stop/target exits. News requires licensed point-in-time archives with publication timestamps, not today's headlines applied to history.
+
+AI may discover/document hypotheses, translate rules and explain evidence. Deterministic research code calculates fills, costs, metrics and eligibility; AI cannot alter risk limits, existing positions or live-order controls. Preserve candidate lineage, versions, rejected trials and rollback. Daily self-improvement means daily evaluation, not mandatory daily parameter changes. No paid model/API/data subscription or live execution is enabled by this note.

@@ -31,6 +31,17 @@ export function ObservedStrategyPerformance({trades, stale, apiUrl, token}: {tra
   }, [apiUrl, token, check]);
   const countsAgree = ledger && ledger.open_trade_count === trades.filter(trade => trade.status === "OPEN").length && ledger.closed_trade_count === trades.filter(trade => trade.status === "CLOSED").length;
   const {rows, excludedTests} = strategyPerformance(trades);
+  const latestRecordAt = rows.reduce((latest, row) => Math.max(latest, row.to ? Date.parse(row.to) : Number.NEGATIVE_INFINITY), Number.NEGATIVE_INFINITY);
+  const latestRecordDay = Number.isFinite(latestRecordAt) ? new Date(latestRecordAt).toISOString().slice(0, 10) : null;
+  const dateTone = (value: string | null) => {
+    if (!value || !latestRecordDay) return "unknown";
+    const recordAt = Date.parse(value);
+    if (!Number.isFinite(recordAt)) return "unknown";
+    const recordDay = new Date(recordAt).toISOString().slice(0, 10);
+    if (recordDay === latestRecordDay) return "latest";
+    return latestRecordAt - recordAt <= 7 * 24 * 60 * 60 * 1000 ? "recent" : "older";
+  };
+  const pnlTone = (value: number | null) => value === null ? "unknown" : value > 0 ? "profit" : value < 0 ? "loss" : "flat";
   return <section className="observed-performance" aria-label="Observed strategy performance">
     <div className="trading-dashboard-activity-heading"><div><h3>Strategy performance</h3><p>Recorded F&amp;O paper outcomes · primary metrics before charges</p></div><span className="dashboard-status">Descriptive · not a forecast</span></div>
     <p className="observed-performance-scope">{excludedTests} test-only position(s) excluded. Open marks are excluded from returns. {stale ? "Refresh failed: showing previously loaded records." : "Uses all loaded F&O records; the dashboard strategy filter above does not restrict this table."}</p>
@@ -41,12 +52,12 @@ export function ObservedStrategyPerformance({trades, stale, apiUrl, token}: {tra
       {ledger && <div role="status"><p><strong>Ledger: {ledger.status}</strong> · Cash difference {money(Number(ledger.cash_difference))} · {ledger.issue_count} issue(s)</p><p>{ledger.order_count} orders · {ledger.open_trade_count} open · {ledger.closed_trade_count} closed · Checked {new Date(checkedAt).toLocaleString("en-IN", {timeZone: "Asia/Kolkata"})} IST</p>{!countsAgree && <p className="error-banner">Trade counts differ from the loaded report. Refresh the dashboard and check again before relying on these results.</p>}{ledger.issues.length > 0 && <ul>{ledger.issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>}<p>Matching cash arithmetic does not prove complete historical audit coverage, exchange quote freshness or after-cost profitability.</p></div>}
     </details>
     {rows.length === 0 ? <p className="trading-dashboard-empty">No non-test F&amp;O positions recorded yet.</p> : <div className="observed-performance-scroll" role="region" aria-label="Strategy comparison table; scroll horizontally for all metrics" tabIndex={0}><table>
-      <caption>Groups separate underlying, provider, saved version, entry conditions and exit settings. Unversioned records may still mix configurations; do not interpret groups as validated comparisons.</caption>
+      <caption>Latest recorded close first. Date badges are relative to the newest loaded record; green/red/neutral accents indicate recorded profit/loss/flat results. Groups separate underlying, provider, saved version, entry conditions and exit settings. Unversioned records may still mix configurations; do not interpret groups as validated comparisons.</caption>
       <thead><tr><th scope="col">Strategy / cohort</th><th scope="col">Closed / priced</th><th scope="col">Recorded P&amp;L</th><th scope="col">Win / loss / flat</th><th scope="col">Observed win rate</th><th scope="col">Average win / loss</th><th scope="col">Closed-trade drawdown</th><th scope="col">Open / max modeled loss</th></tr></thead>
-      <tbody>{rows.map(row => <tr key={row.key}>
-        <th scope="row"><strong>{row.name}</strong><small>{row.underlying} · {row.provider}</small><small title={row.version}>{row.version === "Unversioned" ? row.version : `Version ${row.version.slice(0, 12)}`}</small><small>{day(row.from)} – {day(row.to)}</small><details><summary>Cohort settings</summary><p>Stop: {row.stop === null ? "Off" : money(Number(row.stop))}<br />Target: {row.target === null ? "Off" : money(Number(row.target))}<br />Trailing: {row.trail === null ? "Off" : money(Number(row.trail))}</p>{row.conditions.length ? <ul>{row.conditions.map((condition, index) => <li key={index}>{condition}</li>)}</ul> : <p>No saved entry conditions.</p>}</details></th>
+      <tbody>{rows.map(row => <tr key={row.key} className={`observed-performance-row observed-performance-row-${pnlTone(row.pnl)}`}>
+        <th scope="row"><strong>{row.name}</strong><small>{row.underlying} · {row.provider}</small><small title={row.version}>{row.version === "Unversioned" ? row.version : `Version ${row.version.slice(0, 12)}`}</small><small className={`performance-date performance-date-${dateTone(row.to)}`}>{dateTone(row.to) === "latest" ? "Latest close" : dateTone(row.to) === "recent" ? "Recent close" : dateTone(row.to) === "older" ? "Older close" : "Close date unavailable"}: {day(row.to)}</small><details><summary>Cohort settings</summary><p>Stop: {row.stop === null ? "Off" : money(Number(row.stop))}<br />Target: {row.target === null ? "Off" : money(Number(row.target))}<br />Trailing: {row.trail === null ? "Off" : money(Number(row.trail))}</p>{row.conditions.length ? <ul>{row.conditions.map((condition, index) => <li key={index}>{condition}</li>)}</ul> : <p>No saved entry conditions.</p>}</details></th>
         <td>{row.closed} / {row.priced}{row.missing > 0 && <small className="change-negative">{row.missing} missing/invalid P&amp;L</small>}</td>
-        <td><strong className={row.pnl !== null && row.pnl < 0 ? "change-negative" : ""}>{money(row.pnl)}</strong><small>{row.missing ? "Partial total" : "Before costs"}</small><small>After illustrative charges: {money(row.afterModeledCharges)}</small><small>{row.costRecorded}/{row.closed} closed trades with complete charge records</small></td>
+        <td><strong className={`performance-pnl performance-pnl-${pnlTone(row.pnl)}`}>{money(row.pnl)}</strong><small>{row.missing ? "Partial total" : "Before costs"}</small><small>After illustrative charges: {money(row.afterModeledCharges)}</small><small>{row.costRecorded}/{row.closed} closed trades with complete charge records</small></td>
         <td>{row.wins} / {row.losses} / {row.breakeven}</td>
         <td>{row.winRate === null ? "Unavailable" : `${row.winRate.toFixed(1)}%`}<small>Priced closed trades only</small></td>
         <td>{money(row.averageWin)}<small>{money(row.averageLoss)}</small></td>

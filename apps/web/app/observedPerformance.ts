@@ -87,7 +87,11 @@ export function strategyPerformance(trades: PerformanceTrade[]) {
       from: times.length ? new Date(Math.min(...times)).toISOString() : null,
       to: times.length ? new Date(Math.max(...times)).toISOString() : null,
     };
-  }).sort((a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key));
+  }).sort((a, b) => {
+    const aDate = timestamp(a.to) ?? Number.NEGATIVE_INFINITY;
+    const bDate = timestamp(b.to) ?? Number.NEGATIVE_INFINITY;
+    return bDate - aDate || a.name.localeCompare(b.name) || a.key.localeCompare(b.key);
+  });
   return {rows, excludedTests};
 }
 

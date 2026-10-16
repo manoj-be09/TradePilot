@@ -1008,12 +1008,23 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px
 .observed-performance table { width: 100%; min-width: 1080px; border-collapse: collapse; font-size: 12px; text-align: left; }
 .observed-performance caption { text-align: left; padding: 0 0 12px; color: var(--ink-muted); font-size: 11px; }
 .observed-performance th, .observed-performance td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.observed-performance tbody tr { border-left: 3px solid transparent; }
+.observed-performance tbody tr.observed-performance-row-profit { border-left-color: #72b598; background: #fbfefc; }
+.observed-performance tbody tr.observed-performance-row-loss { border-left-color: #e19a92; background: #fffafa; }
+.observed-performance tbody tr.observed-performance-row-flat { border-left-color: #b8c3cf; background: #fcfdff; }
 .observed-performance thead { background: #f1f5f9; }
 .observed-performance tbody th { min-width: 200px; max-width: 260px; font-weight: 500; }
 .observed-performance small { display: block; margin-top: 6px; color: var(--ink-muted); font-size: 10px; line-height: 1.5; }
 .observed-performance details { margin-top: 10px; }
 .observed-performance summary { cursor: pointer; font-size: 11px; }
 .observed-performance code { display: block; max-width: 240px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; }
+.performance-date { display: inline-block; width: fit-content; margin-top: 4px; padding: 2px 6px; border-radius: 5px; font-size: 10px !important; }
+.performance-date-latest { background: #e7efff; color: #315b9b; }
+.performance-date-recent { background: #e8f5ee; color: #2d7659; }
+.performance-date-older, .performance-date-unknown { background: #eef1f4; color: #64748b; }
+.performance-pnl-profit { color: #16704d; }
+.performance-pnl-loss { color: #b43e49; }
+.performance-pnl-flat, .performance-pnl-unknown { color: #526477; }
 @media (max-width: 680px) { .observed-performance { padding: 14px; } .observed-performance .trading-dashboard-activity-heading { align-items: flex-start; flex-direction: column; } }
 /* Research evidence stays visually distinct from paper account performance. */
 .research-workspace { min-width: 0; }

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from packages.database.models import ResearchRecommendation, ResearchStudy
 from packages.regime.candidate_registry import fingerprint
+from packages.regime.research_readiness import ReadinessAssessment
 
 
 class RecommendationSnapshot(BaseModel):
@@ -40,6 +41,44 @@ class RecommendationSnapshot(BaseModel):
         if forbidden.intersection(value):
             raise ValueError("Recommendation snapshots cannot claim calibrated probability")
         return value
+
+
+def build_abstention_recommendation(
+    assessment: ReadinessAssessment, *, selector_version: str,
+    expires_at: datetime,
+) -> RecommendationSnapshot:
+    """Build a deterministic research-only abstention from stored readiness.
+
+    Readiness is a gate on evidence usability, not a strategy score. This helper
+    deliberately never emits a candidate selection or a probability; a caller
+    must persist the returned snapshot explicitly and review it separately.
+    """
+    blockers = [f"{check.key}:{check.status}" for check in assessment.checks
+                if check.status != "PASS"]
+    reason = "INSUFFICIENT_EVIDENCE" if blockers else "NO_QUALIFIED_STRATEGY"
+    checks = [{
+        "key": check.key, "status": check.status,
+        "artifact_ref": check.evidence_ref,
+        "artifact_digest": check.artifact_digest,
+        "artifact_version": check.artifact_version,
+        "allowed_use": check.allowed_use,
+    } for check in assessment.checks]
+    return RecommendationSnapshot(
+        decision="ABSTAIN", reason_code=reason, selector_version=selector_version,
+        evidence_snapshot={
+            "assessment_policy_version": assessment.policy_version,
+            "assessment_status": assessment.status,
+            "manifest_digest": assessment.manifest_digest,
+            "checks": checks,
+        },
+        rejected_reasons=blockers or ["No reviewed strategy is qualified for selection."],
+        risk_context={
+            "allowed_uses": assessment.allowed_uses,
+            "execution_enabled": False,
+            "promotion_eligible": False,
+        },
+        expires_at=expires_at,
+    )
 
 
 def record_recommendation(session: Session, owner: UUID, study_id: UUID,

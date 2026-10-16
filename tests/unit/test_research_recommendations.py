@@ -15,8 +15,10 @@ from apps.api.research_routes import (
 from packages.database.base import Base
 from packages.database.models import ResearchRecommendation, ResearchStudy, User
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
+from packages.regime.research_readiness import ReadinessAssessment, ReadinessCheck
 from packages.regime.research_recommendations import (
     RecommendationSnapshot,
+    build_abstention_recommendation,
     record_recommendation,
 )
 
@@ -96,3 +98,41 @@ def test_snapshot_rejects_naive_expiry_and_probability_claims():
         snapshot(evidence_snapshot={"profit_probability": 0.8})
     with pytest.raises(ValidationError):
         snapshot(risk_context={"confidence": 0.8})
+
+
+def test_readiness_policy_builds_deterministic_abstention_without_selection_claim():
+    assessment = ReadinessAssessment(
+        assessed_at="2026-01-02T10:00:00Z", trial_id=str(uuid4()),
+        manifest_digest="a" * 64, status="UNVERIFIED", allowed_uses=[
+            "INSPECT_RESEARCH_RECORDS"], checks=[ReadinessCheck(
+            key="data", label="Historical data", status="UNKNOWN",
+            detail="Availability time is unreviewed.",
+        )],
+    )
+    first = build_abstention_recommendation(
+        assessment, selector_version="selector-v1", expires_at="2026-02-01T10:00:00+05:30",
+    )
+    second = build_abstention_recommendation(
+        assessment, selector_version="selector-v1", expires_at="2026-02-01T10:00:00+05:30",
+    )
+    assert first == second
+    assert first.decision == "ABSTAIN"
+    assert first.reason_code == "INSUFFICIENT_EVIDENCE"
+    assert first.evidence_snapshot["checks"][0]["status"] == "UNKNOWN"
+    assert first.risk_context["execution_enabled"] is False
+
+
+def test_readiness_with_all_pass_checks_still_abstains():
+    assessment = ReadinessAssessment(
+        assessed_at="2026-01-02T10:00:00Z", trial_id=str(uuid4()),
+        manifest_digest="a" * 64, status="UNVERIFIED", allowed_uses=[
+            "INSPECT_RESEARCH_RECORDS"], checks=[ReadinessCheck(
+            key="manifest_integrity", label="Stored manifest", status="PASS",
+            detail="Stored declaration matches its digest.",
+        )],
+    )
+    result = build_abstention_recommendation(
+        assessment, selector_version="selector-v1", expires_at="2026-02-01T10:00:00Z",
+    )
+    assert result.reason_code == "NO_QUALIFIED_STRATEGY"
+    assert result.decision == "ABSTAIN"

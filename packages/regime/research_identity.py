@@ -16,6 +16,8 @@ FILES = (
     "packages/regime/research_identity.py",
     "packages/regime/research_inputs.py",
     "packages/regime/fixed_rule_evaluator.py",
+    "packages/regime/registered_evaluator.py",
+    "packages/regime/research_budget.py",
 )
 
 

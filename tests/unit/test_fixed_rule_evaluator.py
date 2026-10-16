@@ -74,3 +74,67 @@ def test_adapter_excludes_crossing_trades_and_passes_no_holdout_to_engine(monkey
         evaluator.FixedEquitySpec(**(spec.model_dump() | {"strategy": "generated-code"}))
     with pytest.raises(ValueError):
         evaluator.FixedEquitySpec(**(spec.model_dump() | {"risk_budget": "20000"}))
+
+
+def test_registered_replay_retains_engine_evidence_separately_and_consumes_failures(tmp_path):
+    from uuid import uuid4
+
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import Session
+
+    from packages.database.base import Base
+    from packages.database.models import ResearchBudgetSlot, ResearchEvaluation, ResearchTrial, User
+    from packages.regime.candidate_registry import (
+        CandidateDefinition,
+        declare_trial,
+        register_candidate,
+    )
+    from packages.regime.registered_evaluator import bind_fixed_equity, run_registered_equity
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'registered.sqlite'}")
+    Base.metadata.create_all(engine)
+    owner, other = uuid4(), uuid4()
+    raw, manifest, spec, _ = inputs()
+    manifest = TrialManifest.model_validate(manifest.model_dump() | {"declared_search_budget": 2})
+    definition = CandidateDefinition(
+        name="Fixture trend hypothesis", family="trend", market="EQUITY",
+        hypothesis="Test a fixed rule with synthetic data, not qualified performance evidence.",
+        source_url="https://example.org/research", source_license="UNREVIEWED",
+        entry_rule="Use the explicit fixed adapter binding.",
+        exit_rule="Use its existing default exit policy.", limitation="Synthetic test only.",
+    )
+    with Session(engine) as session:
+        session.add_all([User(id=uid, email=f"{uid}@example.org", password_hash="fixture")
+                         for uid in (owner, other)])
+        session.commit()
+        candidate = register_candidate(session, owner, definition)
+        trial = declare_trial(session, owner, candidate.id, manifest)
+        trial_id = trial.id
+        with pytest.raises(ValueError, match="Freeze"):
+            run_registered_equity(session, owner, trial.id, raw)
+        bind_fixed_equity(session, owner, trial.id, spec)
+        with pytest.raises(ValueError, match="different frozen"):
+            bind_fixed_equity(session, owner, trial.id, evaluator.FixedEquitySpec.model_validate(
+                spec.model_dump() | {"budget": "20000"}))
+        with pytest.raises(LookupError):
+            run_registered_equity(session, other, trial.id, raw)
+        success = run_registered_equity(session, owner, trial.id, raw)
+        assert success.result["outcome"] == "COMPLETED"
+        assert success.result["promotion_eligible"] is False
+        assert success.result["report"]["holdout_evaluated"] is False
+        assert success.result["evidence_origin"] == "ENGINE_RESEARCH_REPLAY"
+        assert session.get(ResearchTrial, trial.id).result is None
+        saved_digest = success.result_digest
+        assert run_registered_equity(session, owner, trial.id, raw).result_digest == saved_digest
+        failed = declare_trial(session, owner, candidate.id, TrialManifest.model_validate(
+            manifest.model_dump() | {"trial_number": 2}))
+        bind_fixed_equity(session, owner, failed.id, spec)
+        failure = run_registered_equity(session, owner, failed.id, raw + b" ")
+        assert failure.result["reason_code"] == "INPUT_OR_IDENTITY_CHECK_FAILED"
+        assert run_registered_equity(session, owner, failed.id, raw).result_digest == (
+            failure.result_digest)
+        assert len(list(session.scalars(select(ResearchBudgetSlot)))) == 2
+    with Session(engine) as session:
+        assert session.get(ResearchEvaluation, trial_id).result_digest == saved_digest
+        assert session.get(ResearchTrial, trial_id).result is None
+    engine.dispose()

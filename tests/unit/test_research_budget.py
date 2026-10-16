@@ -78,7 +78,7 @@ def test_durable_slots_share_budget_across_candidates_and_keep_failed_attempts(t
     engine.dispose()
 
 
-def test_budget_migration_preserves_legacy_trials_and_does_not_backfill():
+def test_budget_and_evaluation_migrations_preserve_legacy_trials_without_backfill():
     import runpy
     from datetime import datetime, timezone
     from pathlib import Path
@@ -91,7 +91,7 @@ def test_budget_migration_preserves_legacy_trials_and_does_not_backfill():
 
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine, tables=[table for name, table in Base.metadata.tables.items()
-        if name not in {"research_experiments", "research_budget_slots"}])
+        if name not in {"research_experiments", "research_budget_slots", "research_evaluations"}])
     owner, candidate, trial = uuid4(), uuid4(), uuid4()
     now = datetime.now(timezone.utc)
     with engine.begin() as connection:
@@ -113,4 +113,12 @@ def test_budget_migration_preserves_legacy_trials_and_does_not_backfill():
         assert connection.scalar(select(ResearchTrial.manifest).where(
             ResearchTrial.id == trial)) == {"legacy": "untouched"}
         assert list(connection.execute(select(ResearchBudgetSlot))) == []
+        evaluation_migration = runpy.run_path(str(Path(__file__).resolve().parents[2]
+            / "alembic/versions/0027_research_evaluation.py"))
+        with Operations.context(MigrationContext.configure(connection)):
+            evaluation_migration["upgrade"]()
+        assert set(inspect(connection).get_table_names()) - before == {
+            "research_experiments", "research_budget_slots", "research_evaluations"}
+        assert connection.scalar(select(ResearchTrial.manifest).where(
+            ResearchTrial.id == trial)) == {"legacy": "untouched"}
     engine.dispose()

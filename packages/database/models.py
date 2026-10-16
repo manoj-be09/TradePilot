@@ -522,3 +522,17 @@ class ResearchBudgetSlot(Base):
     slot: Mapped[int] = mapped_column(Integer, primary_key=True)
     trial_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("research_trials.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ResearchEvaluation(Base):
+    """Frozen typed replay binding and separate engine-owned research evidence."""
+    __tablename__ = "research_evaluations"
+    trial_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("research_trials.id"), primary_key=True,
+    )
+    adapter: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    adapter_digest: Mapped[str] = mapped_column(String(64))
+    result: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
+    result_digest: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

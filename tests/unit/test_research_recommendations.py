@@ -14,6 +14,12 @@ from apps.api.research_routes import (
 )
 from packages.database.base import Base
 from packages.database.models import ResearchRecommendation, ResearchStudy, User
+from packages.regime.candidate_registry import (
+    CandidateDefinition,
+    TrialManifest,
+    declare_trial,
+    register_candidate,
+)
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
 from packages.regime.research_readiness import ReadinessAssessment, ReadinessCheck
 from packages.regime.research_recommendations import (
@@ -136,3 +142,39 @@ def test_readiness_with_all_pass_checks_still_abstains():
     )
     assert result.reason_code == "NO_QUALIFIED_STRATEGY"
     assert result.decision == "ABSTAIN"
+
+
+def test_from_trial_records_deterministic_abstention_without_selection():
+    engine, owner, _, study_id = _fixture()
+    frozen = study()
+    with Session(engine) as session:
+        candidate = register_candidate(session, owner, CandidateDefinition(
+            name="NIFTY route hypothesis", family="nifty-options", market="NIFTY_OPTIONS",
+            hypothesis="A bounded hypothesis used only for readiness review.",
+            source_url="https://example.org/nifty-route", source_license="UNREVIEWED",
+            entry_rule="Use the frozen incumbent rule.", exit_rule="Use the scheduled replay.",
+            limitation="No execution or promotion.",
+        ))
+        trial = declare_trial(session, owner, candidate.id, TrialManifest(
+            dataset_digest=frozen.dataset_digest, calculation_digest=frozen.calculation_digest,
+            cost_model_id=frozen.cost_model_id, experiment_family="nifty-options",
+            trial_number=1, declared_search_budget=frozen.parent_search_budget, seed=0,
+            train_start=frozen.train_start, train_end=frozen.train_end,
+            validation_start=frozen.validation_start, validation_end=frozen.validation_end,
+            holdout_start=frozen.holdout_start, holdout_end=frozen.holdout_end,
+        ))
+        from apps.api.research_routes import TrialRecommendationRequest, recommend_from_trial
+
+        result = recommend_from_trial(
+            study_id, trial.id,
+            TrialRecommendationRequest(
+                selector_version="selector-v1", expires_at="2026-02-01T10:00:00Z"),
+            SimpleNamespace(id=owner), session,
+        )
+        assert result["decision"] == "ABSTAIN"
+        assert result["snapshot"]["candidate_id"] == str(candidate.id)
+        assert result["snapshot"]["trial_id"] == str(trial.id)
+        assert result["snapshot"]["risk_context"]["execution_enabled"] is False
+        assert result["promotion_eligible"] is False
+        assert len(list(session.scalars(select(ResearchRecommendation)))) == 1
+    engine.dispose()

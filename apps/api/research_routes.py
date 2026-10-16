@@ -1,9 +1,10 @@
 """Authenticated hypothesis/trial bookkeeping, without execution or promotion."""
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from apps.api.auth import CurrentUser, SessionDep
@@ -31,6 +32,7 @@ from packages.regime.research_evidence import EvidenceRecord, record_evidence
 from packages.regime.research_readiness import assess_trial
 from packages.regime.research_recommendations import (
     RecommendationSnapshot,
+    build_abstention_recommendation,
     recommendation_view,
     record_recommendation,
 )
@@ -44,6 +46,13 @@ class NiftyReplayRecordRequest(BaseModel):
 
     study_id: UUID
     run_id: UUID
+
+
+class TrialRecommendationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    selector_version: str = Field(min_length=1, max_length=64)
+    expires_at: datetime
 
 
 @router.post("/studies")
@@ -90,6 +99,45 @@ def recommendations(study_id: UUID, user: CurrentUser, session: SessionDep,
         ResearchRecommendation.study_id == study_id,
     ).order_by(ResearchRecommendation.created_at, ResearchRecommendation.id)
       .offset(offset).limit(limit))]
+
+
+@router.post("/studies/{study_id}/recommendations/from-trial/{trial_id}")
+def recommend_from_trial(study_id: UUID, trial_id: UUID,
+                         body: TrialRecommendationRequest, user: CurrentUser,
+                         session: SessionDep) -> dict[str, Any]:
+    """Record a deterministic research-only abstention from stored evidence."""
+    study = session.scalar(select(ResearchStudy).where(
+        ResearchStudy.id == study_id, ResearchStudy.user_id == user.id,
+    ))
+    trial = session.scalar(select(ResearchTrial).where(
+        ResearchTrial.id == trial_id, ResearchTrial.user_id == user.id,
+    ))
+    if study is None or trial is None:
+        raise HTTPException(404, "Study or trial not found")
+    candidate = session.scalar(select(ResearchCandidate).where(
+        ResearchCandidate.id == trial.candidate_id, ResearchCandidate.user_id == user.id,
+    ))
+    if candidate is None or candidate.definition.get("market") != "NIFTY_OPTIONS":
+        raise HTTPException(409, "Only an owned NIFTY trial can be reviewed for this study")
+    try:
+        frozen = FrozenNiftyStudy.model_validate(study.manifest)
+        manifest = TrialManifest.model_validate(trial.manifest)
+        for key in ("dataset_digest", "calculation_digest", "cost_model_id", "validation_end",
+                    "holdout_start", "holdout_end"):
+            if getattr(manifest, key) != getattr(frozen, key):
+                raise ValueError("Trial manifest differs from the frozen NIFTY study")
+        if manifest.declared_search_budget != frozen.parent_search_budget:
+            raise ValueError("Trial search budget differs from the frozen NIFTY parent budget")
+    except ValueError:
+        raise HTTPException(409, "Trial is outside the frozen NIFTY study") from None
+    evaluation = session.get(ResearchEvaluation, trial.id)
+    evidence = list(session.scalars(select(ResearchEvidence).where(
+        ResearchEvidence.trial_id == trial.id).order_by(ResearchEvidence.key)))
+    assessment = assess_trial(trial, evaluation, evidence)
+    snapshot = build_abstention_recommendation(
+        assessment, selector_version=body.selector_version, expires_at=body.expires_at,
+    ).model_copy(update={"candidate_id": trial.candidate_id, "trial_id": trial.id})
+    return recommendation_view(record_recommendation(session, user.id, study_id, snapshot))
 
 
 def candidate_view(row: ResearchCandidate) -> dict[str, Any]:

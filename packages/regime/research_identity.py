@@ -15,6 +15,7 @@ FILES = (
     "packages/regime/equity_policy_trials.py",
     "packages/regime/research_identity.py",
     "packages/regime/research_inputs.py",
+    "packages/regime/fixed_rule_evaluator.py",
 )
 
 

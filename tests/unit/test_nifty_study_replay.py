@@ -3,10 +3,21 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
 
 from packages.backtesting.contracts import ScheduledOptionsBacktestResult
+from packages.database.base import Base
+from packages.database.models import ResearchBudgetSlot, ResearchTrial, User
+from packages.regime.candidate_registry import (
+    CandidateDefinition,
+    TrialManifest,
+    declare_trial,
+    register_candidate,
+)
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
 from packages.regime.nifty_study_replay import assess_nifty_scheduled_replay
+from packages.regime.registered_evaluator import record_registered_nifty_replay
 
 
 def study(**changes):
@@ -50,6 +61,45 @@ def test_twenty_trades_are_reviewable_but_not_qualified():
     result = assess_nifty_scheduled_replay(study(), replay(trade_count=20))
     assert result.status == "REVIEWABLE_UNVERIFIED"
     assert result.promotion_eligible is False
+
+
+def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    owner = uuid4()
+    frozen = study()
+    manifest = TrialManifest(
+        dataset_digest=frozen.dataset_digest, calculation_digest=frozen.calculation_digest,
+        cost_model_id=frozen.cost_model_id, experiment_family="nifty-study-fixture",
+        trial_number=1, declared_search_budget=2, seed=0,
+        train_start=frozen.train_start, train_end=frozen.train_end,
+        validation_start=frozen.validation_start, validation_end=frozen.validation_end,
+        holdout_start=frozen.holdout_start, holdout_end=frozen.holdout_end,
+    )
+    definition = CandidateDefinition(
+        name="Fixture NIFTY options hypothesis", family="nifty-options",
+        market="NIFTY_OPTIONS",
+        hypothesis="Test a frozen scheduled replay boundary with synthetic data only.",
+        source_url="https://example.org/nifty-study", source_license="UNREVIEWED",
+        entry_rule="Use the explicitly frozen incumbent strategy version.",
+        exit_rule="Use the scheduled option-close replay adapter.",
+        limitation="Synthetic fixture; not eligible for trading.",
+    )
+    with Session(engine) as session:
+        session.add(User(id=owner, email="nifty-replay@example.org", password_hash="fixture"))
+        session.commit()
+        candidate = register_candidate(session, owner, definition)
+        trial = declare_trial(session, owner, candidate.id, manifest)
+        saved = record_registered_nifty_replay(session, owner, trial.id, frozen, replay())
+        assert saved.adapter["type"] == "NIFTY_SCHEDULED_REPLAY"
+        assert saved.result["report"]["status"] == "INSUFFICIENT_SAMPLE"
+        assert saved.result["promotion_eligible"] is False
+        assert session.get(ResearchTrial, trial.id).result is None
+        assert len(list(session.scalars(select(ResearchBudgetSlot)))) == 1
+        assert record_registered_nifty_replay(
+            session, owner, trial.id, frozen, replay(trade_count=20),
+        ).result_digest == saved.result_digest
+    engine.dispose()
 
 
 @pytest.mark.parametrize("changes", [

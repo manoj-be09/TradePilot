@@ -1134,7 +1134,8 @@ def equity_dashboard(user: CurrentUser, session: SessionDep, response: Response)
     def empty(strategy: str = "") -> dict[str, Any]:
         return {
             "strategy": strategy, "gross_profit": Decimal(0), "gross_loss": Decimal(0),
-            "closed_trades": 0, "winning_trades": 0, "closed_unpriced": 0,
+            "closed_trades": 0, "winning_trades": 0, "losing_trades": 0,
+            "breakeven_trades": 0, "closed_unpriced": 0,
             "active_strategies": 0,
         }
 
@@ -1169,6 +1170,10 @@ def equity_dashboard(user: CurrentUser, session: SessionDep, response: Response)
                 item["closed_trades"] += 1
                 if pnl > 0:
                     item["winning_trades"] += 1
+                elif pnl < 0:
+                    item["losing_trades"] += 1
+                else:
+                    item["breakeven_trades"] += 1
                 item["gross_profit" if pnl >= 0 else "gross_loss"] += pnl
         if status == "CLOSED" and pnl is not None and pnl.is_finite():
             recorded_at = cast(datetime, updated_at)
@@ -1193,6 +1198,9 @@ def equity_dashboard(user: CurrentUser, session: SessionDep, response: Response)
             "gross_loss": str(loss), "realized_net": str(profit + loss),
             "closed_trades": item["closed_trades"],
             "winning_trades": item["winning_trades"],
+            "losing_trades": item["losing_trades"],
+            "breakeven_trades": item["breakeven_trades"],
+            "average_loss": str(loss / item["losing_trades"]) if item["losing_trades"] else None,
             "closed_unpriced": item["closed_unpriced"],
             "active_strategies": item["active_strategies"],
         }

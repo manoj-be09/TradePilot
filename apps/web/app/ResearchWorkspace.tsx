@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 type Candidate = {id: string; definition: {name: string; market: string; family: string; hypothesis: string; entry_rule: string; exit_rule: string; limitation: string; source_license: string}; source_review: string};
-type Study = {id: string; study_key: string; manifest: {objective: string; incumbent_rule_version: string; parent_search_budget: number; holdout_start: string; holdout_end: string; cost_model_id: string}; manifest_digest: string; created_at: string; promotion_eligible: false; execution_enabled: false};
+type Study = {id: string; study_key: string; manifest: {objective: string; incumbent_rule_version: string; parent_search_budget: number; holdout_start: string; holdout_end: string; cost_model_id: string; capital?: string; review_interval_days?: number}; manifest_digest: string; created_at: string; promotion_eligible: false; execution_enabled: false};
 type Recommendation = {id: string; decision: string; reason_code: string; snapshot: {selector_version?: string; rejected_reasons?: string[]; risk_context?: Record<string, unknown>}; snapshot_digest: string; expires_at: string; created_at: string; promotion_eligible: false; execution_enabled: false};
 type Metrics = {closed_trades: number; winning_trades: number; losing_trades: number; breakeven_trades: number; net_pnl: number; win_rate: number | null};
 type EquityReport = {status: string; metrics: {training: Metrics; validation: Metrics}; cost_model: {id: string; fee_fraction: string; slippage_fraction: string}; boundary_or_gap_trades_excluded: number; open_trade_excluded: boolean; holdout_evaluated: boolean; limitations: string[]};
@@ -102,6 +102,8 @@ export function ResearchWorkspace({apiUrl, token}: {apiUrl: string; token: strin
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [recommendationBusy, setRecommendationBusy] = useState(false);
   const [recommendationError, setRecommendationError] = useState("");
+  const [abstentionBusy, setAbstentionBusy] = useState(false);
+  const [abstentionMessage, setAbstentionMessage] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -154,6 +156,35 @@ export function ResearchWorkspace({apiUrl, token}: {apiUrl: string; token: strin
   }, [apiUrl, token, selected, trialOffset]);
   const candidate = candidates.find(row => row.id === selected);
   const study = studies.find(row => row.id === selectedStudy);
+  async function recordAbstention() {
+    if (!study || abstentionBusy) return;
+    setAbstentionBusy(true); setAbstentionMessage(""); setRecommendationError("");
+    const reviewDays = Math.max(1, study.manifest.review_interval_days ?? 1);
+    const expiresAt = new Date(Date.now() + reviewDays * 24 * 60 * 60 * 1000).toISOString();
+    try {
+      const response = await fetch(`${apiUrl}/research/studies/${encodeURIComponent(study.id)}/recommendations`, {
+        method: "POST",
+        headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
+        body: JSON.stringify({
+          decision: "ABSTAIN",
+          reason_code: "INSUFFICIENT_EVIDENCE",
+          selector_version: "readiness-gated-v1",
+          evidence_snapshot: {study_manifest_digest: study.manifest_digest, evidence_status: "UNREVIEWED"},
+          alternatives: [],
+          rejected_reasons: ["No strategy has sufficient reviewed evidence for selection."],
+          risk_context: {execution_enabled: false, promotion_eligible: false, capital: study.manifest.capital ?? "unavailable"},
+          expires_at: expiresAt,
+        }),
+      });
+      if (!response.ok) throw new Error(response.status === 401 ? "Your session expired. Sign in again." : "The abstention could not be recorded.");
+      setAbstentionMessage("Abstention recorded. No strategy was selected and no order was created.");
+      setRefresh(value => value + 1);
+    } catch (failure: unknown) {
+      setRecommendationError(failure instanceof Error ? failure.message : "The abstention could not be recorded.");
+    } finally {
+      setAbstentionBusy(false);
+    }
+  }
   return <section className="paper-workspace app-section-page research-workspace" aria-label="Strategy research">
     <div className="workspace-section-heading"><div><span className="panel-kicker">RESEARCH · READ ONLY</span><h2>Strategy research</h2></div><div><button className="refresh-button" disabled={busy || trialBusy || allTrialBusy || studyBusy || recommendationBusy} onClick={() => setRefresh(value => value + 1)} type="button">Refresh evidence</button> <button className="refresh-button" disabled={busy || trialBusy || allTrialBusy || studyBusy || recommendationBusy} onClick={() => { setCompareAll(value => !value); setAllTrialOffset(0); }} type="button">{compareAll ? "Selected hypothesis" : "Compare all trials"}</button></div></div>
     <p>Review hypotheses and chronological replay results before considering a strategy. Research results stay separate from your paper portfolio.</p>
@@ -164,6 +195,8 @@ export function ResearchWorkspace({apiUrl, token}: {apiUrl: string; token: strin
       <p>{study.manifest.objective}</p>
       <dl className="research-facts"><dt>Incumbent</dt><dd>{study.manifest.incumbent_rule_version}</dd><dt>Search budget</dt><dd>{study.manifest.parent_search_budget} declared trials</dd><dt>Protected holdout</dt><dd>{study.manifest.holdout_start} → {study.manifest.holdout_end}</dd><dt>Cost model</dt><dd>{study.manifest.cost_model_id}</dd></dl>
       <p className="features-note">Study identity {study.manifest_digest} · execution disabled · promotion ineligible.</p>
+      <div className="research-action-row"><button className="refresh-button" disabled={abstentionBusy || recommendationBusy || studyBusy} onClick={recordAbstention} type="button">{abstentionBusy ? "Recording abstention…" : "Record abstention"}</button><small>Research record only; this never selects or creates an order.</small></div>
+      {abstentionMessage ? <p className="research-notice" role="status">{abstentionMessage}</p> : null}
       {recommendationBusy ? <p role="status">Loading recommendation snapshots…</p> : recommendationError ? <p role="alert" className="error-banner">{recommendationError}</p> : recommendations.length ? <><h4>Latest recommendation snapshots</h4><ul>{recommendations.map(item => <li key={item.id}><strong>{item.decision}</strong> · {item.reason_code.replaceAll("_", " ")} · expires {new Date(item.expires_at).toLocaleDateString("en-IN")}<br /><small>Selector {item.snapshot.selector_version ?? "unknown"} · {item.snapshot.rejected_reasons?.join("; ") ?? "No rejection detail recorded."}</small></li>)}</ul></> : <p className="workspace-empty">No recommendation snapshots are recorded. The system abstains until reviewed evidence is sufficient.</p>}
     </section> : null}
     {error ? <p role="alert" className="error-banner">{error}</p> : null}

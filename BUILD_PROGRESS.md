@@ -1,5 +1,11 @@
 # Build progress — updated 2026-10-19
 
+## 2026-10-19 — Research UI records explicit abstentions
+
+- Added a **Record abstention** action to the frozen-study panel. It writes an immutable, account-scoped `ABSTAIN` recommendation through the existing research endpoint with `INSUFFICIENT_EVIDENCE`, an explicit `UNREVIEWED` evidence state, no candidate, no probability, `execution_enabled=false`, and `promotion_eligible=false`. Expiry follows the study review interval.
+- The UI confirms that no strategy was selected and no order was created. This action does not alter replay data, paper positions, account balances, strategy logic, or execution settings.
+- Validation: focused research/recommendation/readiness tests **14 passed**, frontend TypeScript lint passed, and `git diff --check` passed. Populated PostgreSQL research acceptance and connected Edge desktop/phone verification remain deployment gates.
+
 ## 2026-10-19 — PostgreSQL paper-safety acceptance completed
 
 - Corrected the migration acceptance regression to compare the applied schema with the current Alembic head instead of the retired `0023_equity_cash_journal` revision.

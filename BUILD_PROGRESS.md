@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-19
 
+## 2026-10-19 — Core paper-trading regression revalidated
+
+- Re-ran the combined core paper-trading regression covering account concurrency, worker restart/lease fencing, option and equity entries, quote-quality gates, kill-switch races, exits, expiry handling, ledger reconciliation, migrations and readiness: **166 passed** with 6 existing deprecation/cache warnings.
+- This closes the software-side core safety acceptance for the current paper-only platform. It does not certify exchange-origin bid/ask timing, an actual normal-session round trip, official expiry settlement, or strategy profitability. Docker CLI access was denied in this session, so container restart/HTTP verification remains an owner-host check.
+
 ## 2026-10-19 — Research concurrency acceptance expanded
 
 - Added isolated PostgreSQL integration coverage for concurrent research-family slot reservation, fenced research-lease takeover, and concurrent same-evidence finalization. These checks prove one durable slot, stale-owner rejection, and idempotent evidence writes in a real PostgreSQL schema without touching the owner account.

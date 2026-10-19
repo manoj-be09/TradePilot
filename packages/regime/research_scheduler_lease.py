@@ -18,6 +18,8 @@ class ResearchJobOutcome:
 
 def acquire_research_lease(session: Session, owner: str, seconds: int) -> LeaseToken | None:
     """Acquire a fenced research lease using the existing lease table."""
+    if seconds <= 0:
+        raise ValueError("Research lease duration must be positive.")
     return acquire(session, owner, seconds, worker_name=RESEARCH_WORKER_NAME)
 
 

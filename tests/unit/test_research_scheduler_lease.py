@@ -82,3 +82,18 @@ def test_research_job_runner_rejects_invalid_lease_duration():
         assert not renew_research_lease(session, token, 0)
         assert assert_research_lease(session, token)
     engine.dispose()
+
+
+def test_research_lease_acquisition_rejects_invalid_duration():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        for seconds in (0, -1):
+            try:
+                acquire_research_lease(session, "invalid-research", seconds)
+            except ValueError as exc:
+                assert str(exc) == "Research lease duration must be positive."
+            else:
+                raise AssertionError("Invalid research lease duration was accepted")
+        assert session.get(WorkerLease, RESEARCH_WORKER_NAME) is None
+    engine.dispose()

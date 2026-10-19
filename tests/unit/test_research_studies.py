@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -56,4 +57,29 @@ def test_study_routes_return_read_only_account_scoped_view():
         assert response["execution_enabled"] is False
         out = studies(SimpleNamespace(id=owner), session, SimpleNamespace(headers={}), 25, 0)
         assert out[0]["manifest_digest"] == response["manifest_digest"]
+    engine.dispose()
+
+
+def test_study_list_is_newest_first_with_deterministic_id_tie_break():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    owner = uuid4()
+    with Session(engine) as session:
+        session.add(User(id=owner, email="study-order@example.org", password_hash="fixture"))
+        session.commit()
+        older = study(study_key="nifty-study-older")
+        newer = study(study_key="nifty-study-newer")
+        timestamp = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        session.add_all([
+            ResearchStudy(id=uuid4(), user_id=owner, study_key=older.study_key,
+                          manifest=older.manifest, manifest_digest=older.manifest_digest,
+                          created_at=timestamp),
+            ResearchStudy(id=uuid4(), user_id=owner, study_key=newer.study_key,
+                          manifest=newer.manifest, manifest_digest=newer.manifest_digest,
+                          created_at=timestamp),
+        ])
+        session.commit()
+        rows = studies(SimpleNamespace(id=owner), session, SimpleNamespace(headers={}), 25, 0)
+        expected = sorted(rows, key=lambda row: (row["created_at"], row["id"]), reverse=True)
+        assert rows == expected
     engine.dispose()

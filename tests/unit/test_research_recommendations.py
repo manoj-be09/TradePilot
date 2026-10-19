@@ -116,6 +116,22 @@ def test_identical_snapshots_are_scoped_to_their_study():
     engine.dispose()
 
 
+def test_recommendation_list_is_newest_first():
+    engine, owner, _, study_id = _fixture()
+    with Session(engine) as session:
+        first = record_recommendation(
+            session, owner, study_id, snapshot(selector_version="selector-old"))
+        second = record_recommendation(
+            session, owner, study_id, snapshot(selector_version="selector-new"))
+        first.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        second.created_at = datetime(2026, 1, 2, tzinfo=timezone.utc)
+        session.commit()
+        rows = recommendations(study_id, SimpleNamespace(id=owner), session,
+                                SimpleNamespace(headers={}), 25, 0)
+        assert [row["id"] for row in rows] == [second.id, first.id]
+    engine.dispose()
+
+
 def test_snapshot_rejects_naive_expiry_and_probability_claims():
     with pytest.raises(ValidationError):
         snapshot(expires_at="2026-02-01T10:00:00")

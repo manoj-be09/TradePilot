@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-19
 
+## 2026-10-19 — Research records now open newest-first
+
+- Account-scoped studies, recommendations, candidates and trials now sort by descending `created_at` with descending ID tie-breaks. This keeps the latest research decisions visible first without changing evidence, budgets, execution, promotion or account isolation.
+- Validation: 26 focused research/readiness/lease tests passed, Ruff, Python compilation, frontend TypeScript lint and `git diff --check` passed. Docker/PostgreSQL concurrency and populated Research deployment acceptance remain pending.
+
 ## 2026-10-19 — Futures & Options is the default workspace
 
 - The signed-in app now opens on **Future & Options** so the current NIFTY 50 paper-trading work is immediately visible. Equity & ETF remains available through the market switch; strategy logic, account data, quote warnings and live-order disablement are unchanged.

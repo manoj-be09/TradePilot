@@ -69,9 +69,10 @@ def studies(user: CurrentUser, session: SessionDep, response: Response,
             limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)
             ) -> list[dict[str, Any]]:
     response.headers["Cache-Control"] = "no-store"
-    return [study_view(row) for row in session.scalars(select(ResearchStudy).where(
-        ResearchStudy.user_id == user.id,
-    ).order_by(ResearchStudy.created_at, ResearchStudy.id).offset(offset).limit(limit))]
+    query = (select(ResearchStudy).where(ResearchStudy.user_id == user.id)
+             .order_by(ResearchStudy.created_at.desc(), ResearchStudy.id.desc())
+             .offset(offset).limit(limit))
+    return [study_view(row) for row in session.scalars(query)]
 
 
 @router.post("/studies/{study_id}/recommendations")
@@ -97,7 +98,7 @@ def recommendations(study_id: UUID, user: CurrentUser, session: SessionDep,
     ).where(
         ResearchRecommendation.user_id == user.id,
         ResearchRecommendation.study_id == study_id,
-    ).order_by(ResearchRecommendation.created_at, ResearchRecommendation.id)
+    ).order_by(ResearchRecommendation.created_at.desc(), ResearchRecommendation.id.desc())
       .offset(offset).limit(limit))]
 
 
@@ -180,9 +181,10 @@ def candidates(user: CurrentUser, session: SessionDep, response: Response,
                limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)
                ) -> list[dict[str, Any]]:
     response.headers["Cache-Control"] = "no-store"
-    return [candidate_view(row) for row in session.scalars(select(ResearchCandidate).where(
-        ResearchCandidate.user_id == user.id,
-    ).order_by(ResearchCandidate.created_at, ResearchCandidate.id).offset(offset).limit(limit))]
+    query = (select(ResearchCandidate).where(ResearchCandidate.user_id == user.id)
+             .order_by(ResearchCandidate.created_at.desc(), ResearchCandidate.id.desc())
+             .offset(offset).limit(limit))
+    return [candidate_view(row) for row in session.scalars(query)]
 
 
 @router.post("/candidates/{candidate_id}/trials")
@@ -203,13 +205,14 @@ def trials(candidate_id: UUID, user: CurrentUser, session: SessionDep, response:
         ResearchCandidate.id == candidate_id, ResearchCandidate.user_id == user.id,
     )) is None:
         raise HTTPException(404, "Candidate not found")
+    query = (select(ResearchTrial, ResearchEvaluation).outerjoin(
+        ResearchEvaluation, ResearchEvaluation.trial_id == ResearchTrial.id).where(
+        ResearchTrial.user_id == user.id, ResearchTrial.candidate_id == candidate_id,
+    ).order_by(ResearchTrial.created_at.desc(), ResearchTrial.id.desc())
+             .offset(offset).limit(limit))
     return [trial_view(row, evaluation, list(session.scalars(select(ResearchEvidence).where(
             ResearchEvidence.trial_id == row.id).order_by(ResearchEvidence.key))))
-            for row, evaluation in session.execute(
-        select(ResearchTrial, ResearchEvaluation).outerjoin(ResearchEvaluation,
-            ResearchEvaluation.trial_id == ResearchTrial.id).where(
-        ResearchTrial.user_id == user.id, ResearchTrial.candidate_id == candidate_id,
-    ).order_by(ResearchTrial.created_at, ResearchTrial.id).offset(offset).limit(limit))]
+            for row, evaluation in session.execute(query)]
 
 
 @router.post("/trials/{trial_id}/nifty-replay")

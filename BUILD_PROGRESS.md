@@ -16,6 +16,7 @@
 
 - Added the complete public strategy-name catalog from the inspected OptionStrat taxonomy to the F&O workspace, grouped by Bullish, Bearish, Sideways, Volatility, Income, and Special. Each entry now shows proficiency and an explicit status: paper-supported, research-only, or engine-support-pending.
 - The catalog is informational and does not enable unsupported execution. Calendar/diagonal, ratio, underlying-dependent, synthetic, naked, and other structures remain gated until their payoff, expiry, margin, assignment, and maximum-risk models are validated.
+- The paper-strategy selector now also lists every catalog entry. Paper-supported templates remain selectable; research-only and engine-support-pending entries are visibly disabled with their gate reason instead of being omitted.
 - Validation: `pnpm --dir apps/web lint` and `git diff --check` passed. Docker rebuild and Edge desktop/phone verification remain pending.
 
 ## 2026-10-13 — TradingPilot Algo Trading clarity pass

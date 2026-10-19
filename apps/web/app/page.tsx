@@ -2493,6 +2493,7 @@ export default function Home() {
                   Strategy
                   <select disabled={paperBusy || paperStrategies.length === 0} onChange={(event) => { setSelectedStrategy(event.target.value); setDeploymentPreparedKey(""); setPaperTicketMessage(""); }} value={selectedStrategy}>
                     {paperStrategies.map((strategy) => <option key={strategy.key} value={strategy.key}>{strategy.name}</option>)}
+                    {STRATEGY_CATALOG.filter((entry) => !paperStrategies.some((strategy) => strategy.key === entry.key)).map((entry) => <option disabled key={`catalog-${entry.key}`} value={entry.key}>{entry.name} · {entry.status === "ENGINE_SUPPORT_PENDING" ? "engine support pending" : "research only"}</option>)}
                     <option value="custom">Custom multi-leg</option>
                   </select>
                 </label>

@@ -1,5 +1,14 @@
 # Build progress — updated 2026-10-19
 
+## Six-gate release status after the current implementation pass
+
+- **Performance reporting and reconciliation:** software complete; account-scoped descriptive reports, paper/equity ledger checks, charge provenance and mismatch fail-closed behavior are covered by the regression suite. This is not a claim of complete broker-tax costs or full historical equity chronology where source data are missing.
+- **Research/evaluator foundation:** software complete for the bounded release; immutable evidence identity, frozen-study contracts, protected holdout binding, deterministic replay boundaries, budget reservations, separate engine/operator evidence and abstention records are implemented.
+- **Populated PostgreSQL scheduling acceptance:** software boundary complete and fenced route covered; runtime acceptance is **UNKNOWN** until PostgreSQL concurrency, cancellation and crash recovery run with `TEST_POSTGRES_URL`.
+- **Frozen NIFTY study and prospective recommendations:** contract, storage, readiness and abstention paths are complete; no real study is qualified until reviewed source/data/cost/holdout evidence and prospective observations exist.
+- **Exchange-timed validation and actual expiry evidence:** **BLOCKED by external evidence**; current provider observations do not prove exchange-origin executable-book timing, and the existing test-only position remains untouched pending official expiry review.
+- **Overall production-grade paper trading:** software is substantially complete, but the goal remains open until the runtime and external evidence gates above are independently accepted. Live orders remain disabled.
+
 ## 2026-10-19 — Full regression after research scheduling change
 
 - Full repository regression passed: **533 passed, 11 skipped, 3 warnings**. The skips are PostgreSQL-runtime cases requiring `TEST_POSTGRES_URL`; there were no test failures.

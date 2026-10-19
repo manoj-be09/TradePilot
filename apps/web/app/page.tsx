@@ -158,6 +158,33 @@ type PaperStrategy = {
   expected_net_pnl: string | null;
 };
 
+type StrategyMarketBias = "BULLISH" | "BEARISH" | "SIDEWAYS" | "VOLATILITY";
+
+type StrategyCatalogMeta = {
+  bias: StrategyMarketBias;
+  label: string;
+  note: string;
+};
+
+// Original TradingPilot summaries based on the public OptionStrat strategy taxonomy.
+// This metadata is descriptive only; it never creates a forecast or enables live orders.
+const STRATEGY_CATALOG_META: Record<string, StrategyCatalogMeta> = {
+  long_call: { bias: "BULLISH", label: "Bullish", note: "Directional upside" },
+  bull_call_spread: { bias: "BULLISH", label: "Bullish", note: "Defined-risk upside" },
+  bull_put_spread: { bias: "BULLISH", label: "Bullish", note: "Income with downside buffer" },
+  long_put: { bias: "BEARISH", label: "Bearish", note: "Directional downside" },
+  bear_put_spread: { bias: "BEARISH", label: "Bearish", note: "Defined-risk downside" },
+  bear_call_spread: { bias: "BEARISH", label: "Bearish", note: "Income with upside buffer" },
+  iron_condor: { bias: "SIDEWAYS", label: "Sideways", note: "Range-bound income" },
+  iron_butterfly: { bias: "SIDEWAYS", label: "Sideways", note: "Tighter range income" },
+  long_call_condor: { bias: "SIDEWAYS", label: "Sideways", note: "Defined-risk range" },
+  long_put_condor: { bias: "SIDEWAYS", label: "Sideways", note: "Defined-risk range" },
+  inverse_iron_condor: { bias: "VOLATILITY", label: "Volatility", note: "Move outside the range" },
+  long_straddle: { bias: "VOLATILITY", label: "Volatility", note: "Large move either way" },
+  long_strangle: { bias: "VOLATILITY", label: "Volatility", note: "Cheaper large-move setup" },
+  guts: { bias: "VOLATILITY", label: "Volatility", note: "Defined-risk ITM move" },
+};
+
 type CustomLegDraft = {
   option_type: "CE" | "PE";
   side: "BUY" | "SELL";
@@ -701,6 +728,7 @@ export default function Home() {
   const [strategyPayoffs, setStrategyPayoffs] = useState<Record<string, PayoffEstimate>>({});
   const [paperTicketMessage, setPaperTicketMessage] = useState("");
   const [showAllStrategies, setShowAllStrategies] = useState(false);
+  const [strategyBiasFilter, setStrategyBiasFilter] = useState<StrategyMarketBias | "ALL">("ALL");
   const [deploymentPreparedKey, setDeploymentPreparedKey] = useState("");
   const deploymentCommand = useRef<{ payload: string; key: string } | null>(null);
   const paperTicketRef = useRef<HTMLParagraphElement | null>(null);
@@ -1281,6 +1309,11 @@ export default function Home() {
       return { strategy, payoff, score, bias, volatility, riskReward, historyReliable, qualified, matchedCondition };
     }).sort((left, right) => right.score - left.score);
   }, [chain?.quality?.status, optionFeatures, paperStrategies, strategyPayoffs]);
+
+  const filteredRankedStrategies = useMemo(
+    () => rankedStrategies.filter(({ strategy }) => strategyBiasFilter === "ALL" || STRATEGY_CATALOG_META[strategy.key]?.bias === strategyBiasFilter),
+    [rankedStrategies, strategyBiasFilter],
+  );
 
   function applyStrategyToPaperTicket(strategy: PaperStrategy, payoff: PayoffEstimate) {
     const maximumLoss = Number(payoff.maximum_loss);
@@ -2507,6 +2540,15 @@ export default function Home() {
                 <span>{rankedStrategies[0]?.bias || "UNCERTAIN"} · {rankedStrategies[0]?.volatility || "IV UNKNOWN"}</span>
               </div>
               <div className="strategy-color-legend" aria-label="Strategy evidence legend"><span className="strategy-color-legend--green">Green · stronger qualified evidence</span><span className="strategy-color-legend--amber">Amber · limited or insufficient evidence</span><span className="strategy-color-legend--red">Red · blocked or unavailable</span></div>
+              <div className="strategy-bias-filter" aria-label="Strategy market bias filter">
+                <span>Market view</span>
+                {(["ALL", "BULLISH", "BEARISH", "SIDEWAYS", "VOLATILITY"] as const).map((bias) => (
+                  <button className={`strategy-bias-chip strategy-bias-chip--${bias.toLowerCase()} ${strategyBiasFilter === bias ? "selected" : ""}`} key={bias} onClick={() => { setStrategyBiasFilter(bias); setShowAllStrategies(false); }} type="button">
+                    {bias === "ALL" ? "All" : bias[0] + bias.slice(1).toLowerCase()}
+                  </button>
+                ))}
+              </div>
+              <p className="strategy-library-note">Public taxonomy reference: OptionStrat’s strategy list. TradingPilot uses original summaries and only enables the defined-risk templates supported by its paper payoff engine; this classification is descriptive, not a profit forecast.</p>
               <details className="workspace-disclosure probability-evidence"><summary>Win / loss probability · Insufficient evidence</summary>
                 <p>No validated forecast is available. Historical paper win frequency is not a prediction for the next trade.</p>
                 <dl className="probability-inputs">
@@ -2521,13 +2563,14 @@ export default function Home() {
                 <p>Target outcome: positive P&amp;L after declared costs under the saved entry and exit rules. Win, loss and break-even will be separate outcomes. No validation period, calibrated model or after-cost validation sample exists yet.</p>
               </details>
               <section className="strategy-scorecards" aria-label="Strategy performance comparison">
-                {rankedStrategies.slice(0, showAllStrategies ? undefined : 3).map(({ strategy, payoff, bias, volatility, riskReward, historyReliable, qualified, matchedCondition }, index) => (
+                {filteredRankedStrategies.slice(0, showAllStrategies ? undefined : 3).map(({ strategy, payoff, bias, volatility, riskReward, historyReliable, qualified, matchedCondition }, index) => (
                   <article
-                    className={`strategy-scorecard ${selectedStrategy === strategy.key ? "selected" : ""} ${index === 0 ? "best-fit" : ""} strategy-scorecard--${!payoff || payoff.maximum_loss_unbounded ? "red" : qualified && historyReliable ? "green" : "amber"}`}
+                    className={`strategy-scorecard ${selectedStrategy === strategy.key ? "selected" : ""} ${index === 0 ? "best-fit" : ""} strategy-scorecard--${!payoff || payoff.maximum_loss_unbounded ? "red" : qualified && historyReliable ? "green" : "amber"} strategy-bias--${(STRATEGY_CATALOG_META[strategy.key]?.bias || "SIDEWAYS").toLowerCase()}`}
                     key={strategy.key}
                   >
                     {index === 0 ? <em>{qualified ? "Best current fit" : "Provisional fit"}</em> : null}
                     <strong>{strategy.name}</strong>
+                    <span className="strategy-bias-tag">{STRATEGY_CATALOG_META[strategy.key]?.label || "Research"} · {STRATEGY_CATALOG_META[strategy.key]?.note || "Paper template"}</span>
                     <small className="strategy-fit">Fit: {bias} · {volatility}</small>
                     <div className="strategy-card-metrics">
                       <span>Max modeled profit<b>{payoff?.maximum_profit_unbounded ? "Unbounded*" : payoff?.maximum_profit !== null && payoff?.maximum_profit !== undefined ? `₹${formatPrice(payoff.maximum_profit)}` : "Calculating…"}</b></span>
@@ -2543,7 +2586,7 @@ export default function Home() {
                   </article>
                 ))}
               </section>
-              <button className="inline-button" aria-expanded={showAllStrategies} onClick={() => setShowAllStrategies(value => !value)} type="button">{showAllStrategies ? "Show fewer strategies" : `＋ All ${rankedStrategies.length} strategies`}</button>
+              <button className="inline-button" aria-expanded={showAllStrategies} onClick={() => setShowAllStrategies(value => !value)} type="button">{showAllStrategies ? "Show fewer strategies" : `＋ All ${filteredRankedStrategies.length} ${strategyBiasFilter === "ALL" ? "strategies" : `${strategyBiasFilter.toLowerCase()} strategies`}`}</button>
               <details className="workspace-disclosure"><summary>Ranking &amp; evidence details</summary>              <p className="features-note">Ranking uses observed NIFTY put/call open interest when available, current-quote expiry payoff, and a small risk-normalized adjustment only after 20 qualified automatic closes in the same observed market condition with one unchanged rule/stop configuration. IV rank needs stored history and is currently unavailable; missing values never count as low IV or bearish. Manual, incomplete and mixed-configuration results cannot improve ranking. This is a research comparison, not a calibrated profit forecast. “Unbounded” profit is theoretical at expiry.</p></details>
               {isCustomStrategy ? (
                 <div className="custom-leg-builder">

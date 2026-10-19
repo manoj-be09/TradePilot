@@ -80,6 +80,56 @@ STRATEGY_REGISTRY = StrategyRegistry(
             ),
         ),
         StrategyDefinition(
+            "iron_butterfly",
+            "Iron butterfly",
+            "Sell the reference-strike put and call, protected by one wing on each side.",
+            (
+                StrategyLeg("PE", "BUY", -1),
+                StrategyLeg("PE", "SELL", 0),
+                StrategyLeg("CE", "SELL", 0),
+                StrategyLeg("CE", "BUY", 1),
+            ),
+        ),
+        StrategyDefinition(
+            "long_call_condor",
+            "Long call condor",
+            "Buy outer calls and sell the two inner calls to create a wider defined-risk range.",
+            (
+                StrategyLeg("CE", "BUY", -2),
+                StrategyLeg("CE", "SELL", -1),
+                StrategyLeg("CE", "SELL", 1),
+                StrategyLeg("CE", "BUY", 2),
+            ),
+        ),
+        StrategyDefinition(
+            "long_put_condor",
+            "Long put condor",
+            "Buy outer puts and sell the two inner puts to create a wider defined-risk range.",
+            (
+                StrategyLeg("PE", "BUY", -2),
+                StrategyLeg("PE", "SELL", -1),
+                StrategyLeg("PE", "SELL", 1),
+                StrategyLeg("PE", "BUY", 2),
+            ),
+        ),
+        StrategyDefinition(
+            "inverse_iron_condor",
+            "Inverse iron condor",
+            "Buy the inner put and call wings and sell the outer wings for a defined-risk move strategy.",
+            (
+                StrategyLeg("PE", "SELL", -2),
+                StrategyLeg("PE", "BUY", -1),
+                StrategyLeg("CE", "BUY", 1),
+                StrategyLeg("CE", "SELL", 2),
+            ),
+        ),
+        StrategyDefinition(
+            "guts",
+            "Guts",
+            "Buy an in-the-money call and put for a defined-risk volatility position.",
+            (StrategyLeg("PE", "BUY", 1), StrategyLeg("CE", "BUY", -1)),
+        ),
+        StrategyDefinition(
             "long_straddle",
             "Long straddle",
             "Buy a call and put at the reference strike.",

@@ -5,6 +5,13 @@
 - The signed-in app now opens on **Future & Options** so the current NIFTY 50 paper-trading work is immediately visible. Equity & ETF remains available through the market switch; strategy logic, account data, quote warnings and live-order disablement are unchanged.
 - Validation: `pnpm --dir apps/web lint` passed. Docker rebuild and connected desktop/phone verification remain deployment checks for the owner’s environment.
 
+## 2026-10-19 — Public strategy taxonomy and market-bias catalog
+
+- Added five defined-risk paper templates inspired by the public OptionStrat strategy taxonomy: iron butterfly, long call condor, long put condor, inverse iron condor and guts. Existing paper templates remain unchanged; live orders and additional-index execution remain disabled.
+- Added original market-bias metadata and filters for **Bullish**, **Bearish**, **Sideways** and **Volatility**. Cards are color-coded by market view while the existing evidence colors still represent paper qualification state. The labels are descriptive classifications, not forecasts or calibrated probabilities.
+- REA evidence: `ev_f7e78e3814e227d85539ecd2d9d90d1d84feb9a9c4f175881d89ca214893e79f` (Edge target) and `ev_fbb16c365662c847264ac765176f764b3492697e3c1c06079b9cadffa523ee17` (public page inspection). REA captured the public page and strategy links under `https://optionstrat.com/strategies`; proprietary code and private data were not used.
+- Validation: `pnpm --dir apps/web lint`, targeted paper-trading/payoff tests, Python compilation and `git diff --check` passed. Full Docker rebuild and connected desktop/phone verification remain pending because Docker is environment-dependent.
+
 ## 2026-10-13 — TradingPilot Algo Trading clarity pass
 
 - Active equity cards now show a concrete **Entry zone** (signal close ±2%, matching the existing gate) beside the latest current price. Open positions show filled entry, stop, target and marked P&L in a compact strip.

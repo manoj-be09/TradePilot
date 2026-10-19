@@ -368,6 +368,19 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
 .strategy-scorecard.best-fit { border-color: #2d8a5b; background: linear-gradient(145deg, #f4fbf6, #fff); }
 .strategy-scorecard em { display: inline-block; margin-bottom: 8px; border-radius: 999px; padding: 4px 7px; background: #21784c; color: white; font-size: 8px; font-style: normal; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
 .strategy-scorecard .strategy-fit { min-height: 0; margin: 0 0 8px; color: #276945; font-weight: 700; }
+.strategy-bias-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin: 2px 0 4px; }
+.strategy-bias-filter > span { margin-right: 2px; color: var(--ink-muted); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.strategy-bias-chip { border: 1px solid #dce5df; border-radius: 999px; padding: 5px 9px; background: #fff; color: var(--ink-muted); font-size: 10px; font-weight: 800; cursor: pointer; }
+.strategy-bias-chip.selected { color: #173b2a; box-shadow: 0 0 0 2px rgba(33, 120, 76, .10); }
+.strategy-bias-chip--bullish.selected { border-color: #85c49b; background: #edf9f0; color: #1f7041; }
+.strategy-bias-chip--bearish.selected { border-color: #e1a5a5; background: #fff1f1; color: #9d3f3f; }
+.strategy-bias-chip--sideways.selected { border-color: #e4c57c; background: #fff8e8; color: #8a6215; }
+.strategy-bias-chip--volatility.selected { border-color: #9ebde4; background: #eff6ff; color: #2e5d91; }
+.strategy-library-note { margin: 8px 0 10px; color: var(--ink-muted); font-size: 10px; line-height: 1.5; }
+.strategy-bias-tag { display: inline-block !important; width: fit-content; margin: 0 0 7px !important; border-radius: 999px; padding: 4px 7px; background: #eef5ef; color: #276945 !important; font-size: 9px !important; font-weight: 800; text-transform: none !important; }
+.strategy-bias--bearish .strategy-bias-tag { background: #fff0f0; color: #9d3f3f !important; }
+.strategy-bias--sideways .strategy-bias-tag { background: #fff7e7; color: #8a6215 !important; }
+.strategy-bias--volatility .strategy-bias-tag { background: #eff6ff; color: #2e5d91 !important; }
 .strategy-card-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 8px 0; }
 .strategy-card-metrics span { margin: 0; border-radius: 6px; padding: 7px; background: rgba(236,242,236,.7); font-size: 8px; }
 .strategy-card-metrics b { font-size: 12px; text-transform: none; }

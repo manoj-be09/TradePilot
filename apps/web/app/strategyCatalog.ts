@@ -26,6 +26,7 @@ export const STRATEGY_CATALOG: StrategyCatalogEntry[] = [
   paper("bear_call_spread", "Bear call spread", "BEARISH", "Bearish", "Intermediate", "Defined-risk income with a bearish bias."),
   paper("iron_butterfly", "Iron butterfly", "SIDEWAYS", "Sideways", "Intermediate", "Tighter range income with protected wings."),
   paper("iron_condor", "Iron condor", "SIDEWAYS", "Sideways", "Intermediate", "Wider range income with protected wings."),
+  paper("inverse_iron_condor", "Inverse iron condor", "VOLATILITY", "Volatility", "Advanced", "Move-seeking inner wings with defined expiry risk."),
   paper("long_put_butterfly", "Long put butterfly", "SIDEWAYS", "Sideways", "Intermediate", "Defined-risk range structure using puts."),
   paper("long_call_butterfly", "Long call butterfly", "SIDEWAYS", "Sideways", "Intermediate", "Defined-risk range structure using calls."),
   pending("calendar_call_spread", "Calendar call spread", "SIDEWAYS", "Sideways", "Intermediate", "Same-strike calls across two expiries."),

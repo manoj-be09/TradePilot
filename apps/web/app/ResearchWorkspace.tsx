@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 
 type Candidate = {id: string; definition: {name: string; market: string; family: string; hypothesis: string; entry_rule: string; exit_rule: string; limitation: string; source_license: string}; source_review: string};
+type Study = {id: string; study_key: string; manifest: {objective: string; incumbent_rule_version: string; parent_search_budget: number; holdout_start: string; holdout_end: string; cost_model_id: string}; manifest_digest: string; created_at: string; promotion_eligible: false; execution_enabled: false};
+type Recommendation = {id: string; decision: string; reason_code: string; snapshot: {selector_version?: string; rejected_reasons?: string[]; risk_context?: Record<string, unknown>}; snapshot_digest: string; expires_at: string; created_at: string; promotion_eligible: false; execution_enabled: false};
 type Metrics = {closed_trades: number; winning_trades: number; losing_trades: number; breakeven_trades: number; net_pnl: number; win_rate: number | null};
 type EquityReport = {status: string; metrics: {training: Metrics; validation: Metrics}; cost_model: {id: string; fee_fraction: string; slippage_fraction: string}; boundary_or_gap_trades_excluded: number; open_trade_excluded: boolean; holdout_evaluated: boolean; limitations: string[]};
 type NiftyReplayReport = {status: string; study_key: string; study_manifest_digest: string; strategy_version: string; replay_input_digest: string; trade_count: number; holdout_evaluated: false; promotion_eligible: false; limitations: string[]};
@@ -93,16 +95,40 @@ export function ResearchWorkspace({apiUrl, token}: {apiUrl: string; token: strin
   const [allTrialOffset, setAllTrialOffset] = useState(0);
   const [allTrialBusy, setAllTrialBusy] = useState(false);
   const [allTrialError, setAllTrialError] = useState("");
+  const [studies, setStudies] = useState<Study[]>([]);
+  const [selectedStudy, setSelectedStudy] = useState("");
+  const [studyBusy, setStudyBusy] = useState(false);
+  const [studyError, setStudyError] = useState("");
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [recommendationBusy, setRecommendationBusy] = useState(false);
+  const [recommendationError, setRecommendationError] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
     setBusy(true); setError(""); setCandidates([]); setSelected(""); setTrials([]); setTrialOffset(0); setCompareAll(false); setAllTrials([]); setAllTrialOffset(0);
+    setStudyBusy(true); setStudyError(""); setStudies([]); setSelectedStudy(""); setRecommendations([]); setRecommendationError("");
     readRows<Candidate>(`${apiUrl}/research/candidates?limit=${PAGE_SIZE}&offset=${candidateOffset}`, token, controller.signal)
       .then(rows => { if (!controller.signal.aborted) { setCandidates(rows); setSelected(rows[0]?.id ?? ""); } })
       .catch((failure: unknown) => { if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "Research could not be loaded. Check the API and retry."); })
       .finally(() => { if (!controller.signal.aborted) setBusy(false); });
+    readRows<Study>(`${apiUrl}/research/studies?limit=${PAGE_SIZE}&offset=0`, token, controller.signal)
+      .then(rows => { if (!controller.signal.aborted) { setStudies(rows); setSelectedStudy(rows[0]?.id ?? ""); } })
+      .catch((failure: unknown) => { if (!controller.signal.aborted) setStudyError(failure instanceof Error ? failure.message : "Frozen studies could not be loaded."); })
+      .finally(() => { if (!controller.signal.aborted) setStudyBusy(false); });
     return () => controller.abort();
   }, [apiUrl, token, candidateOffset, refresh]);
+
+  useEffect(() => {
+    setRecommendations([]); setRecommendationError("");
+    if (!selectedStudy) { setRecommendationBusy(false); return; }
+    const controller = new AbortController();
+    setRecommendationBusy(true);
+    readRows<Recommendation>(`${apiUrl}/research/studies/${encodeURIComponent(selectedStudy)}/recommendations?limit=${PAGE_SIZE}&offset=0`, token, controller.signal)
+      .then(rows => { if (!controller.signal.aborted) setRecommendations(rows); })
+      .catch((failure: unknown) => { if (!controller.signal.aborted) setRecommendationError(failure instanceof Error ? failure.message : "Recommendations could not be loaded."); })
+      .finally(() => { if (!controller.signal.aborted) setRecommendationBusy(false); });
+    return () => controller.abort();
+  }, [apiUrl, token, selectedStudy, refresh]);
 
   useEffect(() => {
     if (!compareAll) return;
@@ -127,10 +153,19 @@ export function ResearchWorkspace({apiUrl, token}: {apiUrl: string; token: strin
     return () => controller.abort();
   }, [apiUrl, token, selected, trialOffset]);
   const candidate = candidates.find(row => row.id === selected);
+  const study = studies.find(row => row.id === selectedStudy);
   return <section className="paper-workspace app-section-page research-workspace" aria-label="Strategy research">
-    <div className="workspace-section-heading"><div><span className="panel-kicker">RESEARCH · READ ONLY</span><h2>Strategy research</h2></div><div><button className="refresh-button" disabled={busy || trialBusy || allTrialBusy} onClick={() => setRefresh(value => value + 1)} type="button">Refresh evidence</button> <button className="refresh-button" disabled={busy || trialBusy || allTrialBusy} onClick={() => { setCompareAll(value => !value); setAllTrialOffset(0); }} type="button">{compareAll ? "Selected hypothesis" : "Compare all trials"}</button></div></div>
+    <div className="workspace-section-heading"><div><span className="panel-kicker">RESEARCH · READ ONLY</span><h2>Strategy research</h2></div><div><button className="refresh-button" disabled={busy || trialBusy || allTrialBusy || studyBusy || recommendationBusy} onClick={() => setRefresh(value => value + 1)} type="button">Refresh evidence</button> <button className="refresh-button" disabled={busy || trialBusy || allTrialBusy || studyBusy || recommendationBusy} onClick={() => { setCompareAll(value => !value); setAllTrialOffset(0); }} type="button">{compareAll ? "Selected hypothesis" : "Compare all trials"}</button></div></div>
     <p>Review hypotheses and chronological replay results before considering a strategy. Research results stay separate from your paper portfolio.</p>
     <div className="research-notice">Recommendations are not qualified yet. Profit probability is unavailable. Automatic promotion is disabled.</div>
+    {studyBusy ? <p role="status">Loading frozen study…</p> : studyError ? <p role="alert" className="error-banner">{studyError}</p> : study ? <section className="research-trial" aria-label="Frozen parent study and recommendations">
+      <div className="workspace-section-heading"><h3>Frozen NIFTY parent study</h3><span className="research-status">Research only</span></div>
+      {studies.length > 1 ? <label className="research-picker">Study<select value={selectedStudy} onChange={event => setSelectedStudy(event.target.value)}>{studies.map(row => <option key={row.id} value={row.id}>{row.study_key}</option>)}</select></label> : <p className="features-note">{study.study_key}</p>}
+      <p>{study.manifest.objective}</p>
+      <dl className="research-facts"><dt>Incumbent</dt><dd>{study.manifest.incumbent_rule_version}</dd><dt>Search budget</dt><dd>{study.manifest.parent_search_budget} declared trials</dd><dt>Protected holdout</dt><dd>{study.manifest.holdout_start} → {study.manifest.holdout_end}</dd><dt>Cost model</dt><dd>{study.manifest.cost_model_id}</dd></dl>
+      <p className="features-note">Study identity {study.manifest_digest} · execution disabled · promotion ineligible.</p>
+      {recommendationBusy ? <p role="status">Loading recommendation snapshots…</p> : recommendationError ? <p role="alert" className="error-banner">{recommendationError}</p> : recommendations.length ? <><h4>Latest recommendation snapshots</h4><ul>{recommendations.map(item => <li key={item.id}><strong>{item.decision}</strong> · {item.reason_code.replaceAll("_", " ")} · expires {new Date(item.expires_at).toLocaleDateString("en-IN")}<br /><small>Selector {item.snapshot.selector_version ?? "unknown"} · {item.snapshot.rejected_reasons?.join("; ") ?? "No rejection detail recorded."}</small></li>)}</ul></> : <p className="workspace-empty">No recommendation snapshots are recorded. The system abstains until reviewed evidence is sufficient.</p>}
+    </section> : null}
     {error ? <p role="alert" className="error-banner">{error}</p> : null}
     {busy ? <p role="status">Loading research…</p> : !error && !candidates.length ? <p className="workspace-empty">{candidateOffset ? "No more hypotheses on this page." : "No research hypotheses are registered for this account. Your paper positions are unchanged; synthetic demonstrations are kept in a disposable database."}</p> : null}
     {compareAll ? <><h3>All recorded trials</h3>{allTrialBusy ? <p role="status">Loading all trials…</p> : allTrialError ? <p role="alert" className="error-banner">{allTrialError}</p> : !allTrials.length ? <p className="workspace-empty">No trials are recorded across this account. No performance or probability can be inferred.</p> : <div className="research-trials">{allTrials.map(trial => <ResearchTrialCard key={trial.id} trial={trial} />)}</div>}<div className="research-pagination"><button type="button" disabled={allTrialBusy || allTrialOffset === 0} onClick={() => setAllTrialOffset(value => Math.max(0, value - PAGE_SIZE))}>Previous trials</button><span>Page {allTrialOffset / PAGE_SIZE + 1}</span><button type="button" disabled={allTrialBusy || allTrials.length < PAGE_SIZE} onClick={() => setAllTrialOffset(value => value + PAGE_SIZE)}>Next trials</button></div></> : <>{candidates.length ? <label className="research-picker">Research hypothesis<select value={selected} onChange={event => {setTrials([]); setTrialOffset(0); setSelected(event.target.value);}}>{candidates.map(row => <option key={row.id} value={row.id}>{row.definition.name} · {row.definition.market}</option>)}</select></label> : null}

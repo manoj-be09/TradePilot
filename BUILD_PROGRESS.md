@@ -5,6 +5,11 @@
 - After the owner rebuilt `api`, `paper-worker` and `web`, the local web endpoint returned HTTP 200, `/health` returned HTTP 200 with `live_trading_enabled=false`, and `/ready/paper-worker` returned HTTP 200 with `status=ready`.
 - This verifies service reachability and safety flags only. Populated PostgreSQL research acceptance, real-session Upstox evidence and connected Edge visual verification remain separate gates.
 
+## 2026-10-19 — Research workspace surfaces frozen studies
+
+- The read-only Research workspace now shows the newest frozen NIFTY parent study, its incumbent, declared search budget, protected holdout, cost model and latest recommendation/abstention snapshots. Study and recommendation loading remains account-scoped and execution-disabled; missing studies or snapshots do not create a recommendation.
+- Validation: frontend TypeScript lint passed. A production build reached compilation but failed while collecting the existing `/_not-found` and `/manifest.webmanifest` generated pages; this is a Next.js build-artifact/environment issue still requiring a clean host rebuild. No runtime container or account data was changed by this source-only increment.
+
 ## 2026-10-19 — Research records now open newest-first
 
 - Account-scoped studies, recommendations, candidates and trials now sort by descending `created_at` with descending ID tie-breaks. This keeps the latest research decisions visible first without changing evidence, budgets, execution, promotion or account isolation.

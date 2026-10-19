@@ -1,5 +1,7 @@
 # Research registry — foundation
 
+2026-10-19 — Trial-derived recommendation requests now reject timezone-naive `expires_at` values and normalize timezone-aware values to UTC before persistence. This closes a client-contract ambiguity without selecting, executing, promoting, or changing any existing recommendation. Focused research/recommendation and lease tests passed 14/14; the full repository regression passed 536 tests, 11 skipped, 3 warnings.
+
 2026-10-19 — The authenticated stored NIFTY replay route now runs under the fenced `research-evaluator` lease with a bounded 30–600 second duration before consuming the canonical parent budget. Busy/stale/invalid/failed jobs fail closed; saved engine assessments remain unqualified, promotion-ineligible and separate from operator results. 58 focused research/evaluator tests passed. After the owner rebuilt the services, the isolated PostgreSQL scheduling suite passed **3 tests** against temporary schemas: concurrent family-slot reservation, generation-fenced lease takeover, and idempotent same-evidence finalization. A disposable process-termination drill also passed lease-expiry takeover with a newer fencing generation. The runner now records cooperative cancellation as a generic, fenced `CANCELLED` outcome; no automatic scheduler or promotion exists.
 
 This slice records hypotheses and evaluation bookkeeping. It does not discover sources, execute rule text, run a backtest, score profitability, train a probability model, schedule daily evaluations or promote anything into paper/live execution.

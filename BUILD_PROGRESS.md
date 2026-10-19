@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-19
 
+## 2026-10-19 — Recommendation expiry contract hardening
+
+- Trial-derived recommendation requests now reject timezone-naive expiry timestamps and normalize timezone-aware values to UTC before persistence. This keeps prospective recommendation expiry comparable across API clients without changing selection, execution, promotion, or account data.
+- Validation: focused research/recommendation and lease tests passed **14/14**; changed-file Ruff and `git diff --check` passed. The full repository regression after this change passed **536 tests, 11 skipped, 3 warnings**.
+
 ## Six-gate release status after the current implementation pass
 
 - **Performance reporting and reconciliation:** software complete; account-scoped descriptive reports, paper/equity ledger checks, charge provenance and mismatch fail-closed behavior are covered by the regression suite. This is not a claim of complete broker-tax costs or full historical equity chronology where source data are missing.

@@ -14,6 +14,7 @@ import { TradingDashboard } from "./TradingDashboard";
 import { ChartWorkspace } from "./ChartWorkspace";
 import { ResearchWorkspace } from "./ResearchWorkspace";
 import { usePaperEntry } from "./usePaperEntry";
+import { STRATEGY_CATALOG, STRATEGY_CATALOG_META, StrategyMarketBias } from "./strategyCatalog";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 
@@ -156,33 +157,6 @@ type PaperStrategy = {
   estimated_win_probability_pct: string | null;
   average_net_pnl: string | null;
   expected_net_pnl: string | null;
-};
-
-type StrategyMarketBias = "BULLISH" | "BEARISH" | "SIDEWAYS" | "VOLATILITY";
-
-type StrategyCatalogMeta = {
-  bias: StrategyMarketBias;
-  label: string;
-  note: string;
-};
-
-// Original TradingPilot summaries based on the public OptionStrat strategy taxonomy.
-// This metadata is descriptive only; it never creates a forecast or enables live orders.
-const STRATEGY_CATALOG_META: Record<string, StrategyCatalogMeta> = {
-  long_call: { bias: "BULLISH", label: "Bullish", note: "Directional upside" },
-  bull_call_spread: { bias: "BULLISH", label: "Bullish", note: "Defined-risk upside" },
-  bull_put_spread: { bias: "BULLISH", label: "Bullish", note: "Income with downside buffer" },
-  long_put: { bias: "BEARISH", label: "Bearish", note: "Directional downside" },
-  bear_put_spread: { bias: "BEARISH", label: "Bearish", note: "Defined-risk downside" },
-  bear_call_spread: { bias: "BEARISH", label: "Bearish", note: "Income with upside buffer" },
-  iron_condor: { bias: "SIDEWAYS", label: "Sideways", note: "Range-bound income" },
-  iron_butterfly: { bias: "SIDEWAYS", label: "Sideways", note: "Tighter range income" },
-  long_call_condor: { bias: "SIDEWAYS", label: "Sideways", note: "Defined-risk range" },
-  long_put_condor: { bias: "SIDEWAYS", label: "Sideways", note: "Defined-risk range" },
-  inverse_iron_condor: { bias: "VOLATILITY", label: "Volatility", note: "Move outside the range" },
-  long_straddle: { bias: "VOLATILITY", label: "Volatility", note: "Large move either way" },
-  long_strangle: { bias: "VOLATILITY", label: "Volatility", note: "Cheaper large-move setup" },
-  guts: { bias: "VOLATILITY", label: "Volatility", note: "Defined-risk ITM move" },
 };
 
 type CustomLegDraft = {
@@ -2542,7 +2516,7 @@ export default function Home() {
               <div className="strategy-color-legend" aria-label="Strategy evidence legend"><span className="strategy-color-legend--green">Green · stronger qualified evidence</span><span className="strategy-color-legend--amber">Amber · limited or insufficient evidence</span><span className="strategy-color-legend--red">Red · blocked or unavailable</span></div>
               <div className="strategy-bias-filter" aria-label="Strategy market bias filter">
                 <span>Market view</span>
-                {(["ALL", "BULLISH", "BEARISH", "SIDEWAYS", "VOLATILITY"] as const).map((bias) => (
+                {(["ALL", "BULLISH", "BEARISH", "SIDEWAYS", "VOLATILITY", "INCOME", "SPECIAL"] as const).map((bias) => (
                   <button className={`strategy-bias-chip strategy-bias-chip--${bias.toLowerCase()} ${strategyBiasFilter === bias ? "selected" : ""}`} key={bias} onClick={() => { setStrategyBiasFilter(bias); setShowAllStrategies(false); }} type="button">
                     {bias === "ALL" ? "All" : bias[0] + bias.slice(1).toLowerCase()}
                   </button>
@@ -2588,6 +2562,19 @@ export default function Home() {
               </section>
               <button className="inline-button" aria-expanded={showAllStrategies} onClick={() => setShowAllStrategies(value => !value)} type="button">{showAllStrategies ? "Show fewer strategies" : `＋ All ${filteredRankedStrategies.length} ${strategyBiasFilter === "ALL" ? "strategies" : `${strategyBiasFilter.toLowerCase()} strategies`}`}</button>
               <details className="workspace-disclosure"><summary>Ranking &amp; evidence details</summary>              <p className="features-note">Ranking uses observed NIFTY put/call open interest when available, current-quote expiry payoff, and a small risk-normalized adjustment only after 20 qualified automatic closes in the same observed market condition with one unchanged rule/stop configuration. IV rank needs stored history and is currently unavailable; missing values never count as low IV or bearish. Manual, incomplete and mixed-configuration results cannot improve ranking. This is a research comparison, not a calibrated profit forecast. “Unbounded” profit is theoretical at expiry.</p></details>
+              <section className="strategy-catalog" aria-label="Full public strategy catalog">
+                <div className="strategy-catalog-heading"><div><strong>Full public strategy catalog</strong><small>{STRATEGY_CATALOG.length} public templates · filter by market view</small></div><span>Execution status is explicit</span></div>
+                <div className="strategy-catalog-grid">
+                  {STRATEGY_CATALOG.filter((entry) => strategyBiasFilter === "ALL" || entry.bias === strategyBiasFilter).map((entry) => (
+                    <article className={`strategy-catalog-card strategy-catalog-card--${entry.bias.toLowerCase()} strategy-catalog-card--${entry.status.toLowerCase()}`} key={entry.key}>
+                      <div className="strategy-catalog-card-top"><strong>{entry.name}</strong><span>{entry.proficiency}</span></div>
+                      <span className="strategy-bias-tag">{entry.label}</span>
+                      <p>{entry.summary}</p>
+                      <small>{entry.status === "PAPER_SUPPORTED" ? "Available in paper selector" : entry.status === "ENGINE_SUPPORT_PENDING" ? "Cataloged · engine support pending" : "Cataloged · research only"}</small>
+                    </article>
+                  ))}
+                </div>
+              </section>
               {isCustomStrategy ? (
                 <div className="custom-leg-builder">
                   <div className="custom-leg-heading">

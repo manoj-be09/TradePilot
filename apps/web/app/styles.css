@@ -376,11 +376,34 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
 .strategy-bias-chip--bearish.selected { border-color: #e1a5a5; background: #fff1f1; color: #9d3f3f; }
 .strategy-bias-chip--sideways.selected { border-color: #e4c57c; background: #fff8e8; color: #8a6215; }
 .strategy-bias-chip--volatility.selected { border-color: #9ebde4; background: #eff6ff; color: #2e5d91; }
+.strategy-bias-chip--income.selected { border-color: #b7a7df; background: #f5f0ff; color: #5f478d; }
+.strategy-bias-chip--special.selected { border-color: #b5bfc7; background: #f2f5f7; color: #4d5e69; }
 .strategy-library-note { margin: 8px 0 10px; color: var(--ink-muted); font-size: 10px; line-height: 1.5; }
 .strategy-bias-tag { display: inline-block !important; width: fit-content; margin: 0 0 7px !important; border-radius: 999px; padding: 4px 7px; background: #eef5ef; color: #276945 !important; font-size: 9px !important; font-weight: 800; text-transform: none !important; }
 .strategy-bias--bearish .strategy-bias-tag { background: #fff0f0; color: #9d3f3f !important; }
 .strategy-bias--sideways .strategy-bias-tag { background: #fff7e7; color: #8a6215 !important; }
 .strategy-bias--volatility .strategy-bias-tag { background: #eff6ff; color: #2e5d91 !important; }
+.strategy-catalog { margin-top: 18px; border-top: 1px solid #e5ebe6; padding-top: 14px; }
+.strategy-catalog-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.strategy-catalog-heading strong, .strategy-catalog-heading small { display: block; }
+.strategy-catalog-heading small { margin-top: 3px; color: var(--ink-muted); font-size: 10px; }
+.strategy-catalog-heading > span { color: var(--ink-muted); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.strategy-catalog-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.strategy-catalog-card { min-height: 116px; border: 1px solid #dfe7e1; border-radius: 10px; padding: 10px; background: #fff; }
+.strategy-catalog-card--bullish { border-top: 3px solid #76bd8e; }
+.strategy-catalog-card--bearish { border-top: 3px solid #df9797; }
+.strategy-catalog-card--sideways { border-top: 3px solid #d9b86d; }
+.strategy-catalog-card--volatility { border-top: 3px solid #87acd4; }
+.strategy-catalog-card--income { border-top: 3px solid #aa93d3; }
+.strategy-catalog-card--special { border-top: 3px solid #a8b4bc; }
+.strategy-catalog-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.strategy-catalog-card-top strong { color: var(--ink); font-size: 11px; }
+.strategy-catalog-card-top span { color: var(--ink-muted); font-size: 8px; font-weight: 800; text-transform: uppercase; }
+.strategy-catalog-card p { min-height: 30px; margin: 0 0 7px; color: var(--ink-muted); font-size: 9px; line-height: 1.35; }
+.strategy-catalog-card > small { color: var(--ink-muted); font-size: 9px; }
+.strategy-catalog-card--paper_supported > small { color: #21784c; font-weight: 800; }
+.strategy-catalog-card--engine_support_pending > small { color: #8a6215; font-weight: 800; }
+.strategy-catalog-card--research_only > small { color: #a84444; font-weight: 800; }
 .strategy-card-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 8px 0; }
 .strategy-card-metrics span { margin: 0; border-radius: 6px; padding: 7px; background: rgba(236,242,236,.7); font-size: 8px; }
 .strategy-card-metrics b { font-size: 12px; text-transform: none; }
@@ -510,6 +533,7 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
   .features-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .paper-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .strategy-scorecards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .strategy-catalog-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .equity-strategy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -565,6 +589,7 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
   .chain-footnote, .page-footer { flex-direction: column; }
   .paper-workspace { padding: 18px; }
   .strategy-scorecards { grid-template-columns: 1fr; }
+  .strategy-catalog-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .equity-strategy-grid { grid-template-columns: 1fr; }
   .paper-heading { flex-direction: column; gap: 14px; }
   .paper-actions { width: 100%; justify-content: space-between; }

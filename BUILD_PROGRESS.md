@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-19
 
+## 2026-10-19 — Full regression after research scheduling change
+
+- Full repository regression passed: **533 passed, 11 skipped, 3 warnings**. The skips are PostgreSQL-runtime cases requiring `TEST_POSTGRES_URL`; there were no test failures.
+- `docker compose config` was inspected, but Docker API access from this session is denied by the Windows named pipe. No service rebuild, volume mutation, account mutation, or deployment acceptance is claimed here.
+
 ## 2026-10-19 — Bounded NIFTY research scheduling wired through fenced lease
 
 - The authenticated stored-replay route now executes through the existing `research-evaluator` fenced lease before consuming the frozen study budget and persisting its unqualified engine assessment. Busy, stale, invalid, and failed jobs fail closed; no order, promotion, probability, or strategy replacement is possible.

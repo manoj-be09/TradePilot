@@ -116,6 +116,12 @@ def test_paper_workflow_is_authenticated_and_persists_simulated_fills(client, mo
         "iron_butterfly",
         "long_call_condor",
         "long_put_condor",
+        "long_call_butterfly",
+        "long_put_butterfly",
+        "short_call_butterfly",
+        "short_put_butterfly",
+        "strip",
+        "strap",
         "inverse_iron_condor",
         "guts",
         "long_straddle",
@@ -420,6 +426,69 @@ def test_iron_condor_records_all_legs_and_bounded_maximum_loss(client, monkeypat
     assert len(response.json()["legs"]) == 4
     assert Decimal(response.json()["entry_cash_flow"]) == Decimal("450.00")
     assert Decimal(response.json()["max_loss"]) == Decimal("800.00")
+
+
+def test_ratio_templates_record_ratio_scaled_quantities_and_finite_risk(client, monkeypatch):
+    provider = FakeUpstoxProvider()
+
+    original_chain = provider.get_option_chain
+
+    async def ratio_chain(underlying, expiry):
+        chain = await original_chain(underlying, expiry)
+        contracts = [
+            contract.model_copy(
+                update={
+                    "quote": contract.quote.model_copy(
+                        update={
+                            "bid": (
+                                Decimal("80")
+                                if contract.strike == Decimal("25000")
+                                else contract.quote.bid
+                            ),
+                            "ask": (
+                                Decimal("81")
+                                if contract.strike == Decimal("25000")
+                                else contract.quote.ask
+                            ),
+                            "last_price": (
+                                Decimal("80.5")
+                                if contract.strike == Decimal("25000")
+                                else contract.quote.last_price
+                            ),
+                        }
+                    )
+                }
+            )
+            for contract in chain.contracts
+        ]
+        return chain.model_copy(update={"contracts": contracts})
+
+    provider.get_option_chain = ratio_chain
+    monkeypatch.setattr("apps.api.main.get_market_data_provider", lambda: provider)
+    headers = _token(client)
+    expected_quantities = {
+        "long_call_butterfly": [25, 50, 25],
+        "long_put_butterfly": [25, 50, 25],
+        "short_call_butterfly": [25, 50, 25],
+        "short_put_butterfly": [25, 50, 25],
+        "strip": [25, 50],
+        "strap": [50, 25],
+    }
+    for strategy_key, quantities in expected_quantities.items():
+        response = client.post(
+            "/paper/trades",
+            headers={**headers, "Idempotency-Key": str(uuid4())},
+            json={
+                "strategy_key": strategy_key,
+                "expiry": provider.expiry.isoformat(),
+                "reference_strike": "25000",
+                "lots": 1,
+            },
+        )
+        assert response.status_code == 201, f"{strategy_key}: {response.text}"
+        payload = response.json()
+        assert [leg["quantity_units"] for leg in payload["legs"]] == quantities
+        assert Decimal(payload["max_loss"]) >= 0
 
 
 def test_custom_bull_call_spread_uses_shared_quote_and_risk_controls(client, monkeypatch):

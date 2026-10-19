@@ -185,7 +185,9 @@ async def run_single_expiry_replay(
             raise BacktestDataError(
                 f"Historical entry or exit price is unusable for {contract.trading_symbol}"
             )
-        signed_lots = lots if strategy_leg.side == "BUY" else -lots
+        signed_lots = lots * strategy_leg.quantity_ratio
+        if strategy_leg.side == "SELL":
+            signed_lots = -signed_lots
         gross_pnl = (exit_price - entry_price) * signed_lots * lot_size
         results.append(
             BacktestLegResult(
@@ -194,7 +196,7 @@ async def run_single_expiry_replay(
                 option_type=strategy_leg.option_type,
                 side=strategy_leg.side,
                 strike=strike,
-                quantity_units=lots * lot_size,
+                quantity_units=lots * strategy_leg.quantity_ratio * lot_size,
                 entry_timestamp=entry_bar.timestamp,
                 entry_price=entry_price,
                 exit_timestamp=exit_bar.timestamp,

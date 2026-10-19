@@ -10,6 +10,11 @@ class StrategyLeg:
     option_type: OptionType
     side: TradeSide
     strike_offset: int
+    quantity_ratio: int = 1
+
+    def __post_init__(self) -> None:
+        if self.quantity_ratio < 1:
+            raise ValueError("Strategy leg quantity ratio must be at least one")
 
 
 @dataclass(frozen=True)
@@ -113,9 +118,70 @@ STRATEGY_REGISTRY = StrategyRegistry(
             ),
         ),
         StrategyDefinition(
+            "long_call_butterfly",
+            "Long call butterfly",
+            "Buy one lower-strike call, sell two middle calls, and buy one higher-strike call.",
+            (
+                StrategyLeg("CE", "BUY", -1),
+                StrategyLeg("CE", "SELL", 0, 2),
+                StrategyLeg("CE", "BUY", 1),
+            ),
+        ),
+        StrategyDefinition(
+            "long_put_butterfly",
+            "Long put butterfly",
+            "Buy one lower-strike put, sell two middle puts, and buy one higher-strike put.",
+            (
+                StrategyLeg("PE", "BUY", -1),
+                StrategyLeg("PE", "SELL", 0, 2),
+                StrategyLeg("PE", "BUY", 1),
+            ),
+        ),
+        StrategyDefinition(
+            "short_call_butterfly",
+            "Short call butterfly",
+            "Sell the outer calls and buy two middle calls for a bounded move-seeking structure.",
+            (
+                StrategyLeg("CE", "SELL", -1),
+                StrategyLeg("CE", "BUY", 0, 2),
+                StrategyLeg("CE", "SELL", 1),
+            ),
+        ),
+        StrategyDefinition(
+            "short_put_butterfly",
+            "Short put butterfly",
+            "Sell the outer puts and buy two middle puts for a bounded move-seeking structure.",
+            (
+                StrategyLeg("PE", "SELL", -1),
+                StrategyLeg("PE", "BUY", 0, 2),
+                StrategyLeg("PE", "SELL", 1),
+            ),
+        ),
+        StrategyDefinition(
+            "strip",
+            "Strip",
+            "Buy one put and two calls at the reference strike for a downside-skewed "
+            "move structure.",
+            (
+                StrategyLeg("PE", "BUY", 0),
+                StrategyLeg("CE", "BUY", 0, 2),
+            ),
+        ),
+        StrategyDefinition(
+            "strap",
+            "Strap",
+            "Buy two calls and one put at the reference strike for an upside-skewed "
+            "move structure.",
+            (
+                StrategyLeg("CE", "BUY", 0, 2),
+                StrategyLeg("PE", "BUY", 0),
+            ),
+        ),
+        StrategyDefinition(
             "inverse_iron_condor",
             "Inverse iron condor",
-            "Buy the inner put and call wings and sell the outer wings for a defined-risk move strategy.",
+            "Buy the inner put and call wings and sell the outer wings for a "
+            "defined-risk move strategy.",
             (
                 StrategyLeg("PE", "SELL", -2),
                 StrategyLeg("PE", "BUY", -1),

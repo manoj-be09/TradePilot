@@ -86,7 +86,7 @@ def test_versions_are_append_only_user_scoped_and_require_latest_base(client):
     assert v1["definition"]["template_key"] == "long_call"
     assert v1["definition"]["template_version"] == "1.0.0"
     assert v1["definition"]["template_legs"] == [
-        {"option_type": "CE", "side": "BUY", "strike_offset": 0}
+        {"option_type": "CE", "side": "BUY", "strike_offset": 0, "quantity_ratio": 1}
     ]
     assert len(v1["definition_hash"]) == 64
     assert client.get(f"/strategies/versions/{v1['id']}", headers=second_user).status_code == 404

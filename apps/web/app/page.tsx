@@ -146,7 +146,7 @@ type PaperStrategy = {
   version: string;
   name: string;
   description: string;
-  legs: { option_type: "CE" | "PE"; side: "BUY" | "SELL"; strike_offset: number }[];
+  legs: { option_type: "CE" | "PE"; side: "BUY" | "SELL"; strike_offset: number; quantity_ratio: number }[];
   closed_trade_count: number;
   winning_trade_count: number;
   qualified_automated_trade_count: number;

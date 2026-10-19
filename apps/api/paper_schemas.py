@@ -20,6 +20,7 @@ class StrategyLegDefinitionResponse(BaseModel):
     option_type: Literal["CE", "PE"]
     side: Literal["BUY", "SELL"]
     strike_offset: int
+    quantity_ratio: int = Field(default=1, ge=1, le=10)
 
 
 class OptionMarketConditionEvidenceResponse(BaseModel):

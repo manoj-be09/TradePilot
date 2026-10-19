@@ -149,6 +149,26 @@ def test_single_expiry_replay_uses_prior_spot_and_historical_option_ohlc():
     assert changed_cost.observed_input_digest != result.observed_input_digest
 
 
+def test_ratio_strategy_replay_scales_leg_quantities():
+    expiry = date.today() - timedelta(days=7)
+    entry = expiry - timedelta(days=5)
+    provider = FakeHistoricalProvider(expiry, entry, expiry)
+    strategy = get_strategy("strip")
+    assert strategy is not None
+
+    result = _finish_immediate(
+        run_single_expiry_replay(
+            provider, strategy, expiry=expiry, entry_date=entry,
+            exit_date=expiry, lots=1,
+        )
+    )
+
+    assert [(leg.side, leg.quantity_units) for leg in result.legs] == [
+        ("BUY", 25),
+        ("BUY", 50),
+    ]
+    assert result.maximum_loss_at_entry > 0
+
 def test_replay_rejects_duplicate_or_invalid_daily_option_bars():
     expiry = date.today() - timedelta(days=7)
     entry = expiry - timedelta(days=5)

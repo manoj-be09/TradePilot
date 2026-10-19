@@ -299,7 +299,7 @@ def _strategy_contracts(
     reference_strike: Decimal,
     expiry: date,
     contracts: list[OptionContract],
-) -> list[tuple[OptionContract, str]]:
+) -> list[tuple[OptionContract, str, int]]:
     expiry_contracts = [contract for contract in contracts if contract.expiry == expiry]
     strikes = sorted({contract.strike for contract in expiry_contracts})
     try:
@@ -308,7 +308,7 @@ def _strategy_contracts(
         raise HTTPException(
             status_code=422, detail="Selected strike is unavailable for this expiry"
         ) from None
-    selections: list[tuple[OptionContract, str]] = []
+    selections: list[tuple[OptionContract, str, int]] = []
     for leg in strategy.legs:
         leg_index = index + leg.strike_offset
         if leg_index < 0 or leg_index >= len(strikes):
@@ -328,7 +328,7 @@ def _strategy_contracts(
         )
         if match is None:
             raise HTTPException(status_code=422, detail="A required option contract is unavailable")
-        selections.append((match, leg.side))
+        selections.append((match, leg.side, leg.quantity_ratio))
     return selections
 
 
@@ -915,7 +915,10 @@ def _replay_strategy_version(
         raise HTTPException(409, "Index-specific strategy replay is not enabled yet")
     current_legs = [
         StrategyLegDefinitionResponse(
-            option_type=leg.option_type, side=leg.side, strike_offset=leg.strike_offset
+            option_type=leg.option_type,
+            side=leg.side,
+            strike_offset=leg.strike_offset,
+            quantity_ratio=leg.quantity_ratio,
         )
         for leg in strategy.legs
     ]
@@ -1356,6 +1359,7 @@ def paper_strategies(
                     option_type=leg.option_type,
                     side=leg.side,
                     strike_offset=leg.strike_offset,
+                    quantity_ratio=leg.quantity_ratio,
                 )
                 for leg in strategy.legs
             ],
@@ -1442,7 +1446,10 @@ def _strategy_version_definition(
         template_version=strategy.version,
         template_legs=[
             StrategyLegDefinitionResponse(
-                option_type=leg.option_type, side=leg.side, strike_offset=leg.strike_offset
+                option_type=leg.option_type,
+                side=leg.side,
+                strike_offset=leg.strike_offset,
+                quantity_ratio=leg.quantity_ratio,
             )
             for leg in strategy.legs
         ],
@@ -2072,7 +2079,7 @@ def _armed_leg_quote_evidence(
         return {"status": "CONTRACT_UNAVAILABLE", "legs": []}
     by_key = {leg.instrument_token: leg for leg in chain.contracts}
     legs: list[dict[str, object]] = []
-    for contract, side in selected:
+    for contract, side, quantity_ratio in selected:
         observed = by_key.get(contract.instrument_key)
         quote = observed.quote if observed is not None else None
         side_quote = (quote.ask if side == "BUY" else quote.bid) if quote else None
@@ -2081,7 +2088,7 @@ def _armed_leg_quote_evidence(
             "option_type": contract.option_type,
             "strike": str(contract.strike),
             "side": side,
-            "quantity_units": lots * contract.lot_size,
+            "quantity_units": lots * quantity_ratio * contract.lot_size,
             "quote_timestamp": quote.timestamp.isoformat() if quote else None,
             "book_as_of": quote.book_as_of.isoformat()
             if quote and quote.book_as_of else None,
@@ -2369,7 +2376,10 @@ async def _open_paper_trade_with_provider(
         template_selections = _strategy_contracts(
             strategy, body.reference_strike, body.expiry, option_contracts
         )
-        selected = [(contract, side, body.lots) for contract, side in template_selections]
+        selected = [
+            (contract, side, body.lots * quantity_ratio)
+            for contract, side, quantity_ratio in template_selections
+        ]
         strategy_key = strategy.key
         strategy_name = strategy.name
         reference_strike = body.reference_strike

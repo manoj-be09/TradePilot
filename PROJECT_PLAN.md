@@ -317,7 +317,7 @@ Milestones are dependency ordered. They are not calendar promises; estimate effo
 
 ### First engineering backlog
 
-1. Correct multi-expiry exit snapshot metadata (`chain` versus `trade_chain`) and add a two-expiry regression.
+1. ✅ Correct multi-expiry exit snapshot metadata (`chain` versus `trade_chain`) and add a two-expiry regression. The regression now proves each open trade records its own expiry's quote timestamp; future calendar/diagonal execution still needs separate multi-expiry leg modeling and settlement/margin evidence.
 2. Add DELETE to allowed browser methods where appropriate and test authenticated preflight. Saved-preset UI still needs implementation.
 3. Define strict freshness/session behavior for paper fills; distinguish educational overrides from qualification-grade simulation.
 4. Add persisted idempotency and replay protection to entry commands; a retry must return the same result, not open another position.

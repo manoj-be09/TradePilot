@@ -1,5 +1,11 @@
 # Build progress — updated 2026-10-19
 
+## 2026-10-19 — Bounded NIFTY research scheduling wired through fenced lease
+
+- The authenticated stored-replay route now executes through the existing `research-evaluator` fenced lease before consuming the frozen study budget and persisting its unqualified engine assessment. Busy, stale, invalid, and failed jobs fail closed; no order, promotion, probability, or strategy replacement is possible.
+- Lease duration is bounded to 30–600 seconds. The owner identity is account-scoped in the audit path while the shared lease prevents concurrent evaluator mutations. The result remains `promotion_eligible=false` and keeps engine evidence separate from operator records.
+- Validation: **57 focused research/evaluator tests passed**, 3 PostgreSQL concurrency tests skipped because `TEST_POSTGRES_URL` is unavailable, frontend TypeScript passed, Ruff, Python compilation, and `git diff --check` passed. PostgreSQL scheduling and crash-recovery deployment acceptance remain an owner/CI gate.
+
 ## 2026-10-19 — F&O UI and strategy catalog software slice completed
 
 - Completed the software-side F&O workspace slice: Futures & Options opens by default, NIFTY 50 is the default instrument, the strategy selector exposes every catalog entry with unsupported execution visibly gated, ranked paper candidates include payoff/risk/evidence context, and the full catalog is grouped by market view with search, bias filtering, availability filtering, paper-first ordering, responsive controls, and explicit status counts.

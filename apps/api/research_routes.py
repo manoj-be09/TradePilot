@@ -27,7 +27,7 @@ from packages.regime.candidate_registry import (
     register_candidate,
 )
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
-from packages.regime.registered_evaluator import record_registered_nifty_replay
+from packages.regime.registered_evaluator import record_registered_nifty_replay_job
 from packages.regime.research_evidence import EvidenceRecord, record_evidence
 from packages.regime.research_readiness import assess_trial
 from packages.regime.research_recommendations import (
@@ -46,6 +46,7 @@ class NiftyReplayRecordRequest(BaseModel):
 
     study_id: UUID
     run_id: UUID
+    lease_seconds: int = Field(default=120, ge=30, le=600)
 
 
 class TrialRecommendationRequest(BaseModel):
@@ -242,9 +243,14 @@ def record_nifty_replay(trial_id: UUID, body: NiftyReplayRecordRequest,
     try:
         replay = ScheduledOptionsBacktestResult.model_validate(run.result_data)
         study = FrozenNiftyStudy.model_validate(study_row.manifest)
-        saved = record_registered_nifty_replay(session, user.id, trial_id, study, replay)
+        outcome, saved = record_registered_nifty_replay_job(
+            session, user.id, trial_id, study, replay,
+            job_owner=f"research-api:{user.id}", lease_seconds=body.lease_seconds,
+        )
     except ValueError:
         raise HTTPException(409, "Stored replay does not match the frozen NIFTY study") from None
+    if outcome.status != "COMPLETED" or saved is None:
+        raise HTTPException(409, outcome.detail)
     return trial_view(trial, saved, list(session.scalars(select(ResearchEvidence).where(
         ResearchEvidence.trial_id == trial.id).order_by(ResearchEvidence.key))))
 

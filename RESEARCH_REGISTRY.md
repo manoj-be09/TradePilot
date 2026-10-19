@@ -1,5 +1,7 @@
 # Research registry — foundation
 
+2026-10-19 — The authenticated stored NIFTY replay route now runs under the fenced `research-evaluator` lease with a bounded 30–600 second duration before consuming the canonical parent budget. Busy/stale/invalid/failed jobs fail closed; saved engine assessments remain unqualified, promotion-ineligible and separate from operator results. 57 focused research/evaluator tests passed; PostgreSQL scheduling/concurrency and crash-recovery deployment acceptance remain unverified without `TEST_POSTGRES_URL`.
+
 This slice records hypotheses and evaluation bookkeeping. It does not discover sources, execute rule text, run a backtest, score profitability, train a probability model, schedule daily evaluations or promote anything into paper/live execution.
 
 Authenticated routes:

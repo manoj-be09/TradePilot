@@ -16,6 +16,7 @@ from packages.database.models import (
     ResearchStudy,
     ResearchTrial,
     User,
+    WorkerLease,
 )
 from packages.regime.candidate_registry import (
     CandidateDefinition,
@@ -239,6 +240,8 @@ def test_authenticated_route_records_only_owned_stored_replay():
         assert visible["engine_evaluation"]["result"]["report"]["status"] == (
             "INSUFFICIENT_SAMPLE")
         assert visible["result"] is None
+        lease = session.get(WorkerLease, "research-evaluator")
+        assert lease is not None and lease.status == "HEALTHY"
         with pytest.raises(HTTPException) as denied:
             record_nifty_replay(
                 trial.id, NiftyReplayRecordRequest(study_id=study_row.id, run_id=run_id),

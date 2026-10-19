@@ -391,6 +391,12 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
 .strategy-catalog-controls { display: grid; grid-template-columns: minmax(180px, 1.5fr) minmax(150px, 1fr) auto; align-items: end; gap: 8px; margin: 10px 0 12px; }
 .strategy-catalog-controls label { display: grid; gap: 5px; color: var(--ink-muted); font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
 .strategy-catalog-controls input, .strategy-catalog-controls select { min-height: 32px; border: 1px solid #dce5df; border-radius: 7px; padding: 6px 8px; background: #fff; color: var(--ink); font: inherit; font-size: 11px; text-transform: none; letter-spacing: normal; }
+.strategy-catalog-status-summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.strategy-catalog-status-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 4px 7px; font-size: 9px; font-weight: 800; }
+.strategy-catalog-status-chip b { font-size: 10px; }
+.strategy-catalog-status-chip--paper { background: #e8f5ed; color: #21784c; }
+.strategy-catalog-status-chip--pending { background: #fff6df; color: #8a6215; }
+.strategy-catalog-status-chip--research { background: #fbeceb; color: #a84444; }
 .strategy-catalog-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .strategy-catalog-card { min-height: 116px; border: 1px solid #dfe7e1; border-radius: 10px; padding: 10px; background: #fff; }
 .strategy-catalog-card--bullish { border-top: 3px solid #76bd8e; }

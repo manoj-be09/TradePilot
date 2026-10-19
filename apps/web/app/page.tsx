@@ -1299,6 +1299,11 @@ export default function Home() {
       .filter((entry) => !query || `${entry.name} ${entry.summary} ${entry.label}`.toLowerCase().includes(query))
       .sort((left, right) => statusRank[left.status] - statusRank[right.status] || left.name.localeCompare(right.name));
   }, [catalogSearch, catalogStatusFilter, strategyBiasFilter]);
+  const catalogStatusCounts = useMemo(() => {
+    const counts: Record<StrategyCatalogStatus, number> = { PAPER_SUPPORTED: 0, ENGINE_SUPPORT_PENDING: 0, RESEARCH_ONLY: 0 };
+    STRATEGY_CATALOG.filter((entry) => strategyBiasFilter === "ALL" || entry.bias === strategyBiasFilter).forEach((entry) => { counts[entry.status] += 1; });
+    return counts;
+  }, [strategyBiasFilter]);
 
   function applyStrategyToPaperTicket(strategy: PaperStrategy, payoff: PayoffEstimate) {
     const maximumLoss = Number(payoff.maximum_loss);
@@ -2575,7 +2580,12 @@ export default function Home() {
               <button className="inline-button" aria-expanded={showAllStrategies} onClick={() => setShowAllStrategies(value => !value)} type="button">{showAllStrategies ? "Show fewer strategies" : `＋ All ${filteredRankedStrategies.length} ${strategyBiasFilter === "ALL" ? "strategies" : `${strategyBiasFilter.toLowerCase()} strategies`}`}</button>
               <details className="workspace-disclosure"><summary>Ranking &amp; evidence details</summary>              <p className="features-note">Ranking uses observed NIFTY put/call open interest when available, current-quote expiry payoff, and a small risk-normalized adjustment only after 20 qualified automatic closes in the same observed market condition with one unchanged rule/stop configuration. IV rank needs stored history and is currently unavailable; missing values never count as low IV or bearish. Manual, incomplete and mixed-configuration results cannot improve ranking. This is a research comparison, not a calibrated profit forecast. “Unbounded” profit is theoretical at expiry.</p></details>
               <section className="strategy-catalog" aria-label="Full public strategy catalog">
-                <div className="strategy-catalog-heading"><div><strong>Full public strategy catalog</strong><small>{visibleCatalogEntries.length} of {STRATEGY_CATALOG.length} public templates · paper-ready entries first</small></div><span>Execution status is explicit</span></div>
+                <div className="strategy-catalog-heading"><div><strong>Full public strategy catalog</strong><small aria-live="polite">{visibleCatalogEntries.length} of {STRATEGY_CATALOG.length} public templates · paper-ready entries first</small></div><span>Execution status is explicit</span></div>
+                <div className="strategy-catalog-status-summary" aria-label="Strategy catalog availability summary">
+                  <span className="strategy-catalog-status-chip strategy-catalog-status-chip--paper"><b>{catalogStatusCounts.PAPER_SUPPORTED}</b> paper supported</span>
+                  <span className="strategy-catalog-status-chip strategy-catalog-status-chip--pending"><b>{catalogStatusCounts.ENGINE_SUPPORT_PENDING}</b> engine pending</span>
+                  <span className="strategy-catalog-status-chip strategy-catalog-status-chip--research"><b>{catalogStatusCounts.RESEARCH_ONLY}</b> research only</span>
+                </div>
                 <div className="strategy-catalog-controls">
                   <label>Search strategies<input aria-label="Search strategy catalog" onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Name, bias or description" type="search" value={catalogSearch} /></label>
                   <label>Availability<select aria-label="Filter strategy availability" onChange={(event) => setCatalogStatusFilter(event.target.value as StrategyCatalogStatus | "ALL")} value={catalogStatusFilter}>

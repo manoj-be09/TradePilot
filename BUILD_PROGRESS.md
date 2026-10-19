@@ -1,5 +1,11 @@
 # Build progress — updated 2026-10-19
 
+## 2026-10-19 — F&O UI and strategy catalog software slice completed
+
+- Completed the software-side F&O workspace slice: Futures & Options opens by default, NIFTY 50 is the default instrument, the strategy selector exposes every catalog entry with unsupported execution visibly gated, ranked paper candidates include payoff/risk/evidence context, and the full catalog is grouped by market view with search, bias filtering, availability filtering, paper-first ordering, responsive controls, and explicit status counts.
+- Added accessible live catalog counts for paper-supported, engine-support-pending, and research-only entries. Color is supplementary; each status is also written as text so gating does not depend on color perception.
+- Validation: `pnpm --dir apps/web lint` passed and `git diff --check` passed. The connected Edge bridge was unavailable in this session, so deployment and desktop/phone visual acceptance remain owner-host checks.
+
 ## 2026-10-19 — F&O catalog discovery filters
 
 - Expanded the F&O strategy catalog with a relevant-first search and availability filter. Users can search names, bias labels and descriptions, filter **Paper supported**, **Engine support pending** or **Research only**, and clear filters without losing the market-view color coding. Paper-supported entries sort first; gated entries remain visibly non-executable.

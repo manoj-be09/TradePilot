@@ -14,7 +14,7 @@ import { TradingDashboard } from "./TradingDashboard";
 import { ChartWorkspace } from "./ChartWorkspace";
 import { ResearchWorkspace } from "./ResearchWorkspace";
 import { usePaperEntry } from "./usePaperEntry";
-import { STRATEGY_CATALOG, STRATEGY_CATALOG_META, StrategyMarketBias } from "./strategyCatalog";
+import { STRATEGY_CATALOG, STRATEGY_CATALOG_META, StrategyCatalogStatus, StrategyMarketBias } from "./strategyCatalog";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 
@@ -703,6 +703,8 @@ export default function Home() {
   const [paperTicketMessage, setPaperTicketMessage] = useState("");
   const [showAllStrategies, setShowAllStrategies] = useState(false);
   const [strategyBiasFilter, setStrategyBiasFilter] = useState<StrategyMarketBias | "ALL">("ALL");
+  const [catalogStatusFilter, setCatalogStatusFilter] = useState<StrategyCatalogStatus | "ALL">("ALL");
+  const [catalogSearch, setCatalogSearch] = useState("");
   const [deploymentPreparedKey, setDeploymentPreparedKey] = useState("");
   const deploymentCommand = useRef<{ payload: string; key: string } | null>(null);
   const paperTicketRef = useRef<HTMLParagraphElement | null>(null);
@@ -1288,6 +1290,15 @@ export default function Home() {
     () => rankedStrategies.filter(({ strategy }) => strategyBiasFilter === "ALL" || STRATEGY_CATALOG_META[strategy.key]?.bias === strategyBiasFilter),
     [rankedStrategies, strategyBiasFilter],
   );
+  const visibleCatalogEntries = useMemo(() => {
+    const query = catalogSearch.trim().toLowerCase();
+    const statusRank: Record<StrategyCatalogStatus, number> = { PAPER_SUPPORTED: 0, ENGINE_SUPPORT_PENDING: 1, RESEARCH_ONLY: 2 };
+    return STRATEGY_CATALOG
+      .filter((entry) => strategyBiasFilter === "ALL" || entry.bias === strategyBiasFilter)
+      .filter((entry) => catalogStatusFilter === "ALL" || entry.status === catalogStatusFilter)
+      .filter((entry) => !query || `${entry.name} ${entry.summary} ${entry.label}`.toLowerCase().includes(query))
+      .sort((left, right) => statusRank[left.status] - statusRank[right.status] || left.name.localeCompare(right.name));
+  }, [catalogSearch, catalogStatusFilter, strategyBiasFilter]);
 
   function applyStrategyToPaperTicket(strategy: PaperStrategy, payoff: PayoffEstimate) {
     const maximumLoss = Number(payoff.maximum_loss);
@@ -2564,9 +2575,19 @@ export default function Home() {
               <button className="inline-button" aria-expanded={showAllStrategies} onClick={() => setShowAllStrategies(value => !value)} type="button">{showAllStrategies ? "Show fewer strategies" : `＋ All ${filteredRankedStrategies.length} ${strategyBiasFilter === "ALL" ? "strategies" : `${strategyBiasFilter.toLowerCase()} strategies`}`}</button>
               <details className="workspace-disclosure"><summary>Ranking &amp; evidence details</summary>              <p className="features-note">Ranking uses observed NIFTY put/call open interest when available, current-quote expiry payoff, and a small risk-normalized adjustment only after 20 qualified automatic closes in the same observed market condition with one unchanged rule/stop configuration. IV rank needs stored history and is currently unavailable; missing values never count as low IV or bearish. Manual, incomplete and mixed-configuration results cannot improve ranking. This is a research comparison, not a calibrated profit forecast. “Unbounded” profit is theoretical at expiry.</p></details>
               <section className="strategy-catalog" aria-label="Full public strategy catalog">
-                <div className="strategy-catalog-heading"><div><strong>Full public strategy catalog</strong><small>{STRATEGY_CATALOG.length} public templates · filter by market view</small></div><span>Execution status is explicit</span></div>
+                <div className="strategy-catalog-heading"><div><strong>Full public strategy catalog</strong><small>{visibleCatalogEntries.length} of {STRATEGY_CATALOG.length} public templates · paper-ready entries first</small></div><span>Execution status is explicit</span></div>
+                <div className="strategy-catalog-controls">
+                  <label>Search strategies<input aria-label="Search strategy catalog" onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Name, bias or description" type="search" value={catalogSearch} /></label>
+                  <label>Availability<select aria-label="Filter strategy availability" onChange={(event) => setCatalogStatusFilter(event.target.value as StrategyCatalogStatus | "ALL")} value={catalogStatusFilter}>
+                    <option value="ALL">All statuses</option>
+                    <option value="PAPER_SUPPORTED">Paper supported</option>
+                    <option value="ENGINE_SUPPORT_PENDING">Engine support pending</option>
+                    <option value="RESEARCH_ONLY">Research only</option>
+                  </select></label>
+                  {(catalogSearch || catalogStatusFilter !== "ALL") ? <button className="inline-button" onClick={() => { setCatalogSearch(""); setCatalogStatusFilter("ALL"); }} type="button">Clear catalog filters</button> : null}
+                </div>
                 <div className="strategy-catalog-grid">
-                  {STRATEGY_CATALOG.filter((entry) => strategyBiasFilter === "ALL" || entry.bias === strategyBiasFilter).map((entry) => (
+                  {visibleCatalogEntries.map((entry) => (
                     <article className={`strategy-catalog-card strategy-catalog-card--${entry.bias.toLowerCase()} strategy-catalog-card--${entry.status.toLowerCase()}`} key={entry.key}>
                       <div className="strategy-catalog-card-top"><strong>{entry.name}</strong><span>{entry.proficiency}</span></div>
                       <span className="strategy-bias-tag">{entry.label}</span>
@@ -2575,6 +2596,7 @@ export default function Home() {
                     </article>
                   ))}
                 </div>
+                {!visibleCatalogEntries.length ? <p className="catalog-empty muted">No catalog entries match these filters. Clear the filters to view the complete taxonomy.</p> : null}
               </section>
               {isCustomStrategy ? (
                 <div className="custom-leg-builder">

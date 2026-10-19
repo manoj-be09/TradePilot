@@ -388,6 +388,9 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
 .strategy-catalog-heading strong, .strategy-catalog-heading small { display: block; }
 .strategy-catalog-heading small { margin-top: 3px; color: var(--ink-muted); font-size: 10px; }
 .strategy-catalog-heading > span { color: var(--ink-muted); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.strategy-catalog-controls { display: grid; grid-template-columns: minmax(180px, 1.5fr) minmax(150px, 1fr) auto; align-items: end; gap: 8px; margin: 10px 0 12px; }
+.strategy-catalog-controls label { display: grid; gap: 5px; color: var(--ink-muted); font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.strategy-catalog-controls input, .strategy-catalog-controls select { min-height: 32px; border: 1px solid #dce5df; border-radius: 7px; padding: 6px 8px; background: #fff; color: var(--ink); font: inherit; font-size: 11px; text-transform: none; letter-spacing: normal; }
 .strategy-catalog-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .strategy-catalog-card { min-height: 116px; border: 1px solid #dfe7e1; border-radius: 10px; padding: 10px; background: #fff; }
 .strategy-catalog-card--bullish { border-top: 3px solid #76bd8e; }
@@ -404,6 +407,7 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
 .strategy-catalog-card--paper_supported > small { color: #21784c; font-weight: 800; }
 .strategy-catalog-card--engine_support_pending > small { color: #8a6215; font-weight: 800; }
 .strategy-catalog-card--research_only > small { color: #a84444; font-weight: 800; }
+.strategy-catalog .catalog-empty { margin: 0; padding: 16px; border: 1px dashed #ccd8cf; border-radius: 8px; background: #fbfcfa; font-size: 11px; }
 .strategy-card-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 8px 0; }
 .strategy-card-metrics span { margin: 0; border-radius: 6px; padding: 7px; background: rgba(236,242,236,.7); font-size: 8px; }
 .strategy-card-metrics b { font-size: 12px; text-transform: none; }
@@ -590,6 +594,8 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
   .paper-workspace { padding: 18px; }
   .strategy-scorecards { grid-template-columns: 1fr; }
   .strategy-catalog-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .strategy-catalog-controls { grid-template-columns: 1fr; align-items: stretch; }
+  .strategy-catalog-controls .inline-button { width: 100%; }
   .equity-strategy-grid { grid-template-columns: 1fr; }
   .paper-heading { flex-direction: column; gap: 14px; }
   .paper-actions { width: 100%; justify-content: space-between; }

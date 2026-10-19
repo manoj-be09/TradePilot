@@ -1,5 +1,11 @@
 # Build progress — updated 2026-10-19
 
+## 2026-10-19 — F&O catalog discovery filters
+
+- Expanded the F&O strategy catalog with a relevant-first search and availability filter. Users can search names, bias labels and descriptions, filter **Paper supported**, **Engine support pending** or **Research only**, and clear filters without losing the market-view color coding. Paper-supported entries sort first; gated entries remain visibly non-executable.
+- Responsive controls collapse to a single-column layout on narrow screens. Strategy selection, payoff checks, entry rules, quote warnings and live-order disablement are unchanged.
+- Validation: frontend TypeScript lint and `git diff --check` passed. Connected Edge desktop/phone visual verification was attempted but the automation bridge could not initialize in this session; no visual acceptance claim is made.
+
 ## 2026-10-19 — Core paper-trading regression revalidated
 
 - Re-ran the combined core paper-trading regression covering account concurrency, worker restart/lease fencing, option and equity entries, quote-quality gates, kill-switch races, exits, expiry handling, ledger reconciliation, migrations and readiness: **166 passed** with 6 existing deprecation/cache warnings.

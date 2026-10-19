@@ -3,6 +3,7 @@ from typing import Literal
 
 OptionType = Literal["CE", "PE"]
 TradeSide = Literal["BUY", "SELL"]
+ExpiryScope = Literal["SAME_EXPIRY", "MULTI_EXPIRY"]
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,7 @@ class StrategyDefinition:
     version: str = "1.0.0"
     risk_profile: str = "DEFINED_RISK"
     lifecycle_status: str = "PAPER_TEMPLATE"
+    expiry_scope: ExpiryScope = "SAME_EXPIRY"
 
 
 class StrategyRegistry:
@@ -38,6 +40,10 @@ class StrategyRegistry:
         if any(not strategy.legs for strategy in strategies):
             raise ValueError("Every strategy must define at least one option leg")
         for strategy in strategies:
+            if strategy.expiry_scope != "SAME_EXPIRY":
+                raise ValueError(
+                    f"Strategy {strategy.key!r} requires unsupported multi-expiry execution"
+                )
             if strategy.risk_profile == "DEFINED_RISK" and _call_tail_slope(strategy) < 0:
                 raise ValueError(
                     f"Defined-risk strategy {strategy.key!r} has unbounded call-side loss"

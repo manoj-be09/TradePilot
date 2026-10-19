@@ -29,3 +29,18 @@ def test_defined_risk_registry_rejects_naked_short_call():
                 ),
             )
         )
+
+
+def test_registry_rejects_multi_expiry_until_leg_expiry_engine_exists():
+    with pytest.raises(ValueError, match="unsupported multi-expiry execution"):
+        StrategyRegistry(
+            (
+                StrategyDefinition(
+                    "calendar",
+                    "Calendar",
+                    "A future multi-expiry template",
+                    (StrategyLeg("CE", "BUY", 0),),
+                    expiry_scope="MULTI_EXPIRY",
+                ),
+            )
+        )

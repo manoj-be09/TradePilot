@@ -38,6 +38,7 @@ class StrategyDefinitionResponse(BaseModel):
     version: str
     risk_profile: Literal["DEFINED_RISK"]
     lifecycle_status: Literal["PAPER_TEMPLATE"]
+    expiry_scope: Literal["SAME_EXPIRY"] = "SAME_EXPIRY"
     legs: list[StrategyLegDefinitionResponse]
     closed_trade_count: int = 0
     winning_trade_count: int = 0

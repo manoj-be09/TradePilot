@@ -1354,6 +1354,7 @@ def paper_strategies(
             version=strategy.version,
             risk_profile="DEFINED_RISK",
             lifecycle_status="PAPER_TEMPLATE",
+            expiry_scope=strategy.expiry_scope,
             legs=[
                 StrategyLegDefinitionResponse(
                     option_type=leg.option_type,

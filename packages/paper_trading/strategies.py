@@ -37,6 +37,11 @@ class StrategyRegistry:
             raise ValueError("Strategy keys must be unique")
         if any(not strategy.legs for strategy in strategies):
             raise ValueError("Every strategy must define at least one option leg")
+        for strategy in strategies:
+            if strategy.risk_profile == "DEFINED_RISK" and _call_tail_slope(strategy) < 0:
+                raise ValueError(
+                    f"Defined-risk strategy {strategy.key!r} has unbounded call-side loss"
+                )
         self._strategies = strategies
         self._by_key = by_key
 
@@ -45,6 +50,22 @@ class StrategyRegistry:
 
     def get(self, key: str) -> StrategyDefinition | None:
         return self._by_key.get(key)
+
+
+def _call_tail_slope(strategy: StrategyDefinition) -> int:
+    """Return the signed call exposure as spot tends to infinity.
+
+    A positive BUY call ratio contributes +1 and a SELL call ratio contributes -1.
+    Any negative total leaves a naked short-call tail and therefore cannot be
+    advertised as a bounded-loss paper template. Put legs do not create an
+    unbounded loss for a non-negative underlying price.
+    """
+
+    return sum(
+        leg.quantity_ratio if leg.side == "BUY" else -leg.quantity_ratio
+        for leg in strategy.legs
+        if leg.option_type == "CE"
+    )
 
 
 STRATEGY_REGISTRY = StrategyRegistry(

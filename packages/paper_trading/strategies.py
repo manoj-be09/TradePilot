@@ -200,6 +200,48 @@ STRATEGY_REGISTRY = StrategyRegistry(
             ),
         ),
         StrategyDefinition(
+            "put_broken_wing",
+            "Put broken wing",
+            "Buy one higher-strike put, sell two middle puts, and buy a wider "
+            "lower-strike put wing.",
+            (
+                StrategyLeg("PE", "BUY", 1),
+                StrategyLeg("PE", "SELL", 0, 2),
+                StrategyLeg("PE", "BUY", -2),
+            ),
+        ),
+        StrategyDefinition(
+            "call_broken_wing",
+            "Call broken wing",
+            "Buy one lower-strike call, sell two middle calls, and buy a wider "
+            "higher-strike call wing.",
+            (
+                StrategyLeg("CE", "BUY", -1),
+                StrategyLeg("CE", "SELL", 0, 2),
+                StrategyLeg("CE", "BUY", 2),
+            ),
+        ),
+        StrategyDefinition(
+            "call_ratio_backspread",
+            "Call ratio backspread",
+            "Sell one call and buy two higher-strike calls for a bounded-loss "
+            "upside move structure.",
+            (
+                StrategyLeg("CE", "SELL", 0),
+                StrategyLeg("CE", "BUY", 1, 2),
+            ),
+        ),
+        StrategyDefinition(
+            "put_ratio_backspread",
+            "Put ratio backspread",
+            "Sell one put and buy two lower-strike puts for a bounded-loss "
+            "downside move structure.",
+            (
+                StrategyLeg("PE", "SELL", 0),
+                StrategyLeg("PE", "BUY", -1, 2),
+            ),
+        ),
+        StrategyDefinition(
             "inverse_iron_condor",
             "Inverse iron condor",
             "Buy the inner put and call wings and sell the outer wings for a "

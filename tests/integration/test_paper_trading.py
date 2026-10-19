@@ -122,6 +122,10 @@ def test_paper_workflow_is_authenticated_and_persists_simulated_fills(client, mo
         "short_put_butterfly",
         "short_call_condor",
         "short_put_condor",
+        "put_broken_wing",
+        "call_broken_wing",
+        "call_ratio_backspread",
+        "put_ratio_backspread",
         "strip",
         "strap",
         "inverse_iron_condor",
@@ -467,7 +471,6 @@ def test_ratio_templates_record_ratio_scaled_quantities_and_finite_risk(client, 
 
     provider.get_option_chain = ratio_chain
     monkeypatch.setattr("apps.api.main.get_market_data_provider", lambda: provider)
-    headers = _token(client)
     expected_quantities = {
         "long_call_butterfly": [25, 50, 25],
         "long_put_butterfly": [25, 50, 25],
@@ -475,10 +478,22 @@ def test_ratio_templates_record_ratio_scaled_quantities_and_finite_risk(client, 
         "short_put_butterfly": [25, 50, 25],
         "short_call_condor": [25, 25, 25, 25],
         "short_put_condor": [25, 25, 25, 25],
+        "put_broken_wing": [25, 50, 25],
+        "call_broken_wing": [25, 50, 25],
+        "call_ratio_backspread": [25, 50],
+        "put_ratio_backspread": [25, 50],
         "strip": [25, 50],
         "strap": [50, 25],
     }
-    for strategy_key, quantities in expected_quantities.items():
+    for index, (strategy_key, quantities) in enumerate(expected_quantities.items()):
+        registration = client.post(
+            "/auth/register",
+            json={
+                "email": f"ratio-{index}@example.com",
+                "password": "a-strong-test-password",
+            },
+        )
+        headers = {"Authorization": f"Bearer {registration.json()['access_token']}"}
         response = client.post(
             "/paper/trades",
             headers={**headers, "Idempotency-Key": str(uuid4())},

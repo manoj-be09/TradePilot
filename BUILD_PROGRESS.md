@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-19
 
+## 2026-10-19 — Rebuilt runtime health verified
+
+- After the owner rebuilt `api`, `paper-worker` and `web`, the local web endpoint returned HTTP 200, `/health` returned HTTP 200 with `live_trading_enabled=false`, and `/ready/paper-worker` returned HTTP 200 with `status=ready`.
+- This verifies service reachability and safety flags only. Populated PostgreSQL research acceptance, real-session Upstox evidence and connected Edge visual verification remain separate gates.
+
 ## 2026-10-19 — Research records now open newest-first
 
 - Account-scoped studies, recommendations, candidates and trials now sort by descending `created_at` with descending ID tie-breaks. This keeps the latest research decisions visible first without changing evidence, budgets, execution, promotion or account isolation.

@@ -118,6 +118,28 @@ STRATEGY_REGISTRY = StrategyRegistry(
             ),
         ),
         StrategyDefinition(
+            "short_call_condor",
+            "Short call condor",
+            "Sell the outer calls and buy the two inner calls for a bounded move-seeking range.",
+            (
+                StrategyLeg("CE", "SELL", -2),
+                StrategyLeg("CE", "BUY", -1),
+                StrategyLeg("CE", "BUY", 1),
+                StrategyLeg("CE", "SELL", 2),
+            ),
+        ),
+        StrategyDefinition(
+            "short_put_condor",
+            "Short put condor",
+            "Sell the outer puts and buy the two inner puts for a bounded move-seeking range.",
+            (
+                StrategyLeg("PE", "SELL", -2),
+                StrategyLeg("PE", "BUY", -1),
+                StrategyLeg("PE", "BUY", 1),
+                StrategyLeg("PE", "SELL", 2),
+            ),
+        ),
+        StrategyDefinition(
             "long_call_butterfly",
             "Long call butterfly",
             "Buy one lower-strike call, sell two middle calls, and buy one higher-strike call.",

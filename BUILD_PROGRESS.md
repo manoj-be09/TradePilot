@@ -22,9 +22,9 @@
 ## 2026-10-19 — Same-expiry ratio strategy engine slice
 
 - Extended the versioned option-leg contract with a validated `quantity_ratio`, and applied it consistently to paper fills, payoff risk, historical replay, saved strategy definitions, and quote evidence.
-- Added seven same-expiry templates to the executable paper registry: long/short call and put butterflies, strip, and strap. Their paper entries require the existing quote-quality, account-risk, finite-loss, ledger, and live-order-disabled gates.
+- Added nine same-expiry templates to the executable paper registry: long/short call and put butterflies, short call/put condors, strip, and strap. Their paper entries require the existing quote-quality, account-risk, finite-loss, ledger, and live-order-disabled gates.
 - Kept inverse iron butterfly cataloged but gated after payoff validation showed the proposed tail structure had unbounded loss. This is an intentional safety rejection, not a weakened max-loss check.
-- Validation: **28 passed, 2 warnings** across backtesting, paper-trading, and strategy-version tests; `pnpm --dir apps/web lint`, Python compilation, and `git diff --check` passed. Docker rebuild and connected Edge desktop/phone verification remain pending.
+- Validation: **28 passed, 2 warnings** across backtesting, paper-trading, and strategy-version tests; Ruff, `pnpm --dir apps/web lint`, Python compilation, and `git diff --check` passed. Docker rebuild and connected Edge desktop/phone verification remain pending.
 
 ## 2026-10-13 — TradingPilot Algo Trading clarity pass
 

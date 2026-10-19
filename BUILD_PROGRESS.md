@@ -1,5 +1,12 @@
 # Build progress — updated 2026-10-19
 
+## 2026-10-19 — PostgreSQL paper-safety acceptance completed
+
+- Corrected the migration acceptance regression to compare the applied schema with the current Alembic head instead of the retired `0023_equity_cash_journal` revision.
+- Ran the focused paper-safety suite with PostgreSQL enabled against temporary schemas: **92 passed**. This includes concurrent account mutations, idempotency, kill-switch races, risk rechecks, worker fencing/restart behavior, quote/session gates, expiry handling, ledger reconciliation, and clean/existing-schema migration upgrades.
+- Existing deprecation and local pytest-cache permission warnings remain. Temporary test schemas were removed; no database volume, account, balance, position, order, live-trading setting, or friend-testing ZIP changed.
+- This closes the software/runtime PostgreSQL acceptance gate for the core paper-safety slice. Exchange-origin book timing, actual expiry settlement, and scientific strategy advantage remain separate evidence gates.
+
 ## 2026-10-19 — Core paper-trading safety milestone validated
 
 - Re-ran the focused core paper-trading suite covering account locking and reconciliation, idempotent entries and closes, kill-switch races, daily and portfolio risk limits, defined-risk payoff gates, quote/session freshness, worker lease fencing and restart behavior, stop/target/trailing exits, expiry handling, and live-order disablement: **86 passed, 5 PostgreSQL-dependent cases skipped**.

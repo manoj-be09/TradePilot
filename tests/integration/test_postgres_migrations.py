@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 
 from alembic import command
@@ -16,6 +17,7 @@ def test_postgres_clean_and_existing_schema_upgrade(monkeypatch):
     schema = "migration_" + uuid4().hex
     fresh_schema = "migration_fresh_" + uuid4().hex
     config = Config("alembic.ini")
+    expected_head = ScriptDirectory.from_config(config).get_current_head()
     with engine.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
         connection.execute(text(f'CREATE SCHEMA "{fresh_schema}"'))
@@ -35,9 +37,7 @@ def test_postgres_clean_and_existing_schema_upgrade(monkeypatch):
             assert "initial_cash" in {
                 column["name"] for column in inspect(connection).get_columns("equity_accounts")
             }
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-                "0023_equity_cash_journal"
-            )
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == expected_head
         with engine.begin() as connection:
             connection.execute(text(f'SET search_path TO "{fresh_schema}"'))
             config.attributes["connection"] = connection

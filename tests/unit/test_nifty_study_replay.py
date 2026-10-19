@@ -30,6 +30,7 @@ from packages.regime.registered_evaluator import (
     record_registered_nifty_replay,
     record_registered_nifty_replay_job,
 )
+from packages.regime.research_scheduler_lease import acquire_research_lease
 from packages.regime.research_studies import freeze_nifty_study
 
 
@@ -242,6 +243,20 @@ def test_authenticated_route_records_only_owned_stored_replay():
         assert visible["result"] is None
         lease = session.get(WorkerLease, "research-evaluator")
         assert lease is not None and lease.status == "HEALTHY"
+        second_trial = declare_trial(session, owner, candidate.id, TrialManifest.model_validate(
+            manifest.model_dump() | {"trial_number": 2}))
+        second_run_id = uuid4()
+        session.add(BacktestRun(id=second_run_id, user_id=owner,
+                                result_data=replay().model_dump(mode="json")))
+        session.commit()
+        assert acquire_research_lease(session, "research-other", 60) is not None
+        with pytest.raises(HTTPException, match="Another research worker owns the lease") as busy:
+            record_nifty_replay(
+                second_trial.id,
+                NiftyReplayRecordRequest(study_id=study_row.id, run_id=second_run_id),
+                SimpleNamespace(id=owner), session,
+            )
+        assert busy.value.status_code == 409
         with pytest.raises(HTTPException) as denied:
             record_nifty_replay(
                 trial.id, NiftyReplayRecordRequest(study_id=study_row.id, run_id=run_id),

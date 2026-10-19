@@ -12,8 +12,12 @@ RESEARCH_WORKER_NAME = "research-evaluator"
 
 @dataclass(frozen=True)
 class ResearchJobOutcome:
-    status: Literal["COMPLETED", "SKIPPED", "FAILED", "STALE"]
+    status: Literal["COMPLETED", "SKIPPED", "FAILED", "STALE", "CANCELLED"]
     detail: str
+
+
+class ResearchJobCancelled(Exception):
+    """Cooperative cancellation signal for a bounded research task."""
 
 
 def acquire_research_lease(session: Session, owner: str, seconds: int) -> LeaseToken | None:
@@ -40,7 +44,9 @@ def finish_research_lease(session: Session, token: LeaseToken, status: str, deta
 
 
 def run_research_job(session: Session, owner: str, seconds: int,
-                     task: Callable[[], None]) -> ResearchJobOutcome:
+                     task: Callable[[], None],
+                     cancel_requested: Callable[[], bool] | None = None,
+                     ) -> ResearchJobOutcome:
     """Run one bounded research task under a fenced lease.
 
     The task is deliberately injected and receives no trading session or order
@@ -55,8 +61,14 @@ def run_research_job(session: Session, owner: str, seconds: int,
         return ResearchJobOutcome("SKIPPED", "Another research worker owns the lease.")
     if not assert_research_lease(session, token):
         return ResearchJobOutcome("STALE", "Research lease was lost before task start.")
+    if cancel_requested is not None and cancel_requested():
+        finish_research_lease(session, token, "CANCELLED", "Research task cancelled.")
+        return ResearchJobOutcome("CANCELLED", "Research task cancelled before start.")
     try:
         task()
+    except ResearchJobCancelled:
+        finish_research_lease(session, token, "CANCELLED", "Research task cancelled.")
+        return ResearchJobOutcome("CANCELLED", "Research task cancelled.")
     except Exception:
         finish_research_lease(session, token, "DEGRADED", "Research task failed.")
         return ResearchJobOutcome("FAILED", "Research task failed; no exception details retained.")

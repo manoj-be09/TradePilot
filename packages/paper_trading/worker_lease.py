@@ -41,7 +41,7 @@ def acquire(session: Session, owner: str, seconds: int,
         .on_conflict_do_nothing(index_elements=["name"])
     )
     generation = session.execute(
-        update(WorkerLease)
+        update(WorkerLease).execution_options(synchronize_session=False)
         .where(
             WorkerLease.name == worker_name,
             WorkerLease.lease_until <= now,

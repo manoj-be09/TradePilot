@@ -7,6 +7,7 @@ from packages.database.base import Base
 from packages.database.models import WorkerLease
 from packages.regime.research_scheduler_lease import (
     RESEARCH_WORKER_NAME,
+    ResearchJobCancelled,
     acquire_research_lease,
     assert_research_lease,
     finish_research_lease,
@@ -81,6 +82,38 @@ def test_research_job_runner_rejects_invalid_lease_duration():
         assert token is not None
         assert not renew_research_lease(session, token, 0)
         assert assert_research_lease(session, token)
+    engine.dispose()
+
+
+def test_research_job_runner_cancels_before_task_and_releases_lease():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        calls: list[str] = []
+        outcome = run_research_job(
+            session, "research-cancel-before-start", 60,
+            lambda: calls.append("wrong"), cancel_requested=lambda: True,
+        )
+        assert outcome.status == "CANCELLED"
+        assert calls == []
+        lease = session.get(WorkerLease, RESEARCH_WORKER_NAME)
+        assert lease is not None and lease.status == "CANCELLED"
+        replacement = acquire_research_lease(session, "research-after-cancel", 60)
+        assert replacement is not None and assert_research_lease(session, replacement)
+    engine.dispose()
+
+
+def test_research_job_runner_records_cooperative_task_cancellation():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        outcome = run_research_job(
+            session, "research-cancel-during-task", 60,
+            lambda: (_ for _ in ()).throw(ResearchJobCancelled()),
+        )
+        assert outcome.status == "CANCELLED"
+        lease = session.get(WorkerLease, RESEARCH_WORKER_NAME)
+        assert lease is not None and lease.status == "CANCELLED"
     engine.dispose()
 
 

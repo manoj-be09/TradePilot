@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-19
 
+## 2026-10-19 — Research concurrency acceptance expanded
+
+- Added isolated PostgreSQL integration coverage for concurrent research-family slot reservation, fenced research-lease takeover, and concurrent same-evidence finalization. These checks prove one durable slot, stale-owner rejection, and idempotent evidence writes in a real PostgreSQL schema without touching the owner account.
+- Validation: **3 PostgreSQL integration tests passed**, Ruff and Python compilation passed. Cancellation/crash recovery, populated deployed research joins, and scientific evidence qualification remain open gates.
+
 ## 2026-10-19 — Research UI records explicit abstentions
 
 - Added a **Record abstention** action to the frozen-study panel. It writes an immutable, account-scoped `ABSTAIN` recommendation through the existing research endpoint with `INSUFFICIENT_EVIDENCE`, an explicit `UNREVIEWED` evidence state, no candidate, no probability, `execution_enabled=false`, and `promotion_eligible=false`. Expiry follows the study review interval.

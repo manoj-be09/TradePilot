@@ -1,5 +1,11 @@
 # Build progress — updated 2026-10-19
 
+## 2026-10-19 — Core paper-trading safety milestone validated
+
+- Re-ran the focused core paper-trading suite covering account locking and reconciliation, idempotent entries and closes, kill-switch races, daily and portfolio risk limits, defined-risk payoff gates, quote/session freshness, worker lease fencing and restart behavior, stop/target/trailing exits, expiry handling, and live-order disablement: **86 passed, 5 PostgreSQL-dependent cases skipped**.
+- The skips require an isolated PostgreSQL runtime and do not represent failed controls. Existing Starlette/httpx deprecation and local pytest-cache permission warnings remain.
+- This completes the software-side core safety milestone. It does not claim exchange-origin book timestamps, actual expiry settlement, profitable strategies, or populated PostgreSQL scheduling acceptance. No account, position, order, or live-trading setting changed.
+
 ## 2026-10-19 — Rebuilt runtime health verified
 
 - After the owner rebuilt `api`, `paper-worker` and `web`, the local web endpoint returned HTTP 200, `/health` returned HTTP 200 with `live_trading_enabled=false`, and `/ready/paper-worker` returned HTTP 200 with `status=ready`.

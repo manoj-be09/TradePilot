@@ -213,3 +213,12 @@ def test_from_trial_records_deterministic_abstention_without_selection():
         assert result["promotion_eligible"] is False
         assert len(list(session.scalars(select(ResearchRecommendation)))) == 1
     engine.dispose()
+
+
+def test_from_trial_request_rejects_timezone_naive_expiry():
+    from apps.api.research_routes import TrialRecommendationRequest
+
+    with pytest.raises(ValidationError):
+        TrialRecommendationRequest(
+            selector_version="selector-v1", expires_at="2026-02-01T10:00:00",
+        )

@@ -1,10 +1,10 @@
 """Authenticated hypothesis/trial bookkeeping, without execution or promotion."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 
 from apps.api.auth import CurrentUser, SessionDep
@@ -54,6 +54,13 @@ class TrialRecommendationRequest(BaseModel):
 
     selector_version: str = Field(min_length=1, max_length=64)
     expires_at: datetime
+
+    @field_validator("expires_at")
+    @classmethod
+    def utc_expiry(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("Recommendation expiry must include a timezone")
+        return value.astimezone(timezone.utc)
 
 
 @router.post("/studies")

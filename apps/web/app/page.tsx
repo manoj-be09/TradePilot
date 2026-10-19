@@ -705,7 +705,7 @@ export default function Home() {
   const deploymentCommand = useRef<{ payload: string; key: string } | null>(null);
   const paperTicketRef = useRef<HTMLParagraphElement | null>(null);
   const [selectedStrategy, setSelectedStrategy] = useState("long_call");
-  const [workspace, setWorkspace] = useState<"equities" | "derivatives">("equities");
+  const [workspace, setWorkspace] = useState<"equities" | "derivatives">("derivatives");
   const [activeSection, setActiveSection] = useState<SidebarSection>("dashboard");
   const [selectedPaperStrike, setSelectedPaperStrike] = useState("");
   const [paperLots, setPaperLots] = useState(1);

@@ -1,4 +1,9 @@
-# Build progress — updated 2026-10-12
+# Build progress — updated 2026-10-19
+
+## 2026-10-19 — Futures & Options is the default workspace
+
+- The signed-in app now opens on **Future & Options** so the current NIFTY 50 paper-trading work is immediately visible. Equity & ETF remains available through the market switch; strategy logic, account data, quote warnings and live-order disablement are unchanged.
+- Validation: `pnpm --dir apps/web lint` passed. Docker rebuild and connected desktop/phone verification remain deployment checks for the owner’s environment.
 
 ## 2026-10-13 — TradingPilot Algo Trading clarity pass
 

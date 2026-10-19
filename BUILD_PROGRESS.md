@@ -4,7 +4,7 @@
 
 - **Performance reporting and reconciliation:** software complete; account-scoped descriptive reports, paper/equity ledger checks, charge provenance and mismatch fail-closed behavior are covered by the regression suite. This is not a claim of complete broker-tax costs or full historical equity chronology where source data are missing.
 - **Research/evaluator foundation:** software complete for the bounded release; immutable evidence identity, frozen-study contracts, protected holdout binding, deterministic replay boundaries, budget reservations, separate engine/operator evidence and abstention records are implemented.
-- **Populated PostgreSQL scheduling acceptance:** **accepted for the current bounded release**. The rebuilt local PostgreSQL service passed the isolated temporary-schema concurrency checks: single budget-slot reservation, fenced lease takeover/stale-owner rejection, and idempotent same-evidence finalization (3 passed). Cancellation/crash recovery under an actual process interruption remains a separate operational drill.
+- **Populated PostgreSQL scheduling acceptance:** **accepted for the current bounded release**. The rebuilt local PostgreSQL service passed the isolated temporary-schema concurrency checks: single budget-slot reservation, fenced lease takeover/stale-owner rejection, and idempotent same-evidence finalization (3 passed). A disposable worker termination/restart drill also passed with a newer fencing generation. Graceful cancellation remains a separate operational drill.
 - **Frozen NIFTY study and prospective recommendations:** contract, storage, readiness and abstention paths are complete; no real study is qualified until reviewed source/data/cost/holdout evidence and prospective observations exist.
 - **Exchange-timed validation and actual expiry evidence:** **BLOCKED by external evidence**; current provider observations do not prove exchange-origin executable-book timing, and the existing test-only position remains untouched pending official expiry review.
 - **Overall production-grade paper trading:** software is substantially complete, but the goal remains open until the runtime and external evidence gates above are independently accepted. Live orders remain disabled.
@@ -19,6 +19,11 @@
 - After the owner rebuilt the services, the local PostgreSQL container was reached using the existing local environment configuration. The isolated research-concurrency suite passed: **3 passed**.
 - The checks created and removed temporary schemas only. They covered one durable family slot under concurrent reservation, generation-fenced lease takeover with stale-owner rejection, and idempotent concurrent finalization of identical evidence. No account, position, order, balance, live-trading setting or database volume was changed.
 - This accepts the bounded PostgreSQL scheduling boundary. It does not prove an unattended scheduler, cancellation during a live process interruption, exchange-timed data, strategy advantage or automatic promotion.
+
+## 2026-10-19 — PostgreSQL research lease crash-recovery drill
+
+- A disposable worker acquired a two-second PostgreSQL research lease, was terminated before completion, and a replacement acquired the lease after expiry with a newer fencing generation. The temporary schema was removed after the drill; no account, position, order, balance, live-trading setting or database volume changed.
+- This accepts crash recovery for the current lease boundary. Graceful cancellation and unattended scheduler operation remain separate checks.
 
 ## 2026-10-19 — Bounded NIFTY research scheduling wired through fenced lease
 

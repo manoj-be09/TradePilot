@@ -105,6 +105,7 @@ from packages.database.models import (
     PaperOrder,
     PaperStrategyPreset,
     PaperTrade,
+    ResearchPolicySet,
     ResearchStudy,
     StrategyVersion,
     User,
@@ -192,8 +193,10 @@ from packages.paper_trading.transactions import (
     lock_account,
 )
 from packages.paper_trading.worker_lease import WORKER_NAME, LeaseToken, assert_owned
+from packages.regime.candidate_registry import fingerprint
 from packages.regime.classifier import MarketRegimeResult, classify_market_regime
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
+from packages.regime.research_policy_sets import current_policy_set_ids
 from packages.regime.research_recommendations import (
     build_market_fit_opportunity,
     recommendation_view,
@@ -1274,8 +1277,21 @@ async def record_nifty_market_fit_opportunity(
         frozen = FrozenNiftyStudy.model_validate(study_row.manifest)
         if frozen.manifest_digest != study_row.manifest_digest:
             raise ValueError("Study manifest integrity failed")
+        policy_set = session.scalar(select(ResearchPolicySet).where(
+            ResearchPolicySet.study_id == study_id, ResearchPolicySet.user_id == user.id,
+        ))
+        if policy_set is not None and (
+            fingerprint(policy_set.manifest) != policy_set.manifest_digest
+            or policy_set.manifest.get("study_manifest_digest") != frozen.manifest_digest
+        ):
+            raise ValueError("Frozen policy set integrity failed")
+        policy_ids = current_policy_set_ids(policy_set) if policy_set else None
         assessment = await analytics_options_market_fit(user, body)
-        snapshot = build_market_fit_opportunity(frozen, body.chain, assessment)
+        snapshot = build_market_fit_opportunity(
+            frozen, body.chain, assessment,
+            policy_set_digest=policy_set.manifest_digest if policy_set else None,
+            frozen_policy_ids=policy_ids,
+        )
     except ValueError:
         raise HTTPException(409, "Opportunity is outside the frozen NIFTY study") from None
     return recommendation_view(record_recommendation(session, user.id, study_id, snapshot))

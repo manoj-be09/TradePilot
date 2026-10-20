@@ -600,3 +600,15 @@ class ResearchRecommendation(Base):
     snapshot_digest: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ResearchPolicySet(Base):
+    """One frozen, research-only policy comparison bound to a parent study."""
+    __tablename__ = "research_policy_sets"
+    __table_args__ = (UniqueConstraint("study_id", name="uq_research_policy_set_study"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    study_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("research_studies.id"), index=True)
+    manifest: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    manifest_digest: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

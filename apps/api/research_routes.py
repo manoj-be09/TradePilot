@@ -14,6 +14,7 @@ from packages.database.models import (
     ResearchCandidate,
     ResearchEvaluation,
     ResearchEvidence,
+    ResearchPolicySet,
     ResearchRecommendation,
     ResearchStudy,
     ResearchTrial,
@@ -29,6 +30,11 @@ from packages.regime.candidate_registry import (
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
 from packages.regime.registered_evaluator import record_registered_nifty_replay_job
 from packages.regime.research_evidence import EvidenceRecord, record_evidence
+from packages.regime.research_policy_sets import (
+    FrozenPolicySet,
+    freeze_policy_set,
+    policy_set_view,
+)
 from packages.regime.research_readiness import assess_trial
 from packages.regime.research_recommendations import (
     RecommendationSnapshot,
@@ -81,6 +87,29 @@ def studies(user: CurrentUser, session: SessionDep, response: Response,
              .order_by(ResearchStudy.created_at.desc(), ResearchStudy.id.desc())
              .offset(offset).limit(limit))
     return [study_view(row) for row in session.scalars(query)]
+
+
+@router.post("/studies/{study_id}/policy-set")
+def create_policy_set(study_id: UUID, body: FrozenPolicySet,
+                      user: CurrentUser, session: SessionDep) -> dict[str, Any]:
+    try:
+        return policy_set_view(freeze_policy_set(session, user.id, study_id, body))
+    except LookupError:
+        raise HTTPException(404, "Study not found") from None
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from None
+
+
+@router.get("/studies/{study_id}/policy-set")
+def get_policy_set(study_id: UUID, user: CurrentUser,
+                   session: SessionDep, response: Response) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    row = session.scalar(select(ResearchPolicySet).where(
+        ResearchPolicySet.study_id == study_id, ResearchPolicySet.user_id == user.id,
+    ))
+    if row is None:
+        raise HTTPException(404, "Policy set not found")
+    return policy_set_view(row)
 
 
 @router.post("/studies/{study_id}/recommendations")

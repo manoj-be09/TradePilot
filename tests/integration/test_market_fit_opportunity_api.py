@@ -27,6 +27,21 @@ def test_opportunity_http_requires_owner_and_retains_one_abstention(client, monk
         "holdout_start": "2025-01-01", "holdout_end": "2025-12-31",
     })
     assert study.status_code == 200
+    policy_path = f"/research/studies/{study.json()['id']}/policy-set"
+    policy = client.post(policy_path, headers=owner_headers, json={
+        "incumbent": {
+            "strategy_key": "bull_call_spread", "strategy_version": "1.0.0",
+            "policy_version": "nifty-paper-v1",
+            "policy_artifact_digest": "c" * 64,
+            "entry_rule": "Use only the predeclared completed-bar entry window.",
+            "exit_rule": "Use only the predeclared stop, target and time exit.",
+            "risk_rule": "Abstain when the basket, costs or capital are unavailable.",
+        },
+        "challengers": [], "limitation": "Research only; no qualified costs or fills.",
+    })
+    assert policy.status_code == 200
+    assert client.get(policy_path, headers=other_headers).status_code == 404
+    assert client.get(policy_path, headers=owner_headers).json()["id"] == policy.json()["id"]
     now = datetime.now(timezone.utc).replace(microsecond=0)
     body = {"reference_strike": "100", "chain": {
         "underlying": "NIFTY", "underlying_spot": "100",
@@ -51,6 +66,8 @@ def test_opportunity_http_requires_owner_and_retains_one_abstention(client, monk
     assert first.json()["decision"] == "ABSTAIN"
     assert first.json()["snapshot"]["evidence_snapshot"]["chain_source"] == (
         "CLIENT_SUBMITTED_CHAIN")
+    assert first.json()["snapshot"]["evidence_snapshot"]["policy_set_digest"] == (
+        policy.json()["manifest_digest"])
     rows = client.get(
         f"/research/studies/{study.json()['id']}/recommendations", headers=owner_headers,
     )

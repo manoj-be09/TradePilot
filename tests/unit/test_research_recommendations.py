@@ -242,15 +242,24 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
             legs=[], entry_policy="Frozen research entry", exit_policy="Frozen research exit",
         )],
     )
-    first = build_market_fit_opportunity(study(), chain, assessment)
-    second = build_market_fit_opportunity(study(), chain, assessment)
+    pinned = {("bull_call_spread", "1.0.0")}
+    first = build_market_fit_opportunity(
+        study(), chain, assessment, policy_set_digest="d" * 64,
+        frozen_policy_ids=pinned,
+    )
+    second = build_market_fit_opportunity(
+        study(), chain, assessment, policy_set_digest="d" * 64,
+        frozen_policy_ids=pinned,
+    )
     assert first == second
     assert first.decision == "ABSTAIN"
     assert first.risk_context["outcome"] == "NOT_ATTEMPTED"
     assert first.evidence_snapshot["study_manifest_digest"] == study().manifest_digest
     assert first.evidence_snapshot["chain_source"] == "CLIENT_SUBMITTED_CHAIN"
     assert first.evidence_snapshot["bar_digest"] is None
+    assert first.evidence_snapshot["policy_set_digest"] == "d" * 64
     assert first.evidence_snapshot["alternatives"][0]["reasons"] == ["No complete basket."]
+    assert first.evidence_snapshot["alternatives"][0]["frozen_in_study"] is True
     assert first.expires_at == datetime(2026, 2, 10, 4, 35, tzinfo=timezone.utc)
 
     with pytest.raises(ValueError, match="protected holdout"):

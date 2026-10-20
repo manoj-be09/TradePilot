@@ -87,6 +87,8 @@ def build_abstention_recommendation(
 
 def build_market_fit_opportunity(
     study: FrozenNiftyStudy, chain: OptionChain, assessment: MarketFitAssessment,
+    *, policy_set_digest: str | None = None,
+    frozen_policy_ids: set[tuple[str, str]] | None = None,
 ) -> RecommendationSnapshot:
     """Freeze one unqualified, point-in-time abstention for later review.
 
@@ -110,6 +112,8 @@ def build_market_fit_opportunity(
         "entry_policy": item.entry_policy,
         "exit_policy": item.exit_policy,
         "fill_status": "NOT_ATTEMPTED",
+        "frozen_in_study": (item.strategy_key, item.strategy_version)
+        in (frozen_policy_ids or set()),
     } for item in assessment.candidates]
     return RecommendationSnapshot(
         decision="ABSTAIN", reason_code="INSUFFICIENT_EVIDENCE",
@@ -117,6 +121,7 @@ def build_market_fit_opportunity(
         evidence_snapshot={
             "kind": "NIFTY_MARKET_FIT_OPPORTUNITY_V1",
             "study_manifest_digest": study.manifest_digest,
+            "policy_set_digest": policy_set_digest,
             "chain_digest": fingerprint(chain.model_dump(mode="json")),
             "chain_source": assessment.chain_source,
             "chain_as_of": as_of.isoformat(),

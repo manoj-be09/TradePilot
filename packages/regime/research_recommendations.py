@@ -125,9 +125,9 @@ def build_market_fit_opportunity(
             "chain_digest": fingerprint(chain.model_dump(mode="json")),
             "chain_source": assessment.chain_source,
             "chain_as_of": as_of.isoformat(),
-            "bar_source": "PROVIDER_HISTORICAL_UNPINNED"
-            if assessment.regime_as_of else "UNAVAILABLE",
-            "bar_digest": None,
+            "bar_source": assessment.bar_source,
+            "bar_digest": assessment.bar_digest,
+            "bar_count": assessment.bar_count,
             "regime": assessment.regime,
             "regime_as_of": assessment.regime_as_of.isoformat()
             if assessment.regime_as_of else None,

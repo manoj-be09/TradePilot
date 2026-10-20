@@ -55,6 +55,9 @@ class MarketFitAssessment(BaseModel):
     chain_source: Literal["CLIENT_SUBMITTED_CHAIN"] = "CLIENT_SUBMITTED_CHAIN"
     payoff_basis: Literal["PER_OPTION_UNIT_BEFORE_COSTS"] = "PER_OPTION_UNIT_BEFORE_COSTS"
     chain_as_of: datetime
+    bar_source: Literal["UNAVAILABLE", "PROVIDER_HISTORICAL_HASH_ONLY"] = "UNAVAILABLE"
+    bar_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    bar_count: int | None = Field(default=None, ge=1)
     regime_as_of: datetime | None
     regime: str
     action: Literal["NO_TRADE"] = "NO_TRADE"

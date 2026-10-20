@@ -1231,6 +1231,7 @@ async def analytics_options_market_fit(
     del user
     chain = body.chain.model_copy(update={"quality": assess_option_chain(body.chain)})
     regime: MarketRegimeResult | None = None
+    bar_digest: str | None = None
     now = datetime.now(timezone.utc)
     if (
         chain.underlying == "NIFTY"
@@ -1253,10 +1254,20 @@ async def analytics_options_market_fit(
                 len(complete) >= 250
                 and timedelta(0) <= chain.as_of - complete[-1].timestamp <= timedelta(minutes=15)
             ):
-                regime = classify_market_regime(complete[-250:], "5m")
+                selected_bars = complete[-250:]
+                regime = classify_market_regime(selected_bars, "5m")
+                bar_digest = fingerprint({
+                    "instrument": "NSE_INDEX|Nifty 50", "interval": "5m",
+                    "bars": [bar.model_dump(mode="json") for bar in selected_bars],
+                })
         except (MarketDataUnavailable, MarketDataProviderError, ValueError):
             pass
-    return assess_nifty_market_fit(chain, body.reference_strike, regime)
+    assessment = assess_nifty_market_fit(chain, body.reference_strike, regime)
+    if bar_digest is not None and assessment.regime_as_of is not None:
+        assessment.bar_source = "PROVIDER_HISTORICAL_HASH_ONLY"
+        assessment.bar_digest = bar_digest
+        assessment.bar_count = 250
+    return assessment
 
 
 @app.post("/research/studies/{study_id}/opportunities/market-fit", tags=["research registry"])

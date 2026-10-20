@@ -1,9 +1,11 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from packages.market_data.contracts import OptionChain, OptionContractQuote, Quote
+from apps.api import main
+from packages.market_data.contracts import HistoricalBar, OptionChain, OptionContractQuote, Quote
 from packages.market_data.quality import assess_option_chain
-from packages.options.market_fit import assess_nifty_market_fit
+from packages.options.market_fit import MarketFitRequest, assess_nifty_market_fit
 from packages.regime.classifier import MarketRegimeResult
 
 
@@ -106,3 +108,31 @@ def test_missing_book_time_and_stale_regime_abstain_without_fake_pop():
     assert any("stale" in reason for reason in result.reasons)
     assert all(item.fit != "MATCH" for item in result.candidates)
     assert any("book time" in reason for item in result.candidates for reason in item.reasons)
+
+
+def test_market_fit_hashes_exact_provider_bars_without_qualifying_them(monkeypatch):
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    bars = [HistoricalBar(
+        timestamp=now - timedelta(minutes=5 * (250 - index)),
+        open=100, high=101, low=99, close=100, volume=100,
+    ) for index in range(250)]
+
+    class Provider:
+        async def get_historical(self, *_args):
+            return bars
+
+    monkeypatch.setattr(main, "get_market_data_provider", Provider)
+    monkeypatch.setattr(main, "classify_market_regime", lambda *_args: _regime(now))
+    body = MarketFitRequest(chain=_snapshot(now), reference_strike=100)
+    first = asyncio.run(main.analytics_options_market_fit(None, body))
+    second = asyncio.run(main.analytics_options_market_fit(None, body))
+    assert first.bar_source == "PROVIDER_HISTORICAL_HASH_ONLY"
+    assert first.bar_count == 250
+    assert first.bar_digest == second.bar_digest
+    assert first.bar_digest is not None
+    assert first.action == "NO_TRADE"
+    assert first.probability_of_profit is None
+
+    bars[0] = bars[0].model_copy(update={"close": Decimal(101)})
+    changed = asyncio.run(main.analytics_options_market_fit(None, body))
+    assert changed.bar_digest != first.bar_digest

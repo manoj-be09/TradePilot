@@ -1462,6 +1462,50 @@ def _strategy_version_definition(
     ).model_dump(mode="json", exclude={"option_index"} if option_index is None else set())
 
 
+def _require_template_acknowledgement(
+    body: PaperTradeCreateRequest, strategy: StrategyDefinition | None,
+) -> None:
+    if body.expected_template_version is not None:
+        if strategy is None or body.expected_template_version != strategy.version:
+            raise HTTPException(409, "Strategy template changed; refresh and review before entry")
+    elif strategy is not None and strategy.version != "1.0.0" and body.strategy_version_id is None:
+        raise HTTPException(
+            409, "Revised strategy template requires a current version; refresh and review it",
+        )
+
+
+def _require_armed_strategy_identity(
+    deployment: PaperDeployment, body: PaperTradeCreateRequest,
+    strategy: StrategyDefinition | None, index: OptionIndex, request_hash: str,
+) -> None:
+    """Do not resolve an armed request against different template economics."""
+    try:
+        saved = PaperTradeCreateRequest.model_validate(deployment.request_data)
+    except ValueError as error:
+        raise HTTPException(
+            422, "Saved entry rules are invalid; cancel and arm a new strategy",
+        ) from error
+    if (
+        deployment.request_hash != request_hash
+        or saved.model_dump(mode="json") != body.model_dump(mode="json")
+        or strategy is None
+    ):
+        raise HTTPException(422, "Armed strategy request changed; cancel and arm a new strategy")
+    if "strategy_definition" not in deployment.request_data:
+        # Legacy unchanged v1 templates retain their existing behavior. Never infer
+        # that an old unpinned request consented to revised template economics.
+        if strategy.version != "1.0.0":
+            raise HTTPException(
+                422, "Legacy armed template is unpinned and revised; cancel and arm a new strategy",
+            )
+        return
+    expected = _strategy_version_definition(
+        body, strategy, index if index.symbol != "NIFTY" else None,
+    )
+    if deployment.request_data["strategy_definition"] != expected:
+        raise HTTPException(422, "Armed template identity changed; cancel and arm a new strategy")
+
+
 @app.get(
     "/strategies/versions", response_model=list[StrategyVersionResponse], tags=["strategies"]
 )
@@ -1878,6 +1922,7 @@ async def arm_paper_deployment(
         raise HTTPException(409, "Option expiry has passed")
     strategy = get_strategy(body.strategy_key)
     assert strategy is not None
+    _require_template_acknowledgement(body, strategy)
     if body.strategy_version_id is not None:
         version = session.scalar(select(StrategyVersion).where(
             StrategyVersion.id == body.strategy_version_id,
@@ -1932,6 +1977,9 @@ async def arm_paper_deployment(
         request_hash=digest,
         request_data={
             **body.model_dump(mode="json"),
+            "strategy_definition": _strategy_version_definition(
+                body, strategy, index if index.symbol != "NIFTY" else None,
+            ),
             **({"option_index": index.model_dump()} if index.symbol != "NIFTY" else {}),
             "market_data_provider": provider.provider_id,
             "exit_policy": OptionExitPolicy(
@@ -2162,6 +2210,15 @@ async def _open_paper_trade_with_provider(
     strategy = None if is_custom_strategy else get_strategy(body.strategy_key)
     if not is_custom_strategy and strategy is None:
         raise HTTPException(status_code=422, detail="Unknown paper strategy")
+    if deployment_id is not None:
+        armed = session.scalar(select(PaperDeployment).where(
+            PaperDeployment.id == deployment_id, PaperDeployment.user_id == user.id,
+        ))
+        if armed is None or armed.status != "WAITING_FOR_ENTRY":
+            raise HTTPException(409, "Paper deployment is no longer armed")
+        _require_armed_strategy_identity(armed, body, strategy, index, request_hash)
+    else:
+        _require_template_acknowledgement(body, strategy)
     strategy_version = None
     if body.strategy_version_id is not None:
         strategy_version = session.scalar(
@@ -2478,6 +2535,7 @@ async def _open_paper_trade_with_provider(
         if deployment is None or deployment.status != "WAITING_FOR_ENTRY":
             session.rollback()
             raise HTTPException(status_code=409, detail="Paper deployment is no longer armed")
+        _require_armed_strategy_identity(deployment, body, strategy, index, request_hash)
         if deployment.request_data.get("market_data_provider", "upstox") != provider.provider_id:
             session.rollback()
             raise HTTPException(

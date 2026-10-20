@@ -159,6 +159,7 @@ class PaperTradeCreateRequest(BaseModel):
         return value
 
     strategy_version_id: UUID | None = None
+    expected_template_version: str | None = Field(default=None, min_length=1, max_length=32)
     underlying: str = Field(default="NIFTY", min_length=1, max_length=128)
     expiry_test_only: bool = False
 
@@ -169,6 +170,9 @@ class PaperTradeCreateRequest(BaseModel):
             data.pop("underlying", None)
         if not self.expiry_test_only:
             data.pop("expiry_test_only", None)
+        if self.expected_template_version is None:
+            # Keep historical command hashes and stored deployment bodies unchanged.
+            data.pop("expected_template_version", None)
         return data
     strategy_key: str = Field(min_length=1, max_length=64)
     expiry: date

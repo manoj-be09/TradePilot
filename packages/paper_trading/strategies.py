@@ -209,12 +209,13 @@ STRATEGY_REGISTRY = StrategyRegistry(
         StrategyDefinition(
             "strip",
             "Strip",
-            "Buy one put and two calls at the reference strike for a downside-skewed "
+            "Buy two puts and one call at the reference strike for a downside-skewed "
             "move structure.",
             (
-                StrategyLeg("PE", "BUY", 0),
-                StrategyLeg("CE", "BUY", 0, 2),
+                StrategyLeg("PE", "BUY", 0, 2),
+                StrategyLeg("CE", "BUY", 0),
             ),
+            version="2.0.0",
         ),
         StrategyDefinition(
             "strap",

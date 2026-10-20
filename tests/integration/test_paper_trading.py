@@ -482,7 +482,7 @@ def test_ratio_templates_record_ratio_scaled_quantities_and_finite_risk(client, 
         "call_broken_wing": [25, 50, 25],
         "call_ratio_backspread": [25, 50],
         "put_ratio_backspread": [25, 50],
-        "strip": [25, 50],
+        "strip": [50, 25],
         "strap": [50, 25],
     }
     for index, (strategy_key, quantities) in enumerate(expected_quantities.items()):
@@ -499,6 +499,7 @@ def test_ratio_templates_record_ratio_scaled_quantities_and_finite_risk(client, 
             headers={**headers, "Idempotency-Key": str(uuid4())},
             json={
                 "strategy_key": strategy_key,
+                **({"expected_template_version": "2.0.0"} if strategy_key == "strip" else {}),
                 "expiry": provider.expiry.isoformat(),
                 "reference_strike": "25000",
                 "lots": 1,

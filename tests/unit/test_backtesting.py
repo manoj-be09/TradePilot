@@ -164,8 +164,8 @@ def test_ratio_strategy_replay_scales_leg_quantities():
     )
 
     assert [(leg.side, leg.quantity_units) for leg in result.legs] == [
-        ("BUY", 25),
         ("BUY", 50),
+        ("BUY", 25),
     ]
     assert result.maximum_loss_at_entry > 0
 

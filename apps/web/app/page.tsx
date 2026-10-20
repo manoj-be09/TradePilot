@@ -1871,6 +1871,7 @@ export default function Home() {
       await paperEntry.submit(JSON.stringify({
           strategy_key: selectedStrategy,
           strategy_version_id: selectedVersionId || null,
+          expected_template_version: selectedPaperStrategy?.version,
           expiry: selectedExpiry,
           reference_strike: isCustomStrategy
             ? customLegDrafts[0]?.strike || selectedPaperStrike
@@ -1901,6 +1902,7 @@ export default function Home() {
     const payload = JSON.stringify({
       strategy_key: selectedStrategy,
       strategy_version_id: selectedVersionId || null,
+      expected_template_version: selectedPaperStrategy?.version,
       expiry: selectedExpiry,
       reference_strike: selectedPaperStrike,
       lots: paperLots,

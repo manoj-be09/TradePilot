@@ -192,6 +192,14 @@ def test_paper_workflow_is_authenticated_and_persists_simulated_fills(client, mo
     orders = client.get("/paper/orders", headers=headers)
     assert [order["action"] for order in orders.json()] == ["CLOSE", "OPEN"]
     assert all(order["fill_snapshot"]["paper_only"] for order in orders.json())
+    open_order = next(order for order in orders.json() if order["action"] == "OPEN")
+    opened_fill = open_order["fill_snapshot"]["fills"][0]
+    assert opened_fill["displayed_bid_quantity"] == 1000
+    assert opened_fill["displayed_ask_quantity"] == 1000
+    assert opened_fill["traded_volume"] == 1000
+    assert opened_fill["open_interest"] == 10000
+    assert opened_fill["implied_volatility"] == "20"
+    assert opened_fill["greeks"]["delta"] == "0.5"
     account_after_close = client.get("/paper/account", headers=headers).json()
     assert account_after_close["cash_balance"] == "1000225.00"
     assert all(order["fill_snapshot"]["modeled_costs"]["model_id"] ==
@@ -581,6 +589,16 @@ def test_no_code_entry_conditions_are_rechecked_and_persisted_from_server_snapsh
     condition = response.json()["entry_rule_snapshot"]["results"][0]
     assert condition["actual"] == "1"
     assert condition["passed"] is True
+    context = response.json()["entry_rule_snapshot"]["entry_market_context"]
+    assert context["version"] == "nifty-option-observed-v2"
+    assert len(context["chain_digest"]) == 64
+    assert datetime.fromisoformat(context["available_at"]).tzinfo is not None
+    assert context["call_volume"] is not None
+    assert context["put_open_interest"] is not None
+    assert context["quality_status"] == "PASS"
+    assert context["buyer_count"] is None
+    assert context["news"] is None
+    assert context["validated_support"] is None
 
 
 def test_unsatisfied_no_code_condition_rejects_trade_without_order(client, monkeypatch):

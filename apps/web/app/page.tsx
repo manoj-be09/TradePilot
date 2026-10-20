@@ -228,6 +228,18 @@ type PaperTrade = {
     strategy_definition_hash?: string | null;
     conditions?: { metric: RuleMetric; operator: RuleOperator; threshold: string }[];
     results?: { metric: RuleMetric; operator: RuleOperator; threshold: string; actual: string | null; passed: boolean | null }[];
+    entry_market_context?: {
+      version?: string; source?: string; observed_at?: string; available_at?: string; aggregate_scope?: string;
+      quality_status?: string; source_timestamp_verified?: boolean;
+      call_volume?: number | null; put_volume?: number | null;
+      call_open_interest?: number | null; put_open_interest?: number | null;
+      atm_call_iv_pct?: string | null; atm_put_iv_pct?: string | null;
+      median_relative_spread_pct?: string | null;
+      largest_call_oi_strike?: string | null; largest_put_oi_strike?: string | null;
+      buyer_count?: number | null; seller_count?: number | null;
+      news?: string | null; validated_support?: string | null;
+      validated_resistance?: string | null; realized_volatility?: string | null;
+    };
   };
   stop_loss_amount: string | null;
   target_profit_amount: string | null;
@@ -250,6 +262,15 @@ type PaperTrade = {
     entry_price: string;
   }[];
 };
+
+function EntryMarketEvidence({ context }: { context: NonNullable<PaperTrade["entry_rule_snapshot"]["entry_market_context"]> }) {
+  return <details><summary>Market evidence saved at entry</summary>
+    <p>{context.source || "Source unrecorded"} · market time {context.observed_at ? new Date(context.observed_at).toLocaleString("en-IN") : "unavailable"} · server availability {context.available_at ? new Date(context.available_at).toLocaleString("en-IN") : "unavailable"} · quality {context.quality_status || "unknown"} · exchange timestamp {context.source_timestamp_verified ? "verified by current quality check" : "unverified"}</p>
+    <p>Returned-chain call / put volume: {context.call_volume ?? "unavailable"} / {context.put_volume ?? "unavailable"}; open interest: {context.call_open_interest ?? "unavailable"} / {context.put_open_interest ?? "unavailable"}. These are totals only for returned contracts, not total NIFTY market volume.</p>
+    <p>ATM call / put IV: {context.atm_call_iv_pct ?? "unavailable"} / {context.atm_put_iv_pct ?? "unavailable"}; median spread: {context.median_relative_spread_pct ?? "unavailable"}%. Largest call / put OI strikes: {context.largest_call_oi_strike ?? "unavailable"} / {context.largest_put_oi_strike ?? "unavailable"}. OI concentrations are descriptive, not validated support or resistance.</p>
+    <p>Buyer/seller counts, news, realized volatility and validated support/resistance: unavailable in this recorded snapshot. Displayed bid/ask quantities and quote times for selected legs are retained in the open-order fill evidence. These observations are not a validated prediction.</p>
+  </details>;
+}
 
 function PositionMaximumProfit({ trade, token }: { trade: PaperTrade; token: string }) {
   const [profit, setProfit] = useState<string>("Calculating…");
@@ -729,6 +750,11 @@ export default function Home() {
   const [payoffEstimateError, setPayoffEstimateError] = useState("");
   const [payoffEstimateBusy, setPayoffEstimateBusy] = useState(false);
   const [strategyPayoffs, setStrategyPayoffs] = useState<Record<string, PayoffEstimate>>({});
+  const [strategyPayoffKey, setStrategyPayoffKey] = useState("");
+  const [batchComparison, setBatchComparison] = useState<{
+    asOf: string; expiry: string; strike: string; lots: number;
+    rows: { key: string; name: string; version: string; status: string; maximumProfit: string; maximumLoss: string }[];
+  } | null>(null);
   const [paperTicketMessage, setPaperTicketMessage] = useState("");
   const [showAllStrategies, setShowAllStrategies] = useState(false);
   const [strategyBiasFilter, setStrategyBiasFilter] = useState<StrategyMarketBias | "ALL">("ALL");
@@ -1281,15 +1307,18 @@ export default function Home() {
         const contract = row ? contracts.find((item) => item.expiry === selectedExpiry && item.strike === row.strike && item.option_type === leg.option_type) : undefined;
         const price = leg.side === "BUY" ? option?.quote.ask : option?.quote.bid;
         if (!row || !option || !contract || price === null || price === undefined || Number(price) <= 0) return [];
-        return [{ option_type: leg.option_type, side: leg.side, strike: row.strike, price: Number(price), quantityLots: paperLots, lotSize: contract.lot_size }];
+        return [{ option_type: leg.option_type, side: leg.side, strike: row.strike, price: Number(price), quantityLots: paperLots * leg.quantity_ratio, lotSize: contract.lot_size }];
       });
       return legs.length === strategy.legs.length ? [{ strategy, legs }] : [];
     });
   }, [chain, contracts, paperLots, paperStrategies, selectedExpiry, selectedPaperStrike, strikeRows]);
 
   useEffect(() => {
-    if (!token || !chain || !strategyTilePreviews.length) { setStrategyPayoffs({}); return; }
+    if (!token || !chain || !strategyTilePreviews.length) { setStrategyPayoffs({}); setStrategyPayoffKey(""); return; }
     const controller = new AbortController();
+    setStrategyPayoffs({});
+    setStrategyPayoffKey("");
+    const snapshotKey = `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`;
     const spot = Number(chain.underlying_spot || 1);
     Promise.all(strategyTilePreviews.map(async ({ strategy, legs }) => {
       const prices = legs.map((leg) => Number(leg.strike));
@@ -1303,10 +1332,10 @@ export default function Home() {
         }),
       });
       return [strategy.key, await readJson<PayoffEstimate>(response)] as const;
-    })).then((items) => { if (!controller.signal.aborted) setStrategyPayoffs(Object.fromEntries(items)); })
-      .catch(() => { if (!controller.signal.aborted) setStrategyPayoffs({}); });
+    })).then((items) => { if (!controller.signal.aborted) { setStrategyPayoffs(Object.fromEntries(items)); setStrategyPayoffKey(snapshotKey); } })
+      .catch(() => { if (!controller.signal.aborted) { setStrategyPayoffs({}); setStrategyPayoffKey(snapshotKey); } });
     return () => controller.abort();
-  }, [chain, strategyTilePreviews, token]);
+  }, [chain, paperLots, selectedPaperStrike, strategyTilePreviews, token]);
 
   const rankedStrategies = useMemo(() => {
     return (marketFit?.candidates || []).flatMap((candidate) => {
@@ -1333,6 +1362,26 @@ export default function Home() {
     STRATEGY_CATALOG.filter((entry) => strategyBiasFilter === "ALL" || entry.bias === strategyBiasFilter).forEach((entry) => { counts[entry.status] += 1; });
     return counts;
   }, [strategyBiasFilter]);
+
+  function compareAllPaperTemplates() {
+    if (!chain || !selectedPaperStrike || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`) return;
+    setBatchComparison({
+      asOf: chain.as_of, expiry: chain.expiry, strike: selectedPaperStrike, lots: paperLots,
+      rows: paperStrategies.map((strategy) => {
+        const quoted = strategyTilePreviews.some((preview) => preview.strategy.key === strategy.key);
+        const payoff = strategyPayoffs[strategy.key];
+        return {
+          key: strategy.key, name: strategy.name, version: strategy.version,
+          status: !quoted ? "Required quote or listed leg unavailable" : !payoff ? "Payoff unavailable"
+            : chain.quality?.status !== "PASS" ? "Snapshot quality unverified or failed"
+            : payoff.maximum_loss_unbounded ? "Unbounded loss · blocked"
+            : payoff.maximum_loss === null ? "Maximum loss unavailable" : "Gross expiry preview only",
+          maximumProfit: payoff?.maximum_profit_unbounded ? "Unbounded" : payoff?.maximum_profit ?? "Unavailable",
+          maximumLoss: payoff?.maximum_loss_unbounded ? "Unbounded" : payoff?.maximum_loss ?? "Unavailable",
+        };
+      }),
+    });
+  }
 
   function applyStrategyToPaperTicket(strategy: PaperStrategy, payoff: PayoffEstimate) {
     const maximumLoss = Number(payoff.maximum_loss);
@@ -2572,6 +2621,14 @@ export default function Home() {
               </div>
               <p className="strategy-library-note">Public taxonomy reference: OptionStrat’s strategy list. TradingPilot uses original summaries and only enables the defined-risk templates supported by its paper payoff engine; this classification is descriptive, not a profit forecast.</p>
               <p className="strategy-library-note" role="status">{marketFitError || (marketFit ? `Decision: no trade. ${marketFit.reasons.join(" ")}` : "Checking current NIFTY market-fit inputs; no trade is recommended.")}</p>
+              <button className="inline-button" disabled={!chain || !selectedPaperStrike || paperBusy || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={compareAllPaperTemplates} type="button">Compare all paper templates at this snapshot</button>
+              {batchComparison ? <details className="workspace-disclosure" open><summary>All-template quote and payoff comparison · {batchComparison.rows.length} templates</summary>
+                <p>Snapshot {new Date(batchComparison.asOf).toLocaleString("en-IN")} · expiry {batchComparison.expiry} · reference strike {formatPrice(batchComparison.strike)} · {batchComparison.lots} lot(s). This is a frozen on-screen comparison of available quotes and gross expiry payoff. It creates no orders, positions, research outcomes, backtest, or probability estimate.</p>
+                <div className="paper-table-scroll"><table className="paper-table"><thead><tr><th>Strategy</th><th>Availability</th><th>Max expiry profit</th><th>Max expiry loss</th></tr></thead><tbody>
+                  {batchComparison.rows.map((row) => <tr key={row.key}><td>{row.name} · {row.version}</td><td>{row.status}</td><td>{row.maximumProfit === "Unavailable" || row.maximumProfit === "Unbounded" ? row.maximumProfit : `₹${formatPrice(row.maximumProfit)}`}</td><td>{row.maximumLoss === "Unavailable" || row.maximumLoss === "Unbounded" ? row.maximumLoss : `₹${formatPrice(row.maximumLoss)}`}</td></tr>)}
+                </tbody></table></div>
+                <p>Catalog-only and engine-pending structures are excluded. Required entry and exit policies, costs, capital, quote timing, and market fit need separate validation before any paper application. An unavailable row remains unavailable; it is never filled with an estimated price.</p>
+              </details> : null}
               <details className="workspace-disclosure probability-evidence"><summary>Win / loss probability · Insufficient evidence</summary>
                 <p>No validated forecast is available. Historical paper win frequency is not a prediction for the next trade.</p>
                 <dl className="probability-inputs">
@@ -2878,7 +2935,9 @@ export default function Home() {
                 {trade.valuation_warning ? <p className="table-warning">{trade.valuation_warning}</p> : null}
                 {trade.execution_warnings.length ? <p className="table-warning">{trade.execution_warnings.join(" · ")}</p> : null}
                 {trade.exit_reason ? <small>{trade.exit_reason.replaceAll("_", " ")}</small> : null}
-                <details><summary>Legs, stops &amp; evidence</summary><p>{trade.legs.map(leg => `${leg.side} ${formatPrice(leg.strike)} ${leg.option_type} ×${formatCount(leg.quantity_units / trade.lot_size)} lots`).join(" / ")}</p><p>Stop {trade.stop_loss_amount ? `₹${formatPrice(trade.stop_loss_amount)}` : "Off"} · Target {trade.target_profit_amount ? `₹${formatPrice(trade.target_profit_amount)}` : "Off"} · Trail {trade.trailing_stop_amount ? `₹${formatPrice(trade.trailing_stop_amount)}` : "Off"}</p><OptionTradeObservations tradeId={trade.id} apiUrl={API_URL} token={token} /></details>
+                <details><summary>Legs, stops &amp; evidence</summary><p>{trade.legs.map(leg => `${leg.side} ${formatPrice(leg.strike)} ${leg.option_type} ×${formatCount(leg.quantity_units / trade.lot_size)} lots`).join(" / ")}</p><p>Stop {trade.stop_loss_amount ? `₹${formatPrice(trade.stop_loss_amount)}` : "Off"} · Target {trade.target_profit_amount ? `₹${formatPrice(trade.target_profit_amount)}` : "Off"} · Trail {trade.trailing_stop_amount ? `₹${formatPrice(trade.trailing_stop_amount)}` : "Off"}</p>
+                  {trade.entry_rule_snapshot.entry_market_context ? <EntryMarketEvidence context={trade.entry_rule_snapshot.entry_market_context} /> : <p>Entry market context was not saved for this older trade.</p>}
+                  <OptionTradeObservations tradeId={trade.id} apiUrl={API_URL} token={token} /></details>
                 {trade.status === "OPEN" ? <button className="inline-button" disabled={paperBusy || (trade.expiry < indiaCalendarDate() && settlementBusy)} onClick={() => { if (trade.expiry < indiaCalendarDate()) { setSettlementTradeId(trade.id); setSettlementValue(""); setSettlementSource(""); setSettlementPreview(null); setIndexCloseReference(null); setOfficialIndexCloseReference(null); setSettlementError(""); } else { void closePaperTrade(trade.id); } }} type="button">{trade.expiry < indiaCalendarDate() ? "Review expiry settlement" : "Close paper position"}</button> : null}
               </article>)}</div>
               {!paperTrades.length ? <p className="workspace-empty">No positions yet. Add a strategy to begin monitoring.</p> : null}

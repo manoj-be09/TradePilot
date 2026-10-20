@@ -2431,10 +2431,25 @@ async def _open_paper_trade_with_provider(
         "market_as_of": chain.as_of.isoformat(),
         "quality_status": quality.status,
         "entry_market_context": {
-            "version": "nifty-option-observed-v1",
+            "version": "nifty-option-observed-v2",
+            "source": provider.provider_id,
+            "availability": "SERVER_OBSERVED_AT_ENTRY",
+            "available_at": datetime.now(timezone.utc).isoformat(),
+            "chain_digest": fingerprint(chain.model_dump(mode="json")),
+            "timestamp_basis": chain.timestamp_basis,
+            "source_timestamp_verified": quality.source_timestamp_verified,
+            "quality_status": quality.status,
             "underlying_spot": str(chain.underlying_spot),
             "observed_at": chain.as_of.isoformat(),
             "expiry": body.expiry.isoformat(),
+            "contracts_observed": len(chain.contracts),
+            "aggregate_scope": "RETURNED_OPTION_CHAIN_CONTRACTS_ONLY",
+            "call_volume": features.call_volume,
+            "put_volume": features.put_volume,
+            "call_open_interest": features.call_open_interest,
+            "put_open_interest": features.put_open_interest,
+            "call_open_interest_change": features.call_open_interest_change,
+            "put_open_interest_change": features.put_open_interest_change,
             "put_call_ratio_oi": str(features.put_call_ratio_oi)
             if features.put_call_ratio_oi is not None else None,
             "put_call_ratio_volume": str(features.put_call_ratio_volume)
@@ -2445,6 +2460,22 @@ async def _open_paper_trade_with_provider(
             if features.atm_put_iv_pct is not None else None,
             "median_relative_spread_pct": str(features.median_relative_spread_pct)
             if features.median_relative_spread_pct is not None else None,
+            "two_sided_quote_count": features.two_sided_quote_count,
+            "largest_call_oi_strike": str(features.largest_call_oi_strike)
+            if features.largest_call_oi_strike is not None else None,
+            "largest_put_oi_strike": str(features.largest_put_oi_strike)
+            if features.largest_put_oi_strike is not None else None,
+            "largest_call_oi_share_pct": str(features.largest_call_oi_share_pct)
+            if features.largest_call_oi_share_pct is not None else None,
+            "largest_put_oi_share_pct": str(features.largest_put_oi_share_pct)
+            if features.largest_put_oi_share_pct is not None else None,
+            "selected_leg_books": leg_quotes,
+            "buyer_count": None,
+            "seller_count": None,
+            "news": None,
+            "validated_support": None,
+            "validated_resistance": None,
+            "realized_volatility": None,
             "iv_rank_pct": None,
             "pcr_condition": observed_pcr_condition(features.put_call_ratio_oi),
         },
@@ -2583,6 +2614,17 @@ async def _open_paper_trade_with_provider(
                 "book_as_of": market_contract.quote.book_as_of.isoformat()
                 if market_contract.quote.book_as_of else None,
                 "book_timestamp_basis": market_contract.quote.book_timestamp_basis,
+                "displayed_bid_quantity": market_contract.bid_quantity,
+                "displayed_ask_quantity": market_contract.ask_quantity,
+                "traded_volume": market_contract.quote.volume,
+                "open_interest": market_contract.open_interest,
+                "open_interest_change": market_contract.open_interest_change,
+                "implied_volatility": str(market_contract.implied_volatility)
+                if market_contract.implied_volatility is not None else None,
+                "greeks": {
+                    name: str(value) if value is not None else None
+                    for name, value in market_contract.greeks.items()
+                },
             }
         )
     cash_flow = cash_flow.quantize(_CENT, rounding=ROUND_HALF_UP)

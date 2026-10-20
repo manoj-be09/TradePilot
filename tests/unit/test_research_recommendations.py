@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -16,11 +17,17 @@ from apps.api.research_routes import (
 from packages.database.base import Base
 from packages.database.models import ResearchRecommendation, ResearchStudy, User
 from packages.market_data.contracts import OptionChain
-from packages.options.market_fit import MarketFitAssessment, MarketFitCandidate, MarketFitRequest
+from packages.options.market_fit import (
+    MarketFitAssessment,
+    MarketFitCandidate,
+    MarketFitLeg,
+    MarketFitRequest,
+)
 from packages.regime.candidate_registry import (
     CandidateDefinition,
     TrialManifest,
     declare_trial,
+    fingerprint,
     register_candidate,
 )
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
@@ -234,12 +241,20 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
         as_of="2026-02-10T10:00:00+05:30", contracts=[],
     )
     assessment = MarketFitAssessment(
-        chain_as_of=chain.as_of, regime_as_of=None, regime="UNKNOWN",
+        chain_as_of=chain.as_of,
+        chain_digest=fingerprint(chain.model_dump(mode="json")),
+        reference_strike=Decimal(100),
+        regime_as_of=None, regime="UNKNOWN",
         reasons=["Source and costs are unreviewed."],
         candidates=[MarketFitCandidate(
             strategy_key="bull_call_spread", strategy_version="1.0.0",
             name="Bull call spread", fit="BLOCKED", reasons=["No complete basket."],
-            legs=[], entry_policy="Frozen research entry", exit_policy="Frozen research exit",
+            legs=[MarketFitLeg(
+                option_type="CE", side="BUY", strike=100, quantity=1,
+                entry_quote=5, bid=4, ask=5,
+            )],
+            maximum_profit=Decimal(10), maximum_loss=Decimal(5),
+            entry_policy="Frozen research entry", exit_policy="Frozen research exit",
         )],
     )
     pinned = {("bull_call_spread", "1.0.0")}
@@ -256,10 +271,15 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
     assert first.risk_context["outcome"] == "NOT_ATTEMPTED"
     assert first.evidence_snapshot["study_manifest_digest"] == study().manifest_digest
     assert first.evidence_snapshot["chain_source"] == "CLIENT_SUBMITTED_CHAIN"
+    assert first.evidence_snapshot["reference_strike"] == "100"
+    assert first.evidence_snapshot["chain_expiry"] == "2026-02-20"
     assert first.evidence_snapshot["bar_digest"] is None
     assert first.evidence_snapshot["bar_source"] == "UNAVAILABLE"
     assert first.evidence_snapshot["policy_set_digest"] == "d" * 64
     assert first.evidence_snapshot["alternatives"][0]["reasons"] == ["No complete basket."]
+    assert first.evidence_snapshot["alternatives"][0]["legs"][0]["entry_quote"] == "5"
+    assert (first.evidence_snapshot["alternatives"][0]
+            ["maximum_loss_per_option_unit_before_costs"] == "5")
     assert first.evidence_snapshot["alternatives"][0]["frozen_in_study"] is True
     assert first.expires_at == datetime(2026, 2, 10, 4, 35, tzinfo=timezone.utc)
 
@@ -271,6 +291,10 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
     assert with_bars.evidence_snapshot["bar_digest"] == "a" * 64
     assert with_bars.evidence_snapshot["bar_count"] == 250
     assert with_bars.risk_context["costs_qualified"] is False
+
+    changed_chain = chain.model_copy(update={"underlying_spot": Decimal(101)})
+    with pytest.raises(ValueError, match="differs from the assessed chain"):
+        build_market_fit_opportunity(study(), changed_chain, assessment)
 
     with pytest.raises(ValueError, match="protected holdout"):
         build_market_fit_opportunity(study(holdout_end="2026-02-11"), chain, assessment)
@@ -287,7 +311,10 @@ def test_market_fit_opportunity_route_is_owned_current_and_idempotent(monkeypatc
     )
     body = MarketFitRequest(chain=chain, reference_strike=100)
     assessment = MarketFitAssessment(
-        chain_as_of=chain.as_of, regime_as_of=None, regime="UNKNOWN",
+        chain_as_of=chain.as_of,
+        chain_digest=fingerprint(chain.model_dump(mode="json")),
+        reference_strike=Decimal(100),
+        regime_as_of=None, regime="UNKNOWN",
         reasons=["No qualified policy evidence."], candidates=[],
     )
 

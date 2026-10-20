@@ -1263,6 +1263,7 @@ async def analytics_options_market_fit(
         except (MarketDataUnavailable, MarketDataProviderError, ValueError):
             pass
     assessment = assess_nifty_market_fit(chain, body.reference_strike, regime)
+    assessment.chain_digest = fingerprint(body.chain.model_dump(mode="json"))
     if bar_digest is not None and assessment.regime_as_of is not None:
         assessment.bar_source = "PROVIDER_HISTORICAL_HASH_ONLY"
         assessment.bar_digest = bar_digest

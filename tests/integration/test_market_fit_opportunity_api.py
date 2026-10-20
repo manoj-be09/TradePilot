@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from apps.api import main
 from packages.options.market_fit import MarketFitAssessment
+from packages.regime.candidate_registry import fingerprint
 
 
 def test_opportunity_http_requires_owner_and_retains_one_abstention(client, monkeypatch):
@@ -51,7 +52,10 @@ def test_opportunity_http_requires_owner_and_retains_one_abstention(client, monk
 
     async def assess(_user, _body):
         return MarketFitAssessment(
-            chain_as_of=now, regime_as_of=None, regime="UNKNOWN",
+            chain_as_of=now,
+            chain_digest=fingerprint(_body.chain.model_dump(mode="json")),
+            reference_strike=_body.reference_strike,
+            regime_as_of=None, regime="UNKNOWN",
             reasons=["No qualified policy evidence."], candidates=[],
         )
 

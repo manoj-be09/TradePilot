@@ -55,6 +55,8 @@ class MarketFitAssessment(BaseModel):
     chain_source: Literal["CLIENT_SUBMITTED_CHAIN"] = "CLIENT_SUBMITTED_CHAIN"
     payoff_basis: Literal["PER_OPTION_UNIT_BEFORE_COSTS"] = "PER_OPTION_UNIT_BEFORE_COSTS"
     chain_as_of: datetime
+    reference_strike: Decimal | None = None
+    chain_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     bar_source: Literal["UNAVAILABLE", "PROVIDER_HISTORICAL_HASH_ONLY"] = "UNAVAILABLE"
     bar_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     bar_count: int | None = Field(default=None, ge=1)
@@ -285,6 +287,7 @@ def assess_nifty_market_fit(
     )
     return MarketFitAssessment(
         chain_as_of=chain.as_of,
+        reference_strike=reference_strike,
         regime_as_of=regime.as_of if regime else None,
         regime=regime.regime if regime else "UNKNOWN",
         reasons=reasons,

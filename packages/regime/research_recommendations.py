@@ -97,6 +97,10 @@ def build_market_fit_opportunity(
     """
     if chain.underlying != "NIFTY" or assessment.chain_as_of != chain.as_of:
         raise ValueError("Opportunity does not match its NIFTY chain")
+    if assessment.chain_digest != fingerprint(chain.model_dump(mode="json")):
+        raise ValueError("Opportunity chain differs from the assessed chain")
+    if assessment.reference_strike is None:
+        raise ValueError("Opportunity lacks its assessed reference strike")
     if assessment.action != "NO_TRADE" or assessment.probability_of_profit is not None:
         raise ValueError("Only unqualified no-trade opportunities can be recorded")
     if chain.as_of.tzinfo is None:
@@ -111,6 +115,16 @@ def build_market_fit_opportunity(
         "reasons": item.reasons,
         "entry_policy": item.entry_policy,
         "exit_policy": item.exit_policy,
+        "legs": [leg.model_dump(mode="json") for leg in item.legs],
+        "maximum_profit_per_option_unit_before_costs":
+        str(item.maximum_profit) if item.maximum_profit is not None else None,
+        "maximum_loss_per_option_unit_before_costs":
+        str(item.maximum_loss) if item.maximum_loss is not None else None,
+        "breakevens": [str(price) for price in item.breakevens],
+        "provisional_stop_per_option_unit":
+        str(item.provisional_stop) if item.provisional_stop is not None else None,
+        "provisional_target_per_option_unit":
+        str(item.provisional_target) if item.provisional_target is not None else None,
         "fill_status": "NOT_ATTEMPTED",
         "frozen_in_study": (item.strategy_key, item.strategy_version)
         in (frozen_policy_ids or set()),
@@ -122,9 +136,15 @@ def build_market_fit_opportunity(
             "kind": "NIFTY_MARKET_FIT_OPPORTUNITY_V1",
             "study_manifest_digest": study.manifest_digest,
             "policy_set_digest": policy_set_digest,
-            "chain_digest": fingerprint(chain.model_dump(mode="json")),
+            "chain_digest": assessment.chain_digest,
             "chain_source": assessment.chain_source,
             "chain_as_of": as_of.isoformat(),
+            "chain_expiry": chain.expiry.isoformat(),
+            "reference_strike": (
+                str(assessment.reference_strike)
+                if assessment.reference_strike is not None else None
+            ),
+            "payoff_basis": assessment.payoff_basis,
             "bar_source": assessment.bar_source,
             "bar_digest": assessment.bar_digest,
             "bar_count": assessment.bar_count,

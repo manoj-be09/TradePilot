@@ -6,6 +6,7 @@ from apps.api import main
 from packages.market_data.contracts import HistoricalBar, OptionChain, OptionContractQuote, Quote
 from packages.market_data.quality import assess_option_chain
 from packages.options.market_fit import MarketFitRequest, assess_nifty_market_fit
+from packages.regime.candidate_registry import fingerprint
 from packages.regime.classifier import MarketRegimeResult
 
 
@@ -127,6 +128,7 @@ def test_market_fit_hashes_exact_provider_bars_without_qualifying_them(monkeypat
     first = asyncio.run(main.analytics_options_market_fit(None, body))
     second = asyncio.run(main.analytics_options_market_fit(None, body))
     assert first.bar_source == "PROVIDER_HISTORICAL_HASH_ONLY"
+    assert first.chain_digest == fingerprint(body.chain.model_dump(mode="json"))
     assert first.bar_count == 250
     assert first.bar_digest == second.bar_digest
     assert first.bar_digest is not None

@@ -1,5 +1,12 @@
 # Build progress — updated 2026-10-19
 
+## 2026-10-19 — NIFTY ranking design and economic audit
+
+- Added `NIFTY_STRATEGY_RANKING_DESIGN.md` and linked the strategy/probability/project plans. It defines exact trade-policy identity, proposed entry/exit recipes, payoff bounds, point-in-time inputs, conservative after-cost ranking, no-trade, calibration and protected evaluation. This is a design deliverable; no selector, predictive percentage, study or trading setting was activated.
+- Source review at `4a534ed` and matching Graphify context found that current F&O ordering is a PCR/static-preference heuristic; daily option replay does not validate intraday policy probability. Independent quant review informed the design, including selection bias, correlated observations, fill versus policy probability and economic equivalence of spread constructions.
+- Found a real prerequisite defect: Strip and Strap currently have the same call-heavy exposure. A safe correction must also pin/check template identity for unversioned waiting deployments; changing only the registry could silently alter a previously armed request. The design records independent payoff invariants and preservation of existing positions/versions. This finding reopens the relevant template/arming acceptance boundary; prior green tests did not establish those economic semantics.
+- This pass changes documentation only. Software correction, actual current-market ranking, all-in cost evidence, calibrated POP and deployed acceptance remain unperformed. No account, existing position, order, cost history or volume was changed.
+
 ## 2026-10-19 — Recommendation expiry contract hardening
 
 - Trial-derived recommendation requests now reject timezone-naive expiry timestamps and normalize timezone-aware values to UTC before persistence. This keeps prospective recommendation expiry comparable across API clients without changing selection, execution, promotion, or account data.

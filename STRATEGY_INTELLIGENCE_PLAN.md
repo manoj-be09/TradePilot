@@ -149,6 +149,8 @@ Suggested cadence is a proposal: daily data-quality/research-health checks and r
 
 ## 7. Linking research to strategy selection
 
+19 October 2026 design addendum: [NIFTY_STRATEGY_RANKING_DESIGN.md](NIFTY_STRATEGY_RANKING_DESIGN.md) specifies complete trade-policy ranking, entry/exit and payoff contracts, a conservative after-cost objective, no-trade, a small first study and selected-subset probability validation. This is a proposed specification, not an implemented or qualified selector. Its source audit found a Strip/Strap definition error and unpinned legacy waiting-deployment risk; template identity protection and a versioned correction precede admitting that family. Market-fit labels remain separate from calibrated policy probability.
+
 The selector is itself a strategy and must undergo chronological and forward validation. Choosing whichever candidate performed best recently can introduce another layer of overfitting even when each individual candidate has a backtest.
 
 ### Stage 1: gate first

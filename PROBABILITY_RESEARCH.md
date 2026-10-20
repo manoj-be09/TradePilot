@@ -2,6 +2,8 @@
 
 Status: evidence foundation only; no predictive percentages published.
 
+19 October 2026: [NIFTY_STRATEGY_RANKING_DESIGN.md](NIFTY_STRATEGY_RANKING_DESIGN.md) defines the proposed policy-specific probability target, fills versus opportunities, same-horizon conservative ranking, selected-subset calibration, dependence-aware uncertainty and explicit abstention. The current PCR/paper-frequency heuristic is not this model. The proposed policy constants and acceptance thresholds have not been evaluated or deployed.
+
 ## Outcome and sample
 A win means realized P&L strictly positive after a declared versioned cost model under the exact saved entry/exit policy. Loss and break-even are separate classes; loss is not automatically100%-win. Keep account/strategy/version/policy, entry and close timestamps, expiry, premium fills, source quality and cost model in every labeled row. Existing paper P&L is before costs and cannot be silently reused as this label. Exclude test-only/manual/incomplete outcomes and isolate synthetic fixtures from actual observations. Never relabel old entries with newly fetched features.
 

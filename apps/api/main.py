@@ -105,6 +105,7 @@ from packages.database.models import (
     PaperOrder,
     PaperStrategyPreset,
     PaperTrade,
+    ResearchStudy,
     StrategyVersion,
     User,
     UserNotification,
@@ -192,6 +193,12 @@ from packages.paper_trading.transactions import (
 )
 from packages.paper_trading.worker_lease import WORKER_NAME, LeaseToken, assert_owned
 from packages.regime.classifier import MarketRegimeResult, classify_market_regime
+from packages.regime.frozen_nifty_study import FrozenNiftyStudy
+from packages.regime.research_recommendations import (
+    build_market_fit_opportunity,
+    recommendation_view,
+    record_recommendation,
+)
 
 app = FastAPI(title="Trading Platform API", version="0.8.0")
 app.include_router(equity_router)
@@ -1247,6 +1254,31 @@ async def analytics_options_market_fit(
         except (MarketDataUnavailable, MarketDataProviderError, ValueError):
             pass
     return assess_nifty_market_fit(chain, body.reference_strike, regime)
+
+
+@app.post("/research/studies/{study_id}/opportunities/market-fit", tags=["research registry"])
+async def record_nifty_market_fit_opportunity(
+    study_id: UUID, body: MarketFitRequest, user: CurrentUser, session: SessionDep,
+) -> dict[str, Any]:
+    """Retain a current research abstention; never create a paper order."""
+    study_row = session.scalar(select(ResearchStudy).where(
+        ResearchStudy.id == study_id, ResearchStudy.user_id == user.id,
+    ))
+    if study_row is None:
+        raise HTTPException(404, "Study not found")
+    now = datetime.now(timezone.utc)
+    if (body.chain.as_of.tzinfo is None
+            or not timedelta(0) <= now - body.chain.as_of <= timedelta(minutes=5)):
+        raise HTTPException(422, "Opportunity chain must be current and time-ordered")
+    try:
+        frozen = FrozenNiftyStudy.model_validate(study_row.manifest)
+        if frozen.manifest_digest != study_row.manifest_digest:
+            raise ValueError("Study manifest integrity failed")
+        assessment = await analytics_options_market_fit(user, body)
+        snapshot = build_market_fit_opportunity(frozen, body.chain, assessment)
+    except ValueError:
+        raise HTTPException(409, "Opportunity is outside the frozen NIFTY study") from None
+    return recommendation_view(record_recommendation(session, user.id, study_id, snapshot))
 
 
 @app.get("/analytics/indicators", response_model=IndicatorSnapshot, tags=["analytics"])

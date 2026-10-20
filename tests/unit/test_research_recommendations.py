@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -14,6 +15,8 @@ from apps.api.research_routes import (
 )
 from packages.database.base import Base
 from packages.database.models import ResearchRecommendation, ResearchStudy, User
+from packages.market_data.contracts import OptionChain
+from packages.options.market_fit import MarketFitAssessment, MarketFitCandidate, MarketFitRequest
 from packages.regime.candidate_registry import (
     CandidateDefinition,
     TrialManifest,
@@ -25,6 +28,7 @@ from packages.regime.research_readiness import ReadinessAssessment, ReadinessChe
 from packages.regime.research_recommendations import (
     RecommendationSnapshot,
     build_abstention_recommendation,
+    build_market_fit_opportunity,
     record_recommendation,
 )
 
@@ -222,3 +226,74 @@ def test_from_trial_request_rejects_timezone_naive_expiry():
         TrialRecommendationRequest(
             selector_version="selector-v1", expires_at="2026-02-01T10:00:00",
         )
+
+
+def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives():
+    chain = OptionChain(
+        underlying="NIFTY", underlying_spot=100, expiry="2026-02-20",
+        as_of="2026-02-10T10:00:00+05:30", contracts=[],
+    )
+    assessment = MarketFitAssessment(
+        chain_as_of=chain.as_of, regime_as_of=None, regime="UNKNOWN",
+        reasons=["Source and costs are unreviewed."],
+        candidates=[MarketFitCandidate(
+            strategy_key="bull_call_spread", strategy_version="1.0.0",
+            name="Bull call spread", fit="BLOCKED", reasons=["No complete basket."],
+            legs=[], entry_policy="Frozen research entry", exit_policy="Frozen research exit",
+        )],
+    )
+    first = build_market_fit_opportunity(study(), chain, assessment)
+    second = build_market_fit_opportunity(study(), chain, assessment)
+    assert first == second
+    assert first.decision == "ABSTAIN"
+    assert first.risk_context["outcome"] == "NOT_ATTEMPTED"
+    assert first.evidence_snapshot["study_manifest_digest"] == study().manifest_digest
+    assert first.evidence_snapshot["chain_source"] == "CLIENT_SUBMITTED_CHAIN"
+    assert first.evidence_snapshot["bar_digest"] is None
+    assert first.evidence_snapshot["alternatives"][0]["reasons"] == ["No complete basket."]
+    assert first.expires_at == datetime(2026, 2, 10, 4, 35, tzinfo=timezone.utc)
+
+    with pytest.raises(ValueError, match="protected holdout"):
+        build_market_fit_opportunity(study(holdout_end="2026-02-11"), chain, assessment)
+
+
+def test_market_fit_opportunity_route_is_owned_current_and_idempotent(monkeypatch):
+    from apps.api import main
+
+    engine, owner, other, study_id = _fixture()
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    chain = OptionChain(
+        underlying="NIFTY", underlying_spot=100,
+        expiry=(now + timedelta(days=7)).date(), as_of=now, contracts=[],
+    )
+    body = MarketFitRequest(chain=chain, reference_strike=100)
+    assessment = MarketFitAssessment(
+        chain_as_of=chain.as_of, regime_as_of=None, regime="UNKNOWN",
+        reasons=["No qualified policy evidence."], candidates=[],
+    )
+
+    async def assess(*_args):
+        return assessment
+
+    monkeypatch.setattr(main, "analytics_options_market_fit", assess)
+    with Session(engine) as session:
+        with pytest.raises(HTTPException) as missing:
+            asyncio.run(main.record_nifty_market_fit_opportunity(
+                study_id, body, SimpleNamespace(id=other), session))
+        assert missing.value.status_code == 404
+        first = asyncio.run(main.record_nifty_market_fit_opportunity(
+            study_id, body, SimpleNamespace(id=owner), session))
+        replay = asyncio.run(main.record_nifty_market_fit_opportunity(
+            study_id, body, SimpleNamespace(id=owner), session))
+        assert first["id"] == replay["id"]
+        assert first["decision"] == "ABSTAIN"
+        assert len(list(session.scalars(select(ResearchRecommendation)))) == 1
+        stale = MarketFitRequest(
+            chain=chain.model_copy(update={"as_of": now - timedelta(minutes=6)}),
+            reference_strike=100,
+        )
+        with pytest.raises(HTTPException) as late:
+            asyncio.run(main.record_nifty_market_fit_opportunity(
+                study_id, stale, SimpleNamespace(id=owner), session))
+        assert late.value.status_code == 422
+    engine.dispose()

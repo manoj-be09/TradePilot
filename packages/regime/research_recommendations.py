@@ -1,7 +1,8 @@
 """Prospective research-only recommendation and abstention records."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
@@ -9,7 +10,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from packages.database.models import ResearchRecommendation, ResearchStudy
+from packages.market_data.contracts import OptionChain
+from packages.options.market_fit import MarketFitAssessment
 from packages.regime.candidate_registry import fingerprint
+from packages.regime.frozen_nifty_study import FrozenNiftyStudy
 from packages.regime.research_readiness import ReadinessAssessment
 
 
@@ -78,6 +82,72 @@ def build_abstention_recommendation(
             "promotion_eligible": False,
         },
         expires_at=expires_at,
+    )
+
+
+def build_market_fit_opportunity(
+    study: FrozenNiftyStudy, chain: OptionChain, assessment: MarketFitAssessment,
+) -> RecommendationSnapshot:
+    """Freeze one unqualified, point-in-time abstention for later review.
+
+    The chain is caller-submitted, so its hash identifies bytes supplied to this
+    calculation; it does not certify exchange timing, source rights, or fills.
+    """
+    if chain.underlying != "NIFTY" or assessment.chain_as_of != chain.as_of:
+        raise ValueError("Opportunity does not match its NIFTY chain")
+    if assessment.action != "NO_TRADE" or assessment.probability_of_profit is not None:
+        raise ValueError("Only unqualified no-trade opportunities can be recorded")
+    if chain.as_of.tzinfo is None:
+        raise ValueError("Opportunity time must include a timezone")
+    as_of = chain.as_of.astimezone(timezone.utc)
+    if as_of.astimezone(ZoneInfo("Asia/Kolkata")).date() <= study.holdout_end:
+        raise ValueError("Prospective opportunity must follow the protected holdout")
+    alternatives = [{
+        "strategy_key": item.strategy_key,
+        "strategy_version": item.strategy_version,
+        "fit": item.fit,
+        "reasons": item.reasons,
+        "entry_policy": item.entry_policy,
+        "exit_policy": item.exit_policy,
+        "fill_status": "NOT_ATTEMPTED",
+    } for item in assessment.candidates]
+    return RecommendationSnapshot(
+        decision="ABSTAIN", reason_code="INSUFFICIENT_EVIDENCE",
+        selector_version=assessment.selector_version,
+        evidence_snapshot={
+            "kind": "NIFTY_MARKET_FIT_OPPORTUNITY_V1",
+            "study_manifest_digest": study.manifest_digest,
+            "chain_digest": fingerprint(chain.model_dump(mode="json")),
+            "chain_source": assessment.chain_source,
+            "chain_as_of": as_of.isoformat(),
+            "bar_source": "PROVIDER_HISTORICAL_UNPINNED"
+            if assessment.regime_as_of else "UNAVAILABLE",
+            "bar_digest": None,
+            "regime": assessment.regime,
+            "regime_as_of": assessment.regime_as_of.isoformat()
+            if assessment.regime_as_of else None,
+            "cost_model_id": study.cost_model_id,
+            "cost_artifact_digest": study.cost_artifact_digest,
+            "study_objective": study.objective,
+            "incumbent_rule_version": study.incumbent_rule_version,
+            "capital": str(study.capital),
+            "review_interval_days": study.review_interval_days,
+            "uncertainty_note": study.uncertainty_note,
+            "dataset_digest": study.dataset_digest,
+            "holdout_artifact_digest": study.holdout_artifact_digest,
+            "parent_search_budget": study.parent_search_budget,
+            "alternatives": alternatives,
+            "action": "NO_TRADE",
+        },
+        alternatives=[f"{item.strategy_key}@{item.strategy_version}"
+                      for item in assessment.candidates],
+        rejected_reasons=assessment.reasons,
+        risk_context={
+            "execution_enabled": False, "promotion_eligible": False,
+            "costs_qualified": False, "book_timing_qualified": False,
+            "outcome": "NOT_ATTEMPTED",
+        },
+        expires_at=as_of + timedelta(minutes=5),
     )
 
 

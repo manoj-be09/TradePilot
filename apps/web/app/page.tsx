@@ -230,12 +230,19 @@ type PaperTrade = {
     results?: { metric: RuleMetric; operator: RuleOperator; threshold: string; actual: string | null; passed: boolean | null }[];
     entry_market_context?: {
       version?: string; source?: string; observed_at?: string; available_at?: string; aggregate_scope?: string;
+      underlying?: string; expiry?: string; reference_strike?: string | null;
+      calendar_days_to_expiry?: number | null; contracts_observed?: number | null;
       quality_status?: string; source_timestamp_verified?: boolean;
-      call_volume?: number | null; put_volume?: number | null;
+      call_volume?: number | null; put_volume?: number | null; returned_chain_volume?: number | null;
       call_open_interest?: number | null; put_open_interest?: number | null;
-      atm_call_iv_pct?: string | null; atm_put_iv_pct?: string | null;
-      median_relative_spread_pct?: string | null;
+      call_open_interest_change?: number | null; put_open_interest_change?: number | null;
+      atm_call_iv_pct?: string | null; atm_put_iv_pct?: string | null; atm_strike?: string | null;
+      atm_iv_skew_put_minus_call_points?: string | null;
+      median_relative_spread_pct?: string | null; two_sided_quote_count?: number | null;
+      contracts_with_delta?: number | null; contracts_with_gamma?: number | null;
+      contracts_with_theta?: number | null; contracts_with_vega?: number | null;
       largest_call_oi_strike?: string | null; largest_put_oi_strike?: string | null;
+      quality_issues?: { code: string; severity: string; count: number }[];
       buyer_count?: number | null; seller_count?: number | null;
       news?: string | null; validated_support?: string | null;
       validated_resistance?: string | null; realized_volatility?: string | null;
@@ -265,9 +272,11 @@ type PaperTrade = {
 
 function EntryMarketEvidence({ context }: { context: NonNullable<PaperTrade["entry_rule_snapshot"]["entry_market_context"]> }) {
   return <details><summary>Market evidence saved at entry</summary>
-    <p>{context.source || "Source unrecorded"} · market time {context.observed_at ? new Date(context.observed_at).toLocaleString("en-IN") : "unavailable"} · server availability {context.available_at ? new Date(context.available_at).toLocaleString("en-IN") : "unavailable"} · quality {context.quality_status || "unknown"} · exchange timestamp {context.source_timestamp_verified ? "verified by current quality check" : "unverified"}</p>
-    <p>Returned-chain call / put volume: {context.call_volume ?? "unavailable"} / {context.put_volume ?? "unavailable"}; open interest: {context.call_open_interest ?? "unavailable"} / {context.put_open_interest ?? "unavailable"}. These are totals only for returned contracts, not total NIFTY market volume.</p>
-    <p>ATM call / put IV: {context.atm_call_iv_pct ?? "unavailable"} / {context.atm_put_iv_pct ?? "unavailable"}; median spread: {context.median_relative_spread_pct ?? "unavailable"}%. Largest call / put OI strikes: {context.largest_call_oi_strike ?? "unavailable"} / {context.largest_put_oi_strike ?? "unavailable"}. OI concentrations are descriptive, not validated support or resistance.</p>
+    <p>{context.source || "Source unrecorded"} · market time {context.observed_at ? new Date(context.observed_at).toLocaleString("en-IN") : "unavailable"} · server availability {context.available_at ? new Date(context.available_at).toLocaleString("en-IN") : "unavailable"} · quality {context.quality_status || "unknown"} · chain/quote timestamp {context.source_timestamp_verified ? "verified by saved quality check" : "unverified"} (book timing is separate)</p>
+    <p>{context.underlying ?? "Underlying unrecorded"} · expiry {context.expiry ?? "unavailable"} · calendar days remaining {context.calendar_days_to_expiry ?? "unavailable"} · reference strike {context.reference_strike ?? "unavailable"}.</p>
+    <p>Returned-chain volume: {context.returned_chain_volume ?? "unavailable"} across {context.contracts_observed ?? "unavailable"} contracts ({context.two_sided_quote_count ?? "unavailable"} with two-sided quotes). Call / put volume: {context.call_volume ?? "unavailable"} / {context.put_volume ?? "unavailable"}; open interest: {context.call_open_interest ?? "unavailable"} / {context.put_open_interest ?? "unavailable"}; OI change: {context.call_open_interest_change ?? "unavailable"} / {context.put_open_interest_change ?? "unavailable"}. These are totals only for returned contracts, not total NIFTY market volume.</p>
+    <p>ATM strike {context.atm_strike ?? "unavailable"}; call / put IV {context.atm_call_iv_pct ?? "unavailable"} / {context.atm_put_iv_pct ?? "unavailable"}; put-minus-call IV skew {context.atm_iv_skew_put_minus_call_points ?? "unavailable"} points. Median spread: {context.median_relative_spread_pct ?? "unavailable"}%. Largest call / put OI strikes: {context.largest_call_oi_strike ?? "unavailable"} / {context.largest_put_oi_strike ?? "unavailable"}. OI concentrations are descriptive, not validated support or resistance.</p>
+    <p>Contracts with delta / gamma / theta / vega: {context.contracts_with_delta ?? "unavailable"} / {context.contracts_with_gamma ?? "unavailable"} / {context.contracts_with_theta ?? "unavailable"} / {context.contracts_with_vega ?? "unavailable"}. {context.quality_issues ? (context.quality_issues.length ? `Quality issues: ${context.quality_issues.map(issue => `${issue.code} (${issue.count})`).join(", ")}.` : "No quality issues in the saved check.") : "Quality issue codes were not saved in this older snapshot."}</p>
     <p>Buyer/seller counts, news, realized volatility and validated support/resistance: unavailable in this recorded snapshot. Displayed bid/ask quantities and quote times for selected legs are retained in the open-order fill evidence. These observations are not a validated prediction.</p>
   </details>;
 }

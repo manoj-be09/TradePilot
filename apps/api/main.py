@@ -2161,6 +2161,26 @@ def expiry_test_policy(user: CurrentUser) -> dict[str, object]:
     return {"version": EXPIRY_TEST_POLICY_VERSION, "maximum_loss": "10000", "lots": 1}
 
 
+def _entry_check_dedupe_digest(snapshot: dict[str, object]) -> str:
+    """Ignore only receipt time when deciding whether a provider snapshot is new."""
+    # Receipt time belongs in the saved first observation, but a retry of the
+    # same provider snapshot is not a distinct market decision.
+    dedupe_snapshot = snapshot.copy()
+    entry = snapshot.get("entry_rule_snapshot")
+    if isinstance(entry, dict):
+        context = entry.get("entry_market_context")
+        if isinstance(context, dict):
+            dedupe_snapshot["entry_rule_snapshot"] = {
+                **entry,
+                "entry_market_context": {
+                    key: value for key, value in context.items() if key != "available_at"
+                },
+            }
+    return hashlib.sha256(json.dumps(
+        dedupe_snapshot, sort_keys=True, separators=(",", ":")
+    ).encode()).hexdigest()
+
+
 def _record_armed_entry_check(
     session: SessionDep, user_id: UUID, deployment_id: UUID,
     lease: LeaseToken | None, snapshot: dict[str, object],
@@ -2178,6 +2198,7 @@ def _record_armed_entry_check(
     digest = hashlib.sha256(json.dumps(
         snapshot, sort_keys=True, separators=(",", ":")
     ).encode()).hexdigest()
+    dedupe_digest = _entry_check_dedupe_digest(snapshot)
     previous = session.scalar(
         select(AuditEvent)
         .where(
@@ -2188,8 +2209,17 @@ def _record_armed_entry_check(
         .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
         .limit(1)
     )
-    if previous is not None and previous.details.get("snapshot_digest") == digest:
-        return
+    if previous is not None:
+        previous_snapshot = previous.details.get("snapshot")
+        if isinstance(previous_snapshot, dict):
+            # Old events have no separate dedupe digest; compare their saved
+            # snapshot without rewriting the signed full-payload digest.
+            previous_digest = hashlib.sha256(json.dumps(
+                previous_snapshot, sort_keys=True, separators=(",", ":")
+            ).encode()).hexdigest()
+            if (previous.details.get("snapshot_digest") == previous_digest
+                    and _entry_check_dedupe_digest(previous_snapshot) == dedupe_digest):
+                return
     decision = snapshot.get("decision")
     quality = snapshot.get("quality")
     if isinstance(quality, dict) and quality.get("status") == "FAIL":
@@ -2206,6 +2236,7 @@ def _record_armed_entry_check(
         details={
             "deployment_id": str(deployment_id),
             "snapshot_digest": digest,
+            "dedupe_digest": dedupe_digest,
             "snapshot": snapshot,
         },
     ))
@@ -2443,10 +2474,14 @@ async def _open_paper_trade_with_provider(
         "market_as_of": chain.as_of.isoformat(),
         "quality_status": quality.status,
         "entry_market_context": {
-            "version": "nifty-option-observed-v2",
+            "version": "nifty-option-observed-v3",
             "source": provider.provider_id,
             "availability": "SERVER_OBSERVED_AT_ENTRY",
             "available_at": datetime.now(timezone.utc).isoformat(),
+            "underlying": index.symbol,
+            "strategy_key": body.strategy_key,
+            "reference_strike": str(body.reference_strike)
+            if body.reference_strike is not None else None,
             "chain_digest": fingerprint(chain.model_dump(mode="json")),
             "timestamp_basis": chain.timestamp_basis,
             "source_timestamp_verified": quality.source_timestamp_verified,
@@ -2454,10 +2489,16 @@ async def _open_paper_trade_with_provider(
             "underlying_spot": str(chain.underlying_spot),
             "observed_at": chain.as_of.isoformat(),
             "expiry": body.expiry.isoformat(),
+            "calendar_days_to_expiry": (body.expiry - exchange_today()).days,
             "contracts_observed": len(chain.contracts),
             "aggregate_scope": "RETURNED_OPTION_CHAIN_CONTRACTS_ONLY",
             "call_volume": features.call_volume,
             "put_volume": features.put_volume,
+            "returned_chain_volume": (
+                features.call_volume + features.put_volume
+                if features.call_volume is not None and features.put_volume is not None
+                else None
+            ),
             "call_open_interest": features.call_open_interest,
             "put_open_interest": features.put_open_interest,
             "call_open_interest_change": features.call_open_interest_change,
@@ -2470,9 +2511,22 @@ async def _open_paper_trade_with_provider(
             if features.atm_call_iv_pct is not None else None,
             "atm_put_iv_pct": str(features.atm_put_iv_pct)
             if features.atm_put_iv_pct is not None else None,
+            "atm_strike": str(features.atm_strike) if features.atm_strike is not None else None,
+            "atm_iv_skew_put_minus_call_points": (
+                str(features.atm_iv_skew_put_minus_call_points)
+                if features.atm_iv_skew_put_minus_call_points is not None else None
+            ),
             "median_relative_spread_pct": str(features.median_relative_spread_pct)
             if features.median_relative_spread_pct is not None else None,
             "two_sided_quote_count": features.two_sided_quote_count,
+            "contracts_with_delta": features.contracts_with_delta,
+            "contracts_with_gamma": features.contracts_with_gamma,
+            "contracts_with_theta": features.contracts_with_theta,
+            "contracts_with_vega": features.contracts_with_vega,
+            "quality_issues": [
+                {"code": issue.code, "severity": issue.severity, "count": issue.count}
+                for issue in quality.issues
+            ],
             "largest_call_oi_strike": str(features.largest_call_oi_strike)
             if features.largest_call_oi_strike is not None else None,
             "largest_put_oi_strike": str(features.largest_put_oi_strike)

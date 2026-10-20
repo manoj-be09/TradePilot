@@ -14,6 +14,7 @@ from packages.database.models import (
     ResearchCandidate,
     ResearchEvaluation,
     ResearchEvidence,
+    ResearchOpportunityEvent,
     ResearchPolicySet,
     ResearchRecommendation,
     ResearchStudy,
@@ -30,6 +31,11 @@ from packages.regime.candidate_registry import (
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
 from packages.regime.registered_evaluator import record_registered_nifty_replay_job
 from packages.regime.research_evidence import EvidenceRecord, record_evidence
+from packages.regime.research_opportunity_events import (
+    OpportunityEventInput,
+    opportunity_event_view,
+    record_opportunity_event,
+)
 from packages.regime.research_policy_sets import (
     FrozenPolicySet,
     freeze_policy_set,
@@ -137,6 +143,37 @@ def recommendations(study_id: UUID, user: CurrentUser, session: SessionDep,
         ResearchRecommendation.study_id == study_id,
     ).order_by(ResearchRecommendation.created_at.desc(), ResearchRecommendation.id.desc())
       .offset(offset).limit(limit))]
+
+
+@router.post("/opportunities/{recommendation_id}/events")
+def create_opportunity_event(recommendation_id: UUID, body: OpportunityEventInput,
+                             user: CurrentUser, session: SessionDep) -> dict[str, Any]:
+    try:
+        return opportunity_event_view(record_opportunity_event(
+            session, user.id, recommendation_id, body))
+    except LookupError:
+        raise HTTPException(404, "Opportunity not found") from None
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from None
+
+
+@router.get("/opportunities/{recommendation_id}/events")
+def opportunity_events(recommendation_id: UUID, user: CurrentUser,
+                       session: SessionDep, response: Response,
+                       limit: int = Query(25, ge=1, le=100),
+                       offset: int = Query(0, ge=0)) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    if session.scalar(select(ResearchRecommendation.id).where(
+        ResearchRecommendation.id == recommendation_id,
+        ResearchRecommendation.user_id == user.id,
+    )) is None:
+        raise HTTPException(404, "Opportunity not found")
+    rows = session.scalars(select(ResearchOpportunityEvent).where(
+        ResearchOpportunityEvent.recommendation_id == recommendation_id,
+        ResearchOpportunityEvent.user_id == user.id,
+    ).order_by(ResearchOpportunityEvent.created_at.desc(),
+               ResearchOpportunityEvent.id.desc()).offset(offset).limit(limit))
+    return [opportunity_event_view(row) for row in rows]
 
 
 @router.post("/studies/{study_id}/recommendations/from-trial/{trial_id}")

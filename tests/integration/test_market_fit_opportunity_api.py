@@ -74,3 +74,17 @@ def test_opportunity_http_requires_owner_and_retains_one_abstention(client, monk
     assert rows.status_code == 200
     assert len(rows.json()) == 1
     assert rows.json()[0]["execution_enabled"] is False
+    event_path = f"/research/opportunities/{first.json()['id']}/events"
+    event = {
+        "event_key": "checkpoint-1", "status": "UNRESOLVED",
+        "reason_code": "OUTCOME_PENDING", "observed_at": now.isoformat(),
+        "available_at": now.isoformat(), "source_artifact_digest": "e" * 64,
+    }
+    assert client.post(event_path, json=event).status_code == 401
+    assert client.post(event_path, headers=other_headers, json=event).status_code == 404
+    first_event = client.post(event_path, headers=owner_headers, json=event)
+    second_event = client.post(event_path, headers=owner_headers, json=event)
+    assert first_event.status_code == second_event.status_code == 200
+    assert first_event.json()["id"] == second_event.json()["id"]
+    assert first_event.json()["evidence_qualification"] == "UNVERIFIED_SHADOW"
+    assert len(client.get(event_path, headers=owner_headers).json()) == 1

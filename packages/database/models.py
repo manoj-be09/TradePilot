@@ -612,3 +612,25 @@ class ResearchPolicySet(Base):
     manifest: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
     manifest_digest: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ResearchOpportunityEvent(Base):
+    """Append-only, unqualified outcome evidence for a research opportunity."""
+    __tablename__ = "research_opportunity_events"
+    __table_args__ = (
+        UniqueConstraint("recommendation_id", "event_key",
+                         name="uq_research_opportunity_event_key"),
+        CheckConstraint(
+            "status IN ('UNRESOLVED', 'SHADOW_NO_FILL', 'SHADOW_REJECTED')",
+            name="ck_research_opportunity_event_status",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    recommendation_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("research_recommendations.id"), index=True)
+    event_key: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(32))
+    payload: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    payload_digest: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

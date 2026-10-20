@@ -16,7 +16,7 @@ def test_phase_four_analytics_routes_are_documented(client: TestClient):
     assert "post" in paths["/analytics/payoff"]
 
 
-def test_authenticated_analytics_accept_chain_and_return_payoffs(client: TestClient):
+def test_authenticated_analytics_accept_chain_and_return_payoffs(client: TestClient, monkeypatch):
     auth_response = client.post(
         "/auth/register",
         json={"email": "analytics@example.com", "password": "a-long-test-password"},
@@ -76,6 +76,23 @@ def test_authenticated_analytics_accept_chain_and_return_payoffs(client: TestCli
     assert summary_response.status_code == 200
     assert summary_response.json()["put_call_ratio_oi"] == "2"
     assert summary_response.json()["atm_iv_skew_put_minus_call_points"] == "2"
+
+    class NoIntradayHistory:
+        async def get_historical(self, *args):
+            return []
+
+    monkeypatch.setattr("apps.api.main.get_market_data_provider", lambda: NoIntradayHistory())
+    fit_response = client.post(
+        "/analytics/options/market-fit",
+        headers=headers,
+        json={"chain": chain, "reference_strike": "25000"},
+    )
+    assert fit_response.status_code == 200
+    assert fit_response.json()["action"] == "NO_TRADE"
+    assert fit_response.json()["probability_of_profit"] is None
+    assert {item["strategy_key"] for item in fit_response.json()["candidates"]} == {
+        "bull_call_spread", "bear_put_spread", "iron_condor"
+    }
 
     payoff_response = client.post(
         "/analytics/payoff",

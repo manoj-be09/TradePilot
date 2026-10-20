@@ -133,6 +133,33 @@ type OptionChainFeatures = {
   methodology: string[];
 };
 
+type MarketFitAssessment = {
+  selector_version: string;
+  chain_source: "CLIENT_SUBMITTED_CHAIN";
+  payoff_basis: "PER_OPTION_UNIT_BEFORE_COSTS";
+  chain_as_of: string;
+  regime_as_of: string | null;
+  regime: string;
+  action: "NO_TRADE";
+  reasons: string[];
+  probability_of_profit: null;
+  candidates: {
+    strategy_key: string;
+    strategy_version: string;
+    name: string;
+    fit: "MATCH" | "UNKNOWN" | "BLOCKED";
+    reasons: string[];
+    legs: { option_type: "CE" | "PE"; side: "BUY" | "SELL"; strike: string; quantity: number; entry_quote: string; bid: string; ask: string }[];
+    maximum_profit: string | null;
+    maximum_loss: string | null;
+    breakevens: string[];
+    provisional_stop: string | null;
+    provisional_target: string | null;
+    entry_policy: string;
+    exit_policy: string;
+  }[];
+};
+
 type StrikeRow = {
   strike: string;
   call?: OptionContractQuote;
@@ -618,6 +645,8 @@ export default function Home() {
   const [selectedExpiry, setSelectedExpiry] = useState("");
   const [chain, setChain] = useState<OptionChain | null>(null);
   const [optionFeatures, setOptionFeatures] = useState<OptionChainFeatures | null>(null);
+  const [marketFit, setMarketFit] = useState<MarketFitAssessment | null>(null);
+  const [marketFitError, setMarketFitError] = useState("");
   const [featuresError, setFeaturesError] = useState("");
   const [contractsBusy, setContractsBusy] = useState(false);
   const [chainBusy, setChainBusy] = useState(false);
@@ -1119,6 +1148,25 @@ export default function Home() {
     setSelectedPaperStrike(nearest?.strike || strikeRows[0].strike);
   }, [chain, selectedPaperStrike, strikeRows]);
 
+  useEffect(() => {
+    if (!token || !chain || !selectedPaperStrike || selectedOptionIndex !== "NIFTY") {
+      setMarketFit(null);
+      return;
+    }
+    const controller = new AbortController();
+    setMarketFit(null);
+    setMarketFitError("");
+    fetch(`${API_URL}/analytics/options/market-fit`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ chain, reference_strike: selectedPaperStrike }),
+    }).then(readJson<MarketFitAssessment>)
+      .then((result) => { if (!controller.signal.aborted) setMarketFit(result); })
+      .catch(() => { if (!controller.signal.aborted) setMarketFitError("Market-fit comparison is unavailable."); });
+    return () => controller.abort();
+  }, [chain, selectedPaperStrike, selectedOptionIndex, token]);
+
   const historicalSelectedVersion = strategyVersions.find((version) => version.id === historicalVersionId);
   const historicalVersionUnsupported = !!historicalSelectedVersion && (
     historicalSelectedVersion.definition.entry_conditions.length > 0 ||
@@ -1261,30 +1309,11 @@ export default function Home() {
   }, [chain, strategyTilePreviews, token]);
 
   const rankedStrategies = useMemo(() => {
-    const pcr = optionFeatures?.put_call_ratio_oi == null ? NaN : Number(optionFeatures.put_call_ratio_oi);
-    const bias = Number.isFinite(pcr) ? (pcr > 1.05 ? "BULLISH" : pcr < 0.95 ? "BEARISH" : "NEUTRAL") : "UNCERTAIN";
-    const ivRank = optionFeatures?.iv_rank_pct == null ? NaN : Number(optionFeatures.iv_rank_pct);
-    const volatility = Number.isFinite(ivRank) ? (ivRank >= 60 ? "HIGH IV RANK" : ivRank <= 30 ? "LOW IV RANK" : "MID IV RANK") : "IV RANK UNAVAILABLE";
-    const qualified = !!chain && chain.quality?.status !== "FAIL" && (bias === "BULLISH" || bias === "BEARISH" || Number.isFinite(ivRank));
-    const fits: Record<string, string[]> = {
-      BULLISH: ["bull_put_spread", "bull_call_spread", "long_call"],
-      BEARISH: ["bear_call_spread", "bear_put_spread", "long_put"],
-      NEUTRAL: Number.isFinite(ivRank) ? (ivRank >= 60 ? ["iron_condor", "bull_put_spread", "bear_call_spread"] : ["long_strangle", "long_straddle", "iron_condor"]) : [],
-      UNCERTAIN: [],
-    };
-    return paperStrategies.map((strategy) => {
-      const fitIndex = fits[bias].indexOf(strategy.key);
-      const payoff = strategyPayoffs[strategy.key];
-      const maxLoss = Number(payoff?.maximum_loss);
-      const maxProfit = Number(payoff?.maximum_profit);
-      const riskReward = Number.isFinite(maxLoss) && maxLoss > 0 && Number.isFinite(maxProfit) ? maxProfit / maxLoss : 0;
-      const matchedCondition = strategy.market_condition_evidence.find((item) => item.condition === bias);
-      const historyReliable = strategy.qualified_policy_variant_count === 1 && !!matchedCondition && matchedCondition.trade_count >= 20 && matchedCondition.average_r !== null;
-      const historyScore = historyReliable ? Math.max(-10, Math.min(10, Number(matchedCondition.average_r) * 20)) : 0;
-      const score = (fitIndex < 0 ? 0 : 45 - fitIndex * 10) + Math.min(20, riskReward * 5) + historyScore - (chain?.quality?.status === "FAIL" ? 1000 : 0);
-      return { strategy, payoff, score, bias, volatility, riskReward, historyReliable, qualified, matchedCondition };
-    }).sort((left, right) => right.score - left.score);
-  }, [chain?.quality?.status, optionFeatures, paperStrategies, strategyPayoffs]);
+    return (marketFit?.candidates || []).flatMap((candidate) => {
+      const strategy = paperStrategies.find((item) => item.key === candidate.strategy_key && item.version === candidate.strategy_version);
+      return strategy ? [{ strategy, candidate, payoff: strategyPayoffs[strategy.key] }] : [];
+    });
+  }, [marketFit, paperStrategies, strategyPayoffs]);
 
   const filteredRankedStrategies = useMemo(
     () => rankedStrategies.filter(({ strategy }) => strategyBiasFilter === "ALL" || STRATEGY_CATALOG_META[strategy.key]?.bias === strategyBiasFilter),
@@ -2529,10 +2558,10 @@ export default function Home() {
                 </label>
               </div>
               <div className="strategy-ranking-heading">
-                <div><strong>Strategies for current conditions</strong><small>Reorders when live option-chain conditions or risk estimates change</small></div>
-                <span>{rankedStrategies[0]?.bias || "UNCERTAIN"} · {rankedStrategies[0]?.volatility || "IV UNKNOWN"}</span>
+                <div><strong>NIFTY market-fit research preview</strong><small>Frozen vertical/range exposure recipes · no automatic entry</small></div>
+                <span>{marketFit?.regime || "UNKNOWN"} · NO TRADE</span>
               </div>
-              <div className="strategy-color-legend" aria-label="Strategy evidence legend"><span className="strategy-color-legend--green">Green · stronger qualified evidence</span><span className="strategy-color-legend--amber">Amber · limited or insufficient evidence</span><span className="strategy-color-legend--red">Red · blocked or unavailable</span></div>
+              <div className="strategy-color-legend" aria-label="Strategy evidence legend"><span className="strategy-color-legend--green">Green · exposure matches observed regime</span><span className="strategy-color-legend--amber">Amber · regime fit unknown</span><span className="strategy-color-legend--red">Red · quote or risk gate blocked</span></div>
               <div className="strategy-bias-filter" aria-label="Strategy market bias filter">
                 <span>Market view</span>
                 {(["ALL", "BULLISH", "BEARISH", "SIDEWAYS", "VOLATILITY", "INCOME", "SPECIAL"] as const).map((bias) => (
@@ -2542,6 +2571,7 @@ export default function Home() {
                 ))}
               </div>
               <p className="strategy-library-note">Public taxonomy reference: OptionStrat’s strategy list. TradingPilot uses original summaries and only enables the defined-risk templates supported by its paper payoff engine; this classification is descriptive, not a profit forecast.</p>
+              <p className="strategy-library-note" role="status">{marketFitError || (marketFit ? `Decision: no trade. ${marketFit.reasons.join(" ")}` : "Checking current NIFTY market-fit inputs; no trade is recommended.")}</p>
               <details className="workspace-disclosure probability-evidence"><summary>Win / loss probability · Insufficient evidence</summary>
                 <p>No validated forecast is available. Historical paper win frequency is not a prediction for the next trade.</p>
                 <dl className="probability-inputs">
@@ -2556,31 +2586,32 @@ export default function Home() {
                 <p>Target outcome: positive P&amp;L after declared costs under the saved entry and exit rules. Win, loss and break-even will be separate outcomes. No validation period, calibrated model or after-cost validation sample exists yet.</p>
               </details>
               <section className="strategy-scorecards" aria-label="Strategy performance comparison">
-                {filteredRankedStrategies.slice(0, showAllStrategies ? undefined : 3).map(({ strategy, payoff, bias, volatility, riskReward, historyReliable, qualified, matchedCondition }, index) => (
+                {filteredRankedStrategies.slice(0, showAllStrategies ? undefined : 3).map(({ strategy, candidate, payoff }) => (
                   <article
-                    className={`strategy-scorecard ${selectedStrategy === strategy.key ? "selected" : ""} ${index === 0 ? "best-fit" : ""} strategy-scorecard--${!payoff || payoff.maximum_loss_unbounded ? "red" : qualified && historyReliable ? "green" : "amber"} strategy-bias--${(STRATEGY_CATALOG_META[strategy.key]?.bias || "SIDEWAYS").toLowerCase()}`}
+                    className={`strategy-scorecard ${selectedStrategy === strategy.key ? "selected" : ""} strategy-scorecard--${candidate.fit === "MATCH" ? "green" : candidate.fit === "UNKNOWN" ? "amber" : "red"} strategy-bias--${(STRATEGY_CATALOG_META[strategy.key]?.bias || "SIDEWAYS").toLowerCase()}`}
                     key={strategy.key}
                   >
-                    {index === 0 ? <em>{qualified ? "Best current fit" : "Provisional fit"}</em> : null}
+                    <em>{candidate.fit === "MATCH" ? "Exposure match · research only" : candidate.fit === "BLOCKED" ? "Blocked" : "Fit unknown"}</em>
                     <strong>{strategy.name}</strong>
                     <span className="strategy-bias-tag">{STRATEGY_CATALOG_META[strategy.key]?.label || "Research"} · {STRATEGY_CATALOG_META[strategy.key]?.note || "Paper template"}</span>
-                    <small className="strategy-fit">Fit: {bias} · {volatility}</small>
+                    <small className="strategy-fit">Regime: {marketFit?.regime || "UNKNOWN"} · POP unavailable</small>
                     <div className="strategy-card-metrics">
                       <span>Max modeled profit<b>{payoff?.maximum_profit_unbounded ? "Unbounded*" : payoff?.maximum_profit !== null && payoff?.maximum_profit !== undefined ? `₹${formatPrice(payoff.maximum_profit)}` : "Calculating…"}</b></span>
                       <span>Max modeled loss<b>{payoff?.maximum_loss_unbounded ? "Unbounded" : payoff?.maximum_loss !== null && payoff?.maximum_loss !== undefined ? `₹${formatPrice(payoff.maximum_loss)}` : "Calculating…"}</b></span>
-                      <span>All paper wins<b>{strategy.observed_win_rate_pct === null ? "No history" : `${formatPrice(strategy.observed_win_rate_pct)}%`}</b></span>
-                      <span>Smoothed historical frequency<b>{strategy.estimated_win_probability_pct === null ? "Insufficient" : `${formatPrice(strategy.estimated_win_probability_pct)}%`}</b></span>
+                      <span>Expiry breakeven / unit<b>{candidate.breakevens.length ? candidate.breakevens.map(formatPrice).join(" / ") : "Unavailable"}</b></span>
+                      <span>Policy stop / target / unit<b>{candidate.provisional_stop && candidate.provisional_target ? `${formatPrice(candidate.provisional_stop)} / ${formatPrice(candidate.provisional_target)}` : "Unavailable"}</b></span>
                     </div>
-                    <small>{strategy.winning_trade_count}/{strategy.closed_trade_count} profitable paper trades · {strategy.qualified_automated_wins}/{strategy.qualified_automated_trade_count} qualified automatic outcomes (before costs) · risk/reward {riskReward ? riskReward.toFixed(2) : "—"}</small>
-                    <small>{historyReliable ? `${bias} paper sample: ${matchedCondition?.trade_count} trades · average ${formatSignedPrice(matchedCondition?.average_net_pnl)}` : strategy.qualified_policy_variant_count > 1 ? `${strategy.qualified_policy_variant_count} different rule/stop configurations; outcome weighting withheld` : `No qualified ${bias.toLowerCase()} outcome weight (${matchedCondition?.trade_count || 0}/20 matching closes)`}</small>
+                    <small>{candidate.legs.length ? candidate.legs.map((leg) => `${leg.side} ${leg.quantity} ${formatPrice(leg.strike)} ${leg.option_type} @ ${formatPrice(leg.entry_quote)}`).join(" · ") : "Complete quote-backed basket unavailable"}</small>
+                    <small>{candidate.reasons.join(" ") || "Quote-backed exposure matches the descriptive regime; entry remains unqualified."}</small>
+                    <details><summary>Entry and exit research recipe</summary><p>{candidate.entry_policy}</p><p>{candidate.exit_policy}</p><p>Expiry maximum profit/loss above is before costs and assumes intact legs. Stops are triggers, not maximum losses.</p></details>
                     <button className="strategy-apply" disabled={paperBusy || !chain || chain.quality?.status === "FAIL" || !payoff || payoff.maximum_loss_unbounded || payoff.maximum_loss === null} onClick={() => applyStrategyToPaperTicket(strategy, payoff)} type="button">
-                      {deploymentPreparedKey === strategy.key ? "Ready to arm · paper" : "Apply to paper ticket"}
+                      {deploymentPreparedKey === strategy.key ? "Paper ticket prepared" : "Inspect paper ticket"}
                     </button>
                   </article>
                 ))}
               </section>
               <button className="inline-button" aria-expanded={showAllStrategies} onClick={() => setShowAllStrategies(value => !value)} type="button">{showAllStrategies ? "Show fewer strategies" : `＋ All ${filteredRankedStrategies.length} ${strategyBiasFilter === "ALL" ? "strategies" : `${strategyBiasFilter.toLowerCase()} strategies`}`}</button>
-              <details className="workspace-disclosure"><summary>Ranking &amp; evidence details</summary>              <p className="features-note">Ranking uses observed NIFTY put/call open interest when available, current-quote expiry payoff, and a small risk-normalized adjustment only after 20 qualified automatic closes in the same observed market condition with one unchanged rule/stop configuration. IV rank needs stored history and is currently unavailable; missing values never count as low IV or bearish. Manual, incomplete and mixed-configuration results cannot improve ranking. This is a research comparison, not a calibrated profit forecast. “Unbounded” profit is theoretical at expiry.</p></details>
+              <details className="workspace-disclosure"><summary>Ranking &amp; evidence details</summary><p className="features-note">This backend-owned, versioned comparison orders exposure match for a directional vertical family (bull or bear) and a range condor. The input chain is submitted by this browser and quality-rechecked, not independently signed or stored by the selector. It uses complete 5-minute index bars when available and selected-leg bid/ask for theoretical expiry payoff per option unit, before costs. Missing bar, quote, timing, cost or capital evidence keeps the decision at no trade. The displayed stop/target are research-policy hypotheses, not active settings. A calibrated after-cost probability and demonstrated competitive ranking advantage require future independent validation.</p></details>
               <section className="strategy-catalog" aria-label="Full public strategy catalog">
                 <div className="strategy-catalog-heading"><div><strong>Full public strategy catalog</strong><small aria-live="polite">{visibleCatalogEntries.length} of {STRATEGY_CATALOG.length} public templates · paper-ready entries first</small></div><span>Execution status is explicit</span></div>
                 <div className="strategy-catalog-status-summary" aria-label="Strategy catalog availability summary">

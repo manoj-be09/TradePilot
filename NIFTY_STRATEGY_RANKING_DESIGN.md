@@ -1,6 +1,6 @@
 # NIFTY strategy ranking: market fit, probability and trade contracts
 
-Design review: 19 October 2026. Source baseline: `4a534edfe2ab21918b38b5c4b82d61fece5d895f`; Graphify matched that commit when checked. Status: **proposed research and implementation specification, not an implemented selector or a qualified trading recommendation**. Complements STRATEGY_INTELLIGENCE_PLAN.md, PROBABILITY_RESEARCH.md and COST_MODEL.md.
+Design review: 19 October 2026. Source baseline: `4a534edfe2ab21918b38b5c4b82d61fece5d895f`; Graphify matched that commit when checked. 20 October implementation: the Strip/template-identity prerequisite and a narrow backend market-fit **preview** are implemented. The full policy selector, immutable opportunity ledger, qualified probability and trading recommendation remain unimplemented. Complements STRATEGY_INTELLIGENCE_PLAN.md, PROBABILITY_RESEARCH.md and COST_MODEL.md.
 
 ## 1. Decision and scope
 

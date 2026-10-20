@@ -137,6 +137,11 @@ from packages.market_data.contracts import (
 from packages.market_data.index_catalog import OptionIndex, option_indexes, resolve_option_index
 from packages.market_data.provider import get_market_data_provider
 from packages.market_data.quality import assess_option_chain
+from packages.options.market_fit import (
+    MarketFitAssessment,
+    MarketFitRequest,
+    assess_nifty_market_fit,
+)
 from packages.options.models import (
     OptionGreeksInput,
     OptionGreeksResult,
@@ -1206,6 +1211,42 @@ async def analytics_options(
 def analytics_options_summary(user: CurrentUser, body: OptionChain) -> OptionChainFeatures:
     del user
     return calculate_option_features(body)
+
+
+@app.post("/analytics/options/market-fit", response_model=MarketFitAssessment, tags=["analytics"])
+async def analytics_options_market_fit(
+    user: CurrentUser, body: MarketFitRequest,
+) -> MarketFitAssessment:
+    """Research-only comparison; a submitted chain never authorizes a paper entry."""
+    del user
+    chain = body.chain.model_copy(update={"quality": assess_option_chain(body.chain)})
+    regime: MarketRegimeResult | None = None
+    now = datetime.now(timezone.utc)
+    if (
+        chain.underlying == "NIFTY"
+        and chain.as_of.tzinfo is not None
+        and timedelta(0) <= now - chain.as_of <= timedelta(minutes=5)
+        and chain.quality is not None
+        and chain.quality.status == "PASS"
+    ):
+        provider = get_market_data_provider()
+        try:
+            bars = await provider.get_historical(
+                "NSE_INDEX|Nifty 50", chain.as_of - timedelta(days=14), chain.as_of, "5m"
+            )
+            complete = [
+                bar for bar in bars
+                if bar.timestamp.tzinfo is not None
+                and bar.timestamp + timedelta(minutes=5) <= chain.as_of
+            ]
+            if (
+                len(complete) >= 250
+                and timedelta(0) <= chain.as_of - complete[-1].timestamp <= timedelta(minutes=15)
+            ):
+                regime = classify_market_regime(complete[-250:], "5m")
+        except (MarketDataUnavailable, MarketDataProviderError, ValueError):
+            pass
+    return assess_nifty_market_fit(chain, body.reference_strike, regime)
 
 
 @app.get("/analytics/indicators", response_model=IndicatorSnapshot, tags=["analytics"])

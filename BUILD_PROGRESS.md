@@ -1,4 +1,11 @@
-# Build progress — updated 2026-10-19
+# Build progress — updated 2026-10-20
+
+## 2026-10-20 — First NIFTY market-fit preview and template safety
+
+- Corrected Strip to two long puts plus one long call as version `2.0.0`, with independent expiry-payoff invariants. Newly armed paper requests pin the server-owned template definition; stale browser versions and revised unpinned legacy Strip deployments fail closed. Previously saved versions and already-open positions retain their saved legs and normal management path. No owner position or order was altered.
+- Replaced the F&O PCR/IV-rank/historical-win leaderboard with a backend-owned `nifty-intraday-fit-v0-preview` comparison of a bullish call vertical, bearish put vertical and range condor. The response freezes strategy version, reference strike, selected-leg bid/ask, theoretical expiry bounds and breakevens per option unit, provisional research-policy stop/target, bar/chain times, fit reasons and `NO_TRADE`. The UI shows these separate from the full public catalog; it does not call a descriptive win frequency a current-trade probability.
+- This is **research-only software**, not a deployed intraday policy, calibrated POP, net-value ranking or scientific advantage. Current quote/depth timestamps, fills, cost/capital review, actual expiry evidence and independent policy-matched outcomes remain unproven. The endpoint reads 5-minute index history on demand when the submitted chain passes basic time/quality checks; it creates no scheduled job or order. Its client-submitted chain is rechecked for quality but is not an authenticated immutable opportunity record. A frozen parent budget, protected holdout, point-in-time durable opportunity ledger and after-cost evaluator remain next steps.
+- Validation: focused template/deployment compatibility and Strip economics passed **61 tests**; the new fit/payoff and authenticated API checks passed **4 tests**. The full repository suite passed **554 tests, 11 skipped, 2 existing deprecation warnings** after correcting a synthetic quote fixture that properly failed the 5% spread gate. Frontend TypeScript, changed-source Ruff/mypy and `git diff --check` passed. Connected Edge failed to initialize (`failed to write kernel assets`); Docker API access was denied at the named pipe, so this source change has no deployed desktop/phone acceptance claim.
 
 ## 2026-10-19 — NIFTY ranking design and economic audit
 

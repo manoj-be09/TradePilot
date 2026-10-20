@@ -590,11 +590,15 @@ def test_no_code_entry_conditions_are_rechecked_and_persisted_from_server_snapsh
     assert condition["actual"] == "1"
     assert condition["passed"] is True
     context = response.json()["entry_rule_snapshot"]["entry_market_context"]
-    assert context["version"] == "nifty-option-observed-v3"
+    assert context["version"] == "nifty-option-observed-v4"
     assert len(context["chain_digest"]) == 64
     assert datetime.fromisoformat(context["available_at"]).tzinfo is not None
     assert context["call_volume"] is not None
     assert context["returned_chain_volume"] == context["call_volume"] + context["put_volume"]
+    assert context["contracts_with_bid_quantity"] == context["contracts_observed"]
+    assert context["contracts_with_ask_quantity"] == context["contracts_observed"]
+    assert context["returned_chain_bid_quantity"] == 10000
+    assert context["returned_chain_ask_quantity"] == 10000
     assert context["aggregate_scope"] == "RETURNED_OPTION_CHAIN_CONTRACTS_ONLY"
     assert context["calendar_days_to_expiry"] > 0
     assert context["atm_strike"] == "25000"

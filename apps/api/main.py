@@ -2476,7 +2476,7 @@ async def _open_paper_trade_with_provider(
         "market_as_of": chain.as_of.isoformat(),
         "quality_status": quality.status,
         "entry_market_context": {
-            "version": "nifty-option-observed-v3",
+            "version": "nifty-option-observed-v4",
             "source": provider.provider_id,
             "availability": "SERVER_OBSERVED_AT_ENTRY",
             "available_at": datetime.now(timezone.utc).isoformat(),
@@ -2500,6 +2500,20 @@ async def _open_paper_trade_with_provider(
                 features.call_volume + features.put_volume
                 if features.call_volume is not None and features.put_volume is not None
                 else None
+            ),
+            "returned_chain_bid_quantity": sum(
+                contract.bid_quantity for contract in chain.contracts
+                if contract.bid_quantity is not None
+            ) if any(contract.bid_quantity is not None for contract in chain.contracts) else None,
+            "returned_chain_ask_quantity": sum(
+                contract.ask_quantity for contract in chain.contracts
+                if contract.ask_quantity is not None
+            ) if any(contract.ask_quantity is not None for contract in chain.contracts) else None,
+            "contracts_with_bid_quantity": sum(
+                contract.bid_quantity is not None for contract in chain.contracts
+            ),
+            "contracts_with_ask_quantity": sum(
+                contract.ask_quantity is not None for contract in chain.contracts
             ),
             "call_open_interest": features.call_open_interest,
             "put_open_interest": features.put_open_interest,

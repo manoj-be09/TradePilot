@@ -100,8 +100,10 @@ def test_opportunity_http_requires_owner_and_retains_one_abstention(client, monk
 
     class Provider:
         provider_id = "test-provider"
+        calls = 0
 
         async def get_option_chain(self, underlying, expiry):
+            Provider.calls += 1
             assert underlying == "NIFTY"
             assert expiry.isoformat() == body["chain"]["expiry"]
             return OptionChain.model_validate(body["chain"])
@@ -114,8 +116,10 @@ def test_opportunity_http_requires_owner_and_retains_one_abstention(client, monk
     assert client.post(provider_path, json=provider_body).status_code == 401
     assert client.post(provider_path, headers=other_headers,
                        json=provider_body).status_code == 404
+    assert Provider.calls == 0
     fetched = client.post(provider_path, headers=owner_headers, json=provider_body)
     assert fetched.status_code == 200, fetched.text
+    assert Provider.calls == 1
     evidence = fetched.json()["snapshot"]["evidence_snapshot"]
     assert evidence["chain_source"] == "SERVER_FETCHED_OPTION_CHAIN"
     assert evidence["chain_provider_id"] == "test-provider"

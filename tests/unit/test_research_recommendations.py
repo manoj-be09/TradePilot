@@ -272,6 +272,7 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
     assert first.risk_context["outcome"] == "NOT_ATTEMPTED"
     assert first.evidence_snapshot["study_manifest_digest"] == study().manifest_digest
     assert first.evidence_snapshot["chain_source"] == "CLIENT_SUBMITTED_CHAIN"
+    assert first.evidence_snapshot["chain_provider_id"] is None
     assert first.evidence_snapshot["reference_strike"] == "100"
     assert first.evidence_snapshot["chain_expiry"] == "2026-02-20"
     assert first.evidence_snapshot["bar_digest"] is None
@@ -309,6 +310,11 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
     changed_chain = chain.model_copy(update={"underlying_spot": Decimal(101)})
     with pytest.raises(ValueError, match="differs from the assessed chain"):
         build_market_fit_opportunity(study(), changed_chain, assessment)
+
+    with pytest.raises(ValueError, match="provider identity"):
+        build_market_fit_opportunity(study(), chain, assessment.model_copy(update={
+            "chain_source": "SERVER_FETCHED_OPTION_CHAIN",
+        }))
 
     with pytest.raises(ValueError, match="protected holdout"):
         build_market_fit_opportunity(study(holdout_end="2026-02-11"), chain, assessment)

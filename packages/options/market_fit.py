@@ -3,7 +3,7 @@
 This is an exposure-fit preview, not an executable recommendation or POP model.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 from zoneinfo import ZoneInfo
@@ -34,6 +34,13 @@ class MarketFitRequest(BaseModel):
     reference_strike: Decimal = Field(gt=0)
 
 
+class ProviderMarketFitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expiry: date
+    reference_strike: Decimal = Field(gt=0)
+
+
 class MarketFitCandidate(BaseModel):
     strategy_key: str
     strategy_version: str
@@ -52,7 +59,10 @@ class MarketFitCandidate(BaseModel):
 
 class MarketFitAssessment(BaseModel):
     selector_version: str = "nifty-intraday-fit-v0-preview"
-    chain_source: Literal["CLIENT_SUBMITTED_CHAIN"] = "CLIENT_SUBMITTED_CHAIN"
+    chain_source: Literal[
+        "CLIENT_SUBMITTED_CHAIN", "SERVER_FETCHED_OPTION_CHAIN"
+    ] = "CLIENT_SUBMITTED_CHAIN"
+    chain_provider_id: str | None = None
     payoff_basis: Literal["PER_OPTION_UNIT_BEFORE_COSTS"] = "PER_OPTION_UNIT_BEFORE_COSTS"
     chain_as_of: datetime
     reference_strike: Decimal | None = None

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from apps.api import main
+from packages.market_data.contracts import OptionChain
 from packages.options.market_fit import MarketFitAssessment
 from packages.regime.candidate_registry import fingerprint
 
@@ -70,6 +71,10 @@ def test_opportunity_http_requires_owner_and_retains_one_abstention(client, monk
     assert first.json()["decision"] == "ABSTAIN"
     assert first.json()["snapshot"]["evidence_snapshot"]["chain_source"] == (
         "CLIENT_SUBMITTED_CHAIN")
+    spoofed = client.post(f"{path}?chain_provider_id=spoofed", headers=owner_headers,
+                          json=body)
+    assert spoofed.json()["snapshot"]["evidence_snapshot"]["chain_source"] == (
+        "CLIENT_SUBMITTED_CHAIN")
     assert first.json()["snapshot"]["evidence_snapshot"]["policy_set_digest"] == (
         policy.json()["manifest_digest"])
     rows = client.get(
@@ -92,3 +97,40 @@ def test_opportunity_http_requires_owner_and_retains_one_abstention(client, monk
     assert first_event.json()["id"] == second_event.json()["id"]
     assert first_event.json()["evidence_qualification"] == "UNVERIFIED_SHADOW"
     assert len(client.get(event_path, headers=owner_headers).json()) == 1
+
+    class Provider:
+        provider_id = "test-provider"
+
+        async def get_option_chain(self, underlying, expiry):
+            assert underlying == "NIFTY"
+            assert expiry.isoformat() == body["chain"]["expiry"]
+            return OptionChain.model_validate(body["chain"])
+
+    monkeypatch.setattr(main, "get_market_data_provider", Provider)
+    provider_path = f"{path}/provider"
+    provider_body = {
+        "expiry": body["chain"]["expiry"], "reference_strike": "100",
+    }
+    assert client.post(provider_path, json=provider_body).status_code == 401
+    assert client.post(provider_path, headers=other_headers,
+                       json=provider_body).status_code == 404
+    fetched = client.post(provider_path, headers=owner_headers, json=provider_body)
+    assert fetched.status_code == 200, fetched.text
+    evidence = fetched.json()["snapshot"]["evidence_snapshot"]
+    assert evidence["chain_source"] == "SERVER_FETCHED_OPTION_CHAIN"
+    assert evidence["chain_provider_id"] == "test-provider"
+    assert evidence["chain_artifact_review"] == "UNREVIEWED_SERVER_FETCHED"
+    assert evidence["point_in_time_availability_review"] == "UNVERIFIED"
+    assert fetched.json()["decision"] == "ABSTAIN"
+    assert fetched.json()["execution_enabled"] is False
+    assert len(client.get(f"/research/studies/{study.json()['id']}/recommendations",
+                          headers=owner_headers).json()) == 2
+
+    class WrongExpiryProvider(Provider):
+        async def get_option_chain(self, underlying, expiry):
+            chain = await super().get_option_chain(underlying, expiry)
+            return chain.model_copy(update={"expiry": expiry + timedelta(days=1)})
+
+    monkeypatch.setattr(main, "get_market_data_provider", WrongExpiryProvider)
+    assert client.post(provider_path, headers=owner_headers,
+                       json=provider_body).status_code == 409

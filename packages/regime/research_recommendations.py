@@ -99,6 +99,9 @@ def build_market_fit_opportunity(
         raise ValueError("Opportunity does not match its NIFTY chain")
     if assessment.chain_digest != fingerprint(chain.model_dump(mode="json")):
         raise ValueError("Opportunity chain differs from the assessed chain")
+    if (assessment.chain_source == "SERVER_FETCHED_OPTION_CHAIN"
+            and not assessment.chain_provider_id):
+        raise ValueError("Server-fetched chain requires provider identity")
     if assessment.reference_strike is None:
         raise ValueError("Opportunity lacks its assessed reference strike")
     if assessment.action != "NO_TRADE" or assessment.probability_of_profit is not None:
@@ -149,6 +152,8 @@ def build_market_fit_opportunity(
             "policy_set_digest": policy_set_digest,
             "chain_digest": assessment.chain_digest,
             "chain_source": assessment.chain_source,
+            "chain_provider_id": assessment.chain_provider_id,
+            "chain_timestamp_basis": chain.timestamp_basis,
             "chain_as_of": as_of.isoformat(),
             "chain_expiry": chain.expiry.isoformat(),
             "reference_strike": (
@@ -161,7 +166,11 @@ def build_market_fit_opportunity(
             "bar_count": assessment.bar_count,
             "bar_artifact_review": "UNREVIEWED_HASH_ONLY"
             if assessment.bar_digest is not None else "UNAVAILABLE",
-            "chain_artifact_review": "UNREVIEWED_CLIENT_SUBMITTED",
+            "chain_artifact_review": (
+                "UNREVIEWED_SERVER_FETCHED"
+                if assessment.chain_source == "SERVER_FETCHED_OPTION_CHAIN"
+                else "UNREVIEWED_CLIENT_SUBMITTED"
+            ),
             "cost_artifact_review": "UNREVIEWED_DECLARATION",
             "point_in_time_availability_review": "UNVERIFIED",
             "regime": assessment.regime,

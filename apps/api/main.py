@@ -142,6 +142,7 @@ from packages.market_data.quality import assess_option_chain
 from packages.options.market_fit import (
     MarketFitAssessment,
     MarketFitRequest,
+    ProviderMarketFitRequest,
     assess_nifty_market_fit,
 )
 from packages.options.models import (
@@ -1275,6 +1276,15 @@ async def analytics_options_market_fit(
 async def record_nifty_market_fit_opportunity(
     study_id: UUID, body: MarketFitRequest, user: CurrentUser, session: SessionDep,
 ) -> dict[str, Any]:
+    return await _record_nifty_market_fit_opportunity(
+        study_id, body, user, session, chain_provider_id=None,
+    )
+
+
+async def _record_nifty_market_fit_opportunity(
+    study_id: UUID, body: MarketFitRequest, user: CurrentUser, session: SessionDep,
+    *, chain_provider_id: str | None,
+) -> dict[str, Any]:
     """Retain a current research abstention; never create a paper order."""
     study_row = session.scalar(select(ResearchStudy).where(
         ResearchStudy.id == study_id, ResearchStudy.user_id == user.id,
@@ -1301,6 +1311,11 @@ async def record_nifty_market_fit_opportunity(
             raise ValueError("Frozen policy set integrity failed")
         policy_ids = current_policy_set_ids(policy_set)
         assessment = await analytics_options_market_fit(user, body)
+        if chain_provider_id is not None:
+            assessment = assessment.model_copy(update={
+                "chain_source": "SERVER_FETCHED_OPTION_CHAIN",
+                "chain_provider_id": chain_provider_id,
+            })
         snapshot = build_market_fit_opportunity(
             frozen, body.chain, assessment,
             policy_set_digest=policy_set.manifest_digest,
@@ -1309,6 +1324,37 @@ async def record_nifty_market_fit_opportunity(
     except ValueError:
         raise HTTPException(409, "Opportunity is outside the frozen NIFTY study") from None
     return recommendation_view(record_recommendation(session, user.id, study_id, snapshot))
+
+
+@app.post(
+    "/research/studies/{study_id}/opportunities/market-fit/provider",
+    tags=["research registry"],
+)
+async def record_provider_nifty_market_fit_opportunity(
+    study_id: UUID, body: ProviderMarketFitRequest,
+    user: CurrentUser, session: SessionDep,
+) -> dict[str, Any]:
+    """Fetch the chain server-side; retain an unqualified research abstention."""
+    if session.scalar(select(ResearchStudy.id).where(
+        ResearchStudy.id == study_id, ResearchStudy.user_id == user.id,
+    )) is None:
+        raise HTTPException(404, "Study not found")
+    if session.scalar(select(ResearchPolicySet.id).where(
+        ResearchPolicySet.study_id == study_id,
+        ResearchPolicySet.user_id == user.id,
+    )) is None:
+        raise HTTPException(409, "Policies must be frozen before opportunity observations")
+    provider = get_market_data_provider()
+    try:
+        chain = await provider.get_option_chain("NIFTY", body.expiry)
+    except (MarketDataUnavailable, MarketDataProviderError) as error:
+        raise _market_data_http_error(error) from error
+    if chain.underlying != "NIFTY" or chain.expiry != body.expiry:
+        raise HTTPException(409, "Provider chain differs from the requested NIFTY expiry")
+    return await _record_nifty_market_fit_opportunity(
+        study_id, MarketFitRequest(chain=chain, reference_strike=body.reference_strike),
+        user, session, chain_provider_id=provider.provider_id,
+    )
 
 
 @app.get("/analytics/indicators", response_model=IndicatorSnapshot, tags=["analytics"])

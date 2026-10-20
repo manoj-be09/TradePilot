@@ -29,6 +29,9 @@ def test_upward_directional_market_is_labeled_trending_up():
     assert result.regime == "TRENDING_UP"
     assert result.directional_bias == "UP"
     assert result.adx_14 is not None and result.adx_14 >= 25
+    assert result.realized_volatility_annualized_percent is not None
+    assert result.prior_20_bar_high == Decimal(160)
+    assert result.prior_20_bar_low == Decimal(137)
     assert result.reasons
 
 
@@ -38,3 +41,5 @@ def test_short_history_is_marked_uncertain_without_probability_score():
     assert result.regime == "UNCERTAIN"
     assert result.directional_bias == "NEUTRAL"
     assert result.realized_volatility_percentile is None
+    assert result.prior_20_bar_high is None
+    assert result.prior_20_bar_low is None

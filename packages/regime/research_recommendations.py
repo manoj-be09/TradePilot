@@ -116,6 +116,12 @@ def build_market_fit_opportunity(
     if assessment.bar_source == "UNAVAILABLE":
         if assessment.bar_digest is not None or assessment.bar_count is not None:
             raise ValueError("Unavailable bars cannot carry a provider artifact identity")
+        if any(value is not None for value in (
+            assessment.realized_volatility_annualized_percent,
+            assessment.prior_20_bar_high,
+            assessment.prior_20_bar_low,
+        )):
+            raise ValueError("Unavailable bars cannot carry derived technical context")
     elif (
         assessment.bar_digest is None
         or assessment.bar_count != 250
@@ -181,6 +187,19 @@ def build_market_fit_opportunity(
             "cost_artifact_review": "UNREVIEWED_DECLARATION",
             "point_in_time_availability_review": "UNVERIFIED",
             "regime": assessment.regime,
+            "realized_volatility_annualized_percent": (
+                str(assessment.realized_volatility_annualized_percent)
+                if assessment.realized_volatility_annualized_percent is not None else None
+            ),
+            "prior_20_bar_high": (
+                str(assessment.prior_20_bar_high)
+                if assessment.prior_20_bar_high is not None else None
+            ),
+            "prior_20_bar_low": (
+                str(assessment.prior_20_bar_low)
+                if assessment.prior_20_bar_low is not None else None
+            ),
+            "technical_level_status": "DERIVED_UNVALIDATED",
             "regime_as_of": assessment.regime_as_of.isoformat()
             if assessment.regime_as_of else None,
             "cost_model_id": study.cost_model_id,

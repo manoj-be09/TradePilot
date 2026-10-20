@@ -29,6 +29,9 @@ class MarketRegimeResult(BaseModel):
     realized_volatility_percentile: Decimal | None
     reasons: list[str]
     method: list[str]
+    realized_volatility_annualized_percent: Decimal | None = None
+    prior_20_bar_high: Decimal | None = None
+    prior_20_bar_low: Decimal | None = None
 
 
 def _rolling_volatility_percentiles(
@@ -66,6 +69,8 @@ def classify_market_regime(
     bias: Literal["UP", "DOWN", "NEUTRAL"] = "NEUTRAL"
     reasons: list[str] = []
     regime: MarketRegime = "UNCERTAIN"
+    prior_high: Decimal | None = None
+    prior_low: Decimal | None = None
 
     if len(bars) > breakout_lookback:
         previous = bars[-breakout_lookback - 1 : -1]
@@ -116,6 +121,9 @@ def classify_market_regime(
         directional_bias=bias,
         adx_14=adx,
         realized_volatility_percentile=volatility_percentile,
+        realized_volatility_annualized_percent=current_volatility,
+        prior_20_bar_high=prior_high,
+        prior_20_bar_low=prior_low,
         reasons=reasons,
         method=[
             "Breakout/breakdown compares the latest close with preceding lookback highs and lows.",

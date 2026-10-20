@@ -68,6 +68,9 @@ def _regime(now: datetime, label: str = "TRENDING_UP") -> MarketRegimeResult:
         directional_bias="UP",
         adx_14=30,
         realized_volatility_percentile=50,
+        realized_volatility_annualized_percent=Decimal("14.25"),
+        prior_20_bar_high=Decimal(108),
+        prior_20_bar_low=Decimal(92),
         reasons=["Synthetic classifier fixture"],
         method=["Unit-test fixture"],
     )
@@ -80,6 +83,9 @@ def test_quote_backed_bull_vertical_has_independent_expiry_economics():
 
     assert result.action == "NO_TRADE"
     assert result.probability_of_profit is None
+    assert result.realized_volatility_annualized_percent == Decimal("14.25")
+    assert result.prior_20_bar_high == Decimal(108)
+    assert result.prior_20_bar_low == Decimal(92)
     assert bull.fit == "MATCH"
     assert [(leg.side, leg.strike, leg.entry_quote) for leg in bull.legs] == [
         ("BUY", Decimal(100), Decimal("6.1")),

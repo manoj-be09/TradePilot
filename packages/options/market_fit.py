@@ -73,6 +73,9 @@ class MarketFitAssessment(BaseModel):
     bar_count: int | None = Field(default=None, ge=1)
     regime_as_of: datetime | None
     regime: str
+    realized_volatility_annualized_percent: Decimal | None = None
+    prior_20_bar_high: Decimal | None = None
+    prior_20_bar_low: Decimal | None = None
     action: Literal["NO_TRADE"] = "NO_TRADE"
     reasons: list[str]
     probability_of_profit: None = None
@@ -301,6 +304,11 @@ def assess_nifty_market_fit(
         reference_strike=reference_strike,
         regime_as_of=regime.as_of if regime else None,
         regime=regime.regime if regime else "UNKNOWN",
+        realized_volatility_annualized_percent=(
+            regime.realized_volatility_annualized_percent if regime else None
+        ),
+        prior_20_bar_high=regime.prior_20_bar_high if regime else None,
+        prior_20_bar_low=regime.prior_20_bar_low if regime else None,
         reasons=reasons,
         candidates=candidates,
     )

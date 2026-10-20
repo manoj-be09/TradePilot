@@ -1292,16 +1292,18 @@ async def record_nifty_market_fit_opportunity(
         policy_set = session.scalar(select(ResearchPolicySet).where(
             ResearchPolicySet.study_id == study_id, ResearchPolicySet.user_id == user.id,
         ))
-        if policy_set is not None and (
+        if policy_set is None:
+            raise ValueError("Policies must be frozen before opportunity observations")
+        if (
             fingerprint(policy_set.manifest) != policy_set.manifest_digest
             or policy_set.manifest.get("study_manifest_digest") != frozen.manifest_digest
         ):
             raise ValueError("Frozen policy set integrity failed")
-        policy_ids = current_policy_set_ids(policy_set) if policy_set else None
+        policy_ids = current_policy_set_ids(policy_set)
         assessment = await analytics_options_market_fit(user, body)
         snapshot = build_market_fit_opportunity(
             frozen, body.chain, assessment,
-            policy_set_digest=policy_set.manifest_digest if policy_set else None,
+            policy_set_digest=policy_set.manifest_digest,
             frozen_policy_ids=policy_ids,
         )
     except ValueError:

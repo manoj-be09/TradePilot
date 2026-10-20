@@ -31,6 +31,7 @@ from packages.regime.candidate_registry import (
     register_candidate,
 )
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
+from packages.regime.research_policy_sets import FrozenPolicySet, freeze_policy_set
 from packages.regime.research_readiness import ReadinessAssessment, ReadinessCheck
 from packages.regime.research_recommendations import (
     RecommendationSnapshot,
@@ -340,6 +341,20 @@ def test_market_fit_opportunity_route_is_owned_current_and_idempotent(monkeypatc
             asyncio.run(main.record_nifty_market_fit_opportunity(
                 study_id, body, SimpleNamespace(id=other), session))
         assert missing.value.status_code == 404
+        with pytest.raises(HTTPException) as unfrozen:
+            asyncio.run(main.record_nifty_market_fit_opportunity(
+                study_id, body, SimpleNamespace(id=owner), session))
+        assert unfrozen.value.status_code == 409
+        freeze_policy_set(session, owner, study_id, FrozenPolicySet(
+            incumbent={
+                "strategy_key": "bull_call_spread", "strategy_version": "1.0.0",
+                "policy_version": "nifty-paper-v1", "policy_artifact_digest": "c" * 64,
+                "entry_rule": "Use only the frozen completed-bar entry window.",
+                "exit_rule": "Use only the frozen stop, target and time exit.",
+                "risk_rule": "Abstain when basket, capital or costs are unavailable.",
+            },
+            limitation="Research-only policy identity; source evidence remains unreviewed.",
+        ))
         first = asyncio.run(main.record_nifty_market_fit_opportunity(
             study_id, body, SimpleNamespace(id=owner), session))
         replay = asyncio.run(main.record_nifty_market_fit_opportunity(

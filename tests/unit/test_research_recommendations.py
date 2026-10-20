@@ -311,9 +311,21 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
     with pytest.raises(ValueError, match="differs from the assessed chain"):
         build_market_fit_opportunity(study(), changed_chain, assessment)
 
-    with pytest.raises(ValueError, match="provider identity"):
+    with pytest.raises(ValueError, match="provider and receipt identity"):
         build_market_fit_opportunity(study(), chain, assessment.model_copy(update={
             "chain_source": "SERVER_FETCHED_OPTION_CHAIN",
+        }))
+
+    with pytest.raises(ValueError, match="server receipt identity"):
+        build_market_fit_opportunity(study(), chain, assessment.model_copy(update={
+            "chain_received_at": chain.as_of,
+        }))
+
+    with pytest.raises(ValueError, match="receipt must follow"):
+        build_market_fit_opportunity(study(), chain, assessment.model_copy(update={
+            "chain_source": "SERVER_FETCHED_OPTION_CHAIN",
+            "chain_provider_id": "test-provider",
+            "chain_received_at": chain.as_of - timedelta(seconds=1),
         }))
 
     with pytest.raises(ValueError, match="protected holdout"):

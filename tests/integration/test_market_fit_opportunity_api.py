@@ -123,6 +123,9 @@ def test_opportunity_http_requires_owner_and_retains_one_abstention(client, monk
     evidence = fetched.json()["snapshot"]["evidence_snapshot"]
     assert evidence["chain_source"] == "SERVER_FETCHED_OPTION_CHAIN"
     assert evidence["chain_provider_id"] == "test-provider"
+    received_at = datetime.fromisoformat(evidence["chain_received_at"])
+    assert received_at.tzinfo is not None
+    assert timedelta(0) <= received_at - now <= timedelta(minutes=5)
     assert evidence["chain_artifact_review"] == "UNREVIEWED_SERVER_FETCHED"
     assert evidence["point_in_time_availability_review"] == "UNVERIFIED"
     assert fetched.json()["decision"] == "ABSTAIN"

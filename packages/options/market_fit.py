@@ -63,6 +63,7 @@ class MarketFitAssessment(BaseModel):
         "CLIENT_SUBMITTED_CHAIN", "SERVER_FETCHED_OPTION_CHAIN"
     ] = "CLIENT_SUBMITTED_CHAIN"
     chain_provider_id: str | None = None
+    chain_received_at: datetime | None = None
     payoff_basis: Literal["PER_OPTION_UNIT_BEFORE_COSTS"] = "PER_OPTION_UNIT_BEFORE_COSTS"
     chain_as_of: datetime
     reference_strike: Decimal | None = None

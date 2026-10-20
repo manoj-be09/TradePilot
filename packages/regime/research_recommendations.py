@@ -92,16 +92,21 @@ def build_market_fit_opportunity(
 ) -> RecommendationSnapshot:
     """Freeze one unqualified, point-in-time abstention for later review.
 
-    The chain is caller-submitted, so its hash identifies bytes supplied to this
-    calculation; it does not certify exchange timing, source rights, or fills.
+    The chain hash identifies the assessed bytes; neither caller submission nor
+    server fetch alone certifies exchange timing, source rights, or fills.
     """
     if chain.underlying != "NIFTY" or assessment.chain_as_of != chain.as_of:
         raise ValueError("Opportunity does not match its NIFTY chain")
     if assessment.chain_digest != fingerprint(chain.model_dump(mode="json")):
         raise ValueError("Opportunity chain differs from the assessed chain")
-    if (assessment.chain_source == "SERVER_FETCHED_OPTION_CHAIN"
-            and not assessment.chain_provider_id):
-        raise ValueError("Server-fetched chain requires provider identity")
+    if assessment.chain_source == "SERVER_FETCHED_OPTION_CHAIN":
+        received = assessment.chain_received_at
+        if not assessment.chain_provider_id or received is None or received.tzinfo is None:
+            raise ValueError("Server-fetched chain requires provider and receipt identity")
+        if not timedelta(0) <= received - chain.as_of <= timedelta(minutes=5):
+            raise ValueError("Server-fetched chain receipt must follow its current snapshot")
+    elif assessment.chain_received_at is not None:
+        raise ValueError("Client chain cannot claim server receipt identity")
     if assessment.reference_strike is None:
         raise ValueError("Opportunity lacks its assessed reference strike")
     if assessment.action != "NO_TRADE" or assessment.probability_of_profit is not None:
@@ -153,6 +158,8 @@ def build_market_fit_opportunity(
             "chain_digest": assessment.chain_digest,
             "chain_source": assessment.chain_source,
             "chain_provider_id": assessment.chain_provider_id,
+            "chain_received_at": assessment.chain_received_at.isoformat()
+            if assessment.chain_received_at else None,
             "chain_timestamp_basis": chain.timestamp_basis,
             "chain_as_of": as_of.isoformat(),
             "chain_expiry": chain.expiry.isoformat(),

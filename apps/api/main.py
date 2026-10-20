@@ -1283,7 +1283,7 @@ async def record_nifty_market_fit_opportunity(
 
 async def _record_nifty_market_fit_opportunity(
     study_id: UUID, body: MarketFitRequest, user: CurrentUser, session: SessionDep,
-    *, chain_provider_id: str | None,
+    *, chain_provider_id: str | None, chain_received_at: datetime | None = None,
 ) -> dict[str, Any]:
     """Retain a current research abstention; never create a paper order."""
     study_row = session.scalar(select(ResearchStudy).where(
@@ -1315,6 +1315,7 @@ async def _record_nifty_market_fit_opportunity(
             assessment = assessment.model_copy(update={
                 "chain_source": "SERVER_FETCHED_OPTION_CHAIN",
                 "chain_provider_id": chain_provider_id,
+                "chain_received_at": chain_received_at,
             })
         snapshot = build_market_fit_opportunity(
             frozen, body.chain, assessment,
@@ -1349,11 +1350,13 @@ async def record_provider_nifty_market_fit_opportunity(
         chain = await provider.get_option_chain("NIFTY", body.expiry)
     except (MarketDataUnavailable, MarketDataProviderError) as error:
         raise _market_data_http_error(error) from error
+    received_at = datetime.now(timezone.utc)
     if chain.underlying != "NIFTY" or chain.expiry != body.expiry:
         raise HTTPException(409, "Provider chain differs from the requested NIFTY expiry")
     return await _record_nifty_market_fit_opportunity(
         study_id, MarketFitRequest(chain=chain, reference_strike=body.reference_strike),
         user, session, chain_provider_id=provider.provider_id,
+        chain_received_at=received_at,
     )
 
 

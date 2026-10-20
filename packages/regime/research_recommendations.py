@@ -105,6 +105,17 @@ def build_market_fit_opportunity(
         raise ValueError("Only unqualified no-trade opportunities can be recorded")
     if chain.as_of.tzinfo is None:
         raise ValueError("Opportunity time must include a timezone")
+    if assessment.bar_source == "UNAVAILABLE":
+        if assessment.bar_digest is not None or assessment.bar_count is not None:
+            raise ValueError("Unavailable bars cannot carry a provider artifact identity")
+    elif (
+        assessment.bar_digest is None
+        or assessment.bar_count != 250
+        or assessment.regime_as_of is None
+        or assessment.regime_as_of.tzinfo is None
+        or not timedelta(0) <= chain.as_of - assessment.regime_as_of <= timedelta(minutes=15)
+    ):
+        raise ValueError("Hashed provider bars require the frozen completed-bar window")
     as_of = chain.as_of.astimezone(timezone.utc)
     if as_of.astimezone(ZoneInfo("Asia/Kolkata")).date() <= study.holdout_end:
         raise ValueError("Prospective opportunity must follow the protected holdout")
@@ -148,6 +159,11 @@ def build_market_fit_opportunity(
             "bar_source": assessment.bar_source,
             "bar_digest": assessment.bar_digest,
             "bar_count": assessment.bar_count,
+            "bar_artifact_review": "UNREVIEWED_HASH_ONLY"
+            if assessment.bar_digest is not None else "UNAVAILABLE",
+            "chain_artifact_review": "UNREVIEWED_CLIENT_SUBMITTED",
+            "cost_artifact_review": "UNREVIEWED_DECLARATION",
+            "point_in_time_availability_review": "UNVERIFIED",
             "regime": assessment.regime,
             "regime_as_of": assessment.regime_as_of.isoformat()
             if assessment.regime_as_of else None,

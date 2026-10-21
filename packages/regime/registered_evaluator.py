@@ -8,7 +8,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from packages.backtesting.contracts import ScheduledOptionsBacktestResult
-from packages.database.models import ResearchCandidate, ResearchEvaluation, ResearchTrial
+from packages.database.models import (
+    ResearchCandidate,
+    ResearchEvaluation,
+    ResearchStudy,
+    ResearchTrial,
+)
 from packages.regime.candidate_registry import TrialManifest, fingerprint
 from packages.regime.fixed_rule_evaluator import FixedEquitySpec, evaluate_fixed_equity
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
@@ -134,6 +139,12 @@ def run_registered_equity_job(
 def bind_nifty_replay(session: Session, owner: UUID, trial_id: UUID,
                       study: FrozenNiftyStudy) -> ResearchEvaluation:
     """Freeze a registered NIFTY trial to one parent study boundary."""
+    saved_study = session.scalar(select(ResearchStudy).where(
+        ResearchStudy.user_id == owner, ResearchStudy.study_key == study.study_key,
+    ))
+    if (saved_study is None or saved_study.manifest_digest != study.manifest_digest
+            or fingerprint(saved_study.manifest) != saved_study.manifest_digest):
+        raise ValueError("NIFTY replay requires the matching frozen account study")
     trial = owned_trial(session, owner, trial_id)
     candidate = session.scalar(select(ResearchCandidate).where(
         ResearchCandidate.id == trial.candidate_id, ResearchCandidate.user_id == owner,
@@ -143,6 +154,8 @@ def bind_nifty_replay(session: Session, owner: UUID, trial_id: UUID,
     if fingerprint(candidate.definition) != candidate.definition_digest:
         raise ValueError("Candidate definition identity differs")
     manifest = TrialManifest.model_validate(trial.manifest)
+    if fingerprint(manifest.model_dump(mode="json", exclude_none=True)) != trial.manifest_digest:
+        raise ValueError("Stored trial manifest identity differs")
     for key in ("rights_artifact_digest", "dataset_digest", "calculation_digest",
                 "holdout_artifact_digest",
                 "cost_model_id", "cost_artifact_digest", "validation_end",
@@ -165,7 +178,11 @@ def bind_nifty_replay(session: Session, owner: UUID, trial_id: UUID,
     if existing is not None:
         if existing.adapter_digest != digest:
             raise ValueError("Trial already has different frozen adapter settings")
+        if manifest.experiment_family != study.study_key and existing.result_digest is None:
+            raise ValueError("Trial family must match the frozen NIFTY parent study key")
         return existing
+    if manifest.experiment_family != study.study_key:
+        raise ValueError("Trial family must match the frozen NIFTY parent study key")
     if trial.result_digest is not None:
         raise ValueError("Cannot bind after operator result finalization")
     row = ResearchEvaluation(trial_id=trial_id, adapter=payload, adapter_digest=digest,

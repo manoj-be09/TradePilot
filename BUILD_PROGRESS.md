@@ -1,4 +1,10 @@
-# Build progress — updated 2026-10-20
+# Build progress — updated 2026-10-21
+
+## 2026-10-21 — NIFTY replay parent-binding safety
+
+- New NIFTY replay bindings require the matching saved account study, verify its manifest digest and the stored trial manifest digest, and require the trial's experiment family to equal the saved study key. Renaming the trial family can no longer start a fresh family allowance within that study. Already finalized matching adapter results remain idempotently readable; waiting legacy trials under other family names fail closed for deliberate review.
+- **Assumption and limit:** the immutable study key is the parent budget identity for this software boundary. A separate newly named study with overlapping data remains a possible search-budget escape until a canonical cross-study parent identity and durable uniqueness rule are implemented. This change does not qualify the holdout, costs, market source or a trading edge.
+- Focused replay, budget and concurrency checks: **12 passed, 3 PostgreSQL-dependent skipped**; replay-specific rerun: **10 passed**. Ruff and mypy passed. A broader suite run was interrupted after producing partial progress, so it is not claimed as passing for this change. No deployed API or owner-account check was possible in this run.
 
 ## 2026-10-20 — First NIFTY market-fit preview and template safety
 

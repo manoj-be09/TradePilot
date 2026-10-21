@@ -13,6 +13,7 @@ from packages.database.base import Base
 from packages.database.models import (
     BacktestRun,
     ResearchBudgetSlot,
+    ResearchEvaluation,
     ResearchStudy,
     ResearchTrial,
     User,
@@ -84,7 +85,7 @@ def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
     frozen = study()
     manifest = TrialManifest(
         dataset_digest=frozen.dataset_digest, calculation_digest=frozen.calculation_digest,
-        cost_model_id=frozen.cost_model_id, experiment_family="nifty-study-fixture",
+        cost_model_id=frozen.cost_model_id, experiment_family=frozen.study_key,
         trial_number=1, declared_search_budget=10, seed=0,
         train_start=frozen.train_start, train_end=frozen.train_end,
         validation_start=frozen.validation_start, validation_end=frozen.validation_end,
@@ -104,6 +105,9 @@ def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
         session.commit()
         candidate = register_candidate(session, owner, definition)
         trial = declare_trial(session, owner, candidate.id, manifest)
+        with pytest.raises(ValueError, match="matching frozen account study"):
+            record_registered_nifty_replay(session, owner, trial.id, frozen, replay())
+        freeze_nifty_study(session, owner, frozen)
         saved = record_registered_nifty_replay(session, owner, trial.id, frozen, replay())
         assert saved.adapter["type"] == "NIFTY_SCHEDULED_REPLAY"
         assert saved.adapter["parent_search_budget"] == frozen.parent_search_budget
@@ -130,6 +134,25 @@ def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
             manifest.model_dump() | {"trial_number": 1, "declared_search_budget": 2}))
         with pytest.raises(ValueError, match="parent budget"):
             record_registered_nifty_replay(session, owner, mismatched.id, frozen, replay())
+        renamed_family = declare_trial(session, owner, candidate.id, TrialManifest.model_validate(
+            manifest.model_dump() | {"experiment_family": "another-family"}))
+        with pytest.raises(ValueError, match="parent study key"):
+            record_registered_nifty_replay(session, owner, renamed_family.id, frozen, replay())
+        legacy = ResearchEvaluation(
+            trial_id=renamed_family.id, adapter=saved.adapter,
+            adapter_digest=saved.adapter_digest, result=saved.result,
+            result_digest=saved.result_digest, created_at=saved.created_at,
+            completed_at=saved.completed_at,
+        )
+        session.add(legacy)
+        session.commit()
+        assert record_registered_nifty_replay(
+            session, owner, renamed_family.id, frozen, replay(),
+        ).result_digest == saved.result_digest
+        trial.manifest = trial.manifest | {"experiment_family": "tampered-family"}
+        session.commit()
+        with pytest.raises(ValueError, match="manifest identity"):
+            record_registered_nifty_replay(session, owner, trial.id, frozen, replay())
     engine.dispose()
 
 
@@ -140,7 +163,7 @@ def test_declared_holdout_artifact_must_match_frozen_study():
     frozen = study(holdout_artifact_digest="d" * 64)
     manifest = TrialManifest(
         dataset_digest=frozen.dataset_digest, calculation_digest=frozen.calculation_digest,
-        cost_model_id=frozen.cost_model_id, experiment_family="holdout-binding-fixture",
+        cost_model_id=frozen.cost_model_id, experiment_family=frozen.study_key,
         trial_number=1, declared_search_budget=frozen.parent_search_budget, seed=0,
         train_start=frozen.train_start, train_end=frozen.train_end,
         validation_start=frozen.validation_start, validation_end=frozen.validation_end,
@@ -157,6 +180,7 @@ def test_declared_holdout_artifact_must_match_frozen_study():
     with Session(engine) as session:
         session.add(User(id=owner, email="holdout-binding@example.org", password_hash="fixture"))
         session.commit()
+        freeze_nifty_study(session, owner, frozen)
         candidate = register_candidate(session, owner, definition)
         trial = declare_trial(session, owner, candidate.id, manifest)
         from packages.regime.registered_evaluator import bind_nifty_replay
@@ -174,7 +198,7 @@ def test_declared_cost_artifact_is_retained_in_frozen_adapter():
     manifest = TrialManifest(
         dataset_digest=frozen.dataset_digest, calculation_digest=frozen.calculation_digest,
         cost_model_id=frozen.cost_model_id, cost_artifact_digest=frozen.cost_artifact_digest,
-        experiment_family="cost-artifact-binding-fixture", trial_number=1,
+        experiment_family=frozen.study_key, trial_number=1,
         declared_search_budget=frozen.parent_search_budget, seed=0,
         train_start=frozen.train_start, train_end=frozen.train_end,
         validation_start=frozen.validation_start, validation_end=frozen.validation_end,
@@ -190,6 +214,7 @@ def test_declared_cost_artifact_is_retained_in_frozen_adapter():
     with Session(engine) as session:
         session.add(User(id=owner, email="cost-artifact@example.org", password_hash="fixture"))
         session.commit()
+        freeze_nifty_study(session, owner, frozen)
         candidate = register_candidate(session, owner, definition)
         trial = declare_trial(session, owner, candidate.id, manifest)
         from packages.regime.registered_evaluator import bind_nifty_replay
@@ -206,7 +231,7 @@ def test_authenticated_route_records_only_owned_stored_replay():
     frozen = study()
     manifest = TrialManifest(
         dataset_digest=frozen.dataset_digest, calculation_digest=frozen.calculation_digest,
-        cost_model_id=frozen.cost_model_id, experiment_family="nifty-route-fixture",
+        cost_model_id=frozen.cost_model_id, experiment_family=frozen.study_key,
         trial_number=1, declared_search_budget=10, seed=0,
         train_start=frozen.train_start, train_end=frozen.train_end,
         validation_start=frozen.validation_start, validation_end=frozen.validation_end,

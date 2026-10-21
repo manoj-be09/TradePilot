@@ -2,6 +2,7 @@
 
 ## 2026-10-21 — Worker warning and DhanHQ source decision
 
+- Kite Connect was additionally reviewed against its full-mode WebSocket, NFO instrument, current pricing and Zerodha staff data-use statements. A co-packet exchange tick time that advances with depth makes it a stronger technical candidate, but a staff statement restricts permanent storage and live-data paper trading. The study's permission and normal-session runtime proof remain absent. `DATA_SOURCE_DECISION.md` now records this conditional route; no subscription, integration or account change was made.
 - Read the shared paper-worker lease through a read-only PostgreSQL transaction. Its latest observed cycle was `DEGRADED` with **one warning**: the existing 2026-10-19 open option position requires manual expiry reconciliation. The lease still heartbeats and `/ready/paper-worker` returns 200; readiness does not mean a warning-free cycle. This identifies the current warning, not a reason to synthesize settlement or alter the saved trade.
 - `DATA_SOURCE_DECISION.md` compares the published Upstox and DhanHQ option-chain/feed fields, depth/order counts, timestamp semantics, subscription and unresolved rights. DhanHQ documents useful depth and per-level order counts, but no reviewed separate per-leg exchange-origin bid/ask update time. Its paid Data API was not purchased or probed. Upstox remains the configured observation source; strict NIFTY paper fills and qualified ranking remain blocked by the stated evidence gates. No service, account, position, order or volume changed.
 

@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-21
 
+## 2026-10-21 — Separate declared review time from server receipt
+
+- Research readiness and trial evidence responses now expose the saved server `created_at` as `evidence_received_at`/`received_at` alongside the reviewer-supplied `recorded_at`. The Research UI labels these as “Declared review time” and “Server received.” New records reject a declared review time more than one minute in the future. Existing rows are read without migration or mutation. A backdated declaration is therefore visible beside its actual server receipt rather than appearing to be contemporaneously ingested. This still does **not** establish when the underlying market data was first published or available to a strategy, and readiness remains unqualified.
+- **36** focused evidence/readiness/recommendation tests passed; Ruff, mypy and frontend TypeScript passed. The UI increment requires the updated API/web source to be deployed before owner-account visual acceptance; no owner study or paper position was changed.
+
 ## 2026-10-21 — Research source-reference validation
 
 - New immutable Research evidence references now require an HTTPS or opaque `artifact:` URI and reject embedded user information, query strings, fragments and whitespace controls. Candidate public source URLs also reject leading/trailing whitespace and controls that URL parsing could otherwise discard. Already saved rows are not rewritten; an older invalid evidence reference fails closed when read through the existing readiness integrity check. This prevents common credential-bearing references from entering future evidence records, but it does not verify artifact bytes, rights, publication or availability time.

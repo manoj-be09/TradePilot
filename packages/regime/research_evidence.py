@@ -1,5 +1,5 @@
 """Account-scoped, immutable evidence references for readiness review."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -83,6 +83,9 @@ def record_evidence(session: Session, owner: UUID, trial_id: UUID,
     ))
     if trial is None:
         raise LookupError("Trial not found")
+    received_at = datetime.now(timezone.utc)
+    if evidence.recorded_at > received_at + timedelta(minutes=1):
+        raise ValueError("Declared evidence review time cannot be in the future")
     payload = evidence.model_dump(mode="json")
     digest = fingerprint(payload)
     existing = session.scalar(select(ResearchEvidence).where(
@@ -97,7 +100,7 @@ def record_evidence(session: Session, owner: UUID, trial_id: UUID,
         detail=evidence.detail, artifact_ref=evidence.artifact_ref,
         artifact_digest=evidence.artifact_digest, artifact_version=evidence.artifact_version,
         recorded_at=evidence.recorded_at, allowed_use=evidence.allowed_use,
-        evidence_digest=digest, created_at=datetime.now(timezone.utc),
+        evidence_digest=digest, created_at=received_at,
     )
     session.add(row)
     try:

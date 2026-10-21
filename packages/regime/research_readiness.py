@@ -18,13 +18,14 @@ class ReadinessCheck(BaseModel):
     detail: str
     evidence_ref: str | None = None
     evidence_recorded_at: datetime | None = None
+    evidence_received_at: datetime | None = None
     artifact_digest: str | None = None
     artifact_version: str | None = None
     allowed_use: Literal[
         "INSPECT_RESEARCH_RECORDS", "RESEARCH_ONLY", "QUALIFIED_PAPER"
     ] | None = None
 
-    @field_validator("evidence_recorded_at")
+    @field_validator("evidence_recorded_at", "evidence_received_at")
     @classmethod
     def recorded_utc(cls, value: datetime | None) -> datetime | None:
         # Registry services write UTC; SQLite round-trips drop the timezone.
@@ -133,6 +134,7 @@ def assess_trial(row: ResearchTrial,
             evidence_ref=(f"evidence:{cost_item.id}:artifact:"
                           f"{cost_item.artifact_digest or cost_item.artifact_ref}"),
             evidence_recorded_at=cost_item.recorded_at, artifact_digest=cost_item.artifact_digest,
+            evidence_received_at=cost_item.created_at,
             artifact_version=cost_item.artifact_version, allowed_use=cost_item.allowed_use,
         ))
     for key, label, detail in (
@@ -175,6 +177,7 @@ def assess_trial(row: ResearchTrial,
             key=key, label=label, status=status, detail=detail,
             evidence_ref=f"evidence:{item.id}:artifact:{item.artifact_digest or item.artifact_ref}",
             evidence_recorded_at=item.recorded_at, artifact_digest=item.artifact_digest,
+            evidence_received_at=item.created_at,
             artifact_version=item.artifact_version, allowed_use=item.allowed_use,
         ))
     return ReadinessAssessment(

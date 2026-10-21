@@ -272,7 +272,8 @@ def trial_view(row: ResearchTrial, evaluation: ResearchEvaluation | None = None,
                           "detail": item.detail, "artifact_ref": item.artifact_ref,
                           "artifact_digest": item.artifact_digest,
                           "artifact_version": item.artifact_version,
-                          "recorded_at": item.recorded_at, "allowed_use": item.allowed_use}
+                          "recorded_at": item.recorded_at, "received_at": item.created_at,
+                          "allowed_use": item.allowed_use}
                         for item in (evidence or [])],
             "engine_evaluation": None if evaluation is None else {
                 "adapter": evaluation.adapter, "adapter_digest": evaluation.adapter_digest,

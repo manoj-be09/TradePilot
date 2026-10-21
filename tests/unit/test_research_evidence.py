@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -54,6 +54,8 @@ def test_evidence_is_immutable_idempotent_and_appears_in_readiness():
         assert check.artifact_version == "nifty-daily-v1"
         assert check.allowed_use == "RESEARCH_ONLY"
         assert check.evidence_recorded_at.isoformat() == "2026-01-02T04:30:00+00:00"
+        assert check.evidence_received_at is not None
+        assert check.evidence_received_at == saved.created_at.replace(tzinfo=timezone.utc)
     engine.dispose()
 
 
@@ -88,6 +90,16 @@ def test_evidence_accepts_opaque_artifact_and_public_https_references():
         "https://example.org/data/2026")
 
 
+def test_evidence_cannot_claim_a_future_review_time():
+    engine, owner, _, trial = _fixture()
+    with Session(engine) as session:
+        future = evidence(recorded_at=datetime.now(timezone.utc) + timedelta(days=1))
+        with pytest.raises(ValueError, match="cannot be in the future"):
+            record_evidence(session, owner, trial, future)
+        assert session.scalar(select(ResearchEvidence)) is None
+    engine.dispose()
+
+
 def test_evidence_route_is_owner_scoped_and_exposes_digest():
     engine, owner, candidate, trial = _fixture()
     with Session(engine) as session:
@@ -96,6 +108,7 @@ def test_evidence_route_is_owner_scoped_and_exposes_digest():
         rows = trials(candidate, SimpleNamespace(id=owner), session, SimpleNamespace(headers={}),
                       limit=50, offset=0)
         assert rows[0]["evidence"][0]["artifact_version"] == "nifty-daily-v1"
+        assert rows[0]["evidence"][0]["received_at"] is not None
     engine.dispose()
 
 

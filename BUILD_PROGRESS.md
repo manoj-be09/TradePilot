@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-21
 
+## 2026-10-21 — Deployed manual-abstention contract check
+
+- The owner pushed `83c8722` and ran the safe API/paper-worker/web rebuild. Local `HEAD` and `origin/main` match. The reachable `/openapi.json` exposes `ManualAbstentionRequest` with only `expires_at`, and the study recommendation POST references that schema; `/health`, `/ready/paper-worker` and the web root each returned HTTP 200. This verifies the deployed API contract for the new server-authored manual abstention, not an exact image-to-commit attestation or a populated-account write.
+- The connected signed-in Edge Research screen showed the owner's real empty state: no registered hypotheses and no recommendation/profit probability. The shared worker banner remained degraded and the F&O screen still identified the untouched 19 October TEST ONLY NIFTY position as expired and settlement pending. No research record, order, cash or position was changed. The manual button is not visible without a frozen study, so its deployed click flow is untested in this account; isolated HTTP tests cover the route. Source rights, exchange-timed books, policy-matched outcomes and final settlement remain open.
+
 ## 2026-10-21 — Manual Research abstention provenance
 
 - The generic Research recommendation POST now accepts only an expiry for a manual abstention. The server pins the owned study manifest, bounds expiry by its review interval, and writes `MANUAL_ABSTENTION_V1` with `UNREVIEWED` evidence and execution/promotion disabled. Browser-supplied candidate selection, readiness labels, evidence claims and risk context are rejected; the separate stored-trial readiness route remains unchanged. The Research button now says “Record manual abstention” and explains that it does not assess evidence. Existing saved recommendation rows remain readable and untouched.

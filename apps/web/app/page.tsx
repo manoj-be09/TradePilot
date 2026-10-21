@@ -247,7 +247,9 @@ type PaperTrade = {
       largest_call_oi_strike?: string | null; largest_put_oi_strike?: string | null;
       quality_issues?: { code: string; severity: string; count: number }[];
       buyer_count?: number | null; seller_count?: number | null;
-      news?: string | null; validated_support?: string | null;
+      news?: { status: string; received_at?: string; coverage_reviewed: boolean;
+        items: { heading: string; article_link: string; published_at: string }[] } | null;
+      validated_support?: string | null;
       validated_resistance?: string | null; realized_volatility?: string | null;
     };
   };
@@ -282,7 +284,10 @@ function EntryMarketEvidence({ context }: { context: NonNullable<PaperTrade["ent
     <p>Returned-chain put/call ratio by OI: {context.put_call_ratio_oi ?? "unavailable"}; by traded volume: {context.put_call_ratio_volume ?? "unavailable"}. Ratios describe this chain snapshot and do not predict direction by themselves.</p>
     <p>ATM strike {context.atm_strike ?? "unavailable"}; call / put IV {context.atm_call_iv_pct ?? "unavailable"} / {context.atm_put_iv_pct ?? "unavailable"}; put-minus-call IV skew {context.atm_iv_skew_put_minus_call_points ?? "unavailable"} points. Median spread: {context.median_relative_spread_pct ?? "unavailable"}%. Largest call / put OI strikes: {context.largest_call_oi_strike ?? "unavailable"} / {context.largest_put_oi_strike ?? "unavailable"}. OI concentrations are descriptive, not validated support or resistance.</p>
     <p>Contracts with delta / gamma / theta / vega: {context.contracts_with_delta ?? "unavailable"} / {context.contracts_with_gamma ?? "unavailable"} / {context.contracts_with_theta ?? "unavailable"} / {context.contracts_with_vega ?? "unavailable"}. {context.quality_issues ? (context.quality_issues.length ? `Quality issues: ${context.quality_issues.map(issue => `${issue.code} (${issue.count})`).join(", ")}.` : "No quality issues in the saved check.") : "Quality issue codes were not saved in this older snapshot."}</p>
-    <p>Buyer/seller counts, news, realized volatility and validated support/resistance: unavailable in this recorded snapshot. Displayed bid/ask quantities and quote times for selected legs are retained in the open-order fill evidence. These observations are not a validated prediction.</p>
+    <p>Buyer/seller counts, realized volatility and validated support/resistance: unavailable in this recorded snapshot. Displayed bid/ask quantities and quote times for selected legs are retained in the open-order fill evidence. These observations are not a validated prediction.</p>
+    {context.news ? <div><p>Upstox news: {context.news.status.replaceAll("_", " ").toLowerCase()}; NIFTY index coverage remains unverified. Received {context.news.received_at ? new Date(context.news.received_at).toLocaleString("en-IN") : "time unavailable"}. Articles published after receipt are excluded.</p>
+      {context.news.items.length ? <ul>{context.news.items.map(item => <li key={`${item.published_at}:${item.article_link}`}><a href={item.article_link} target="_blank" rel="noreferrer">{item.heading}</a> · published {new Date(item.published_at).toLocaleString("en-IN")}</li>)}</ul> : null}
+    </div> : <p>News was not recorded for this older entry.</p>}
   </details>;
 }
 

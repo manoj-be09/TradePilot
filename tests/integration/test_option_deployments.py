@@ -206,7 +206,7 @@ def test_arm_waits_for_new_snapshot_then_worker_opens_once(client, monkeypatch, 
         assert closed.realized_pnl is not None
         assert len(list(session.scalars(select(PaperOrder)))) == 2
         assert closed.entry_rule_snapshot["entry_market_context"]["version"] == (
-            "nifty-option-observed-v4"
+            "nifty-option-observed-v5"
         )
         context = closed.entry_rule_snapshot["entry_market_context"]
         assert Decimal(context["underlying_spot"]) > 0

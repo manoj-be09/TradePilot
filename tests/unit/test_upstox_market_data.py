@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -9,6 +9,40 @@ from packages.market_data import upstox_v3_pb2 as feed_proto
 from packages.market_data.contracts import MarketDataPlanRequired, MarketDataProviderError
 from packages.market_data.upstox import UpstoxMarketDataProvider
 from packages.paper_trading.equity import quote_problem
+
+
+def test_news_snapshot_keeps_only_pre_receipt_upstox_headlines():
+    published = datetime.now(timezone.utc) - timedelta(minutes=2)
+    future = datetime.now(timezone.utc) + timedelta(days=1)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v2/news"
+        assert request.url.params["category"] == "instrument_keys"
+        assert request.url.params["instrument_keys"] == "NSE_INDEX|Nifty 50"
+        return httpx.Response(200, json={"status": "success", "data": {
+            "NSE_INDEX|Nifty 50": [
+                {"heading": "Market update", "article_link":
+                 "https://upstox.com/news/market-news/update/",
+                 "published_time": int(published.timestamp() * 1000)},
+                {"heading": "Future", "article_link":
+                 "https://upstox.com/news/market-news/future/",
+                 "published_time": int(future.timestamp() * 1000)},
+                {"heading": "Other publisher", "article_link":
+                 "https://example.com/story", "published_time":
+                 int(published.timestamp() * 1000)},
+                {"heading": "Broken URL", "article_link": "https://[broken",
+                 "published_time": int(published.timestamp() * 1000)},
+            ],
+        }})
+
+    provider = UpstoxMarketDataProvider("test-token", transport=httpx.MockTransport(handler))
+    observed = asyncio.run(provider.get_recent_news("NSE_INDEX|Nifty 50"))
+    assert observed["status"] == "OBSERVED_UNVERIFIED_COVERAGE"
+    assert observed["coverage_reviewed"] is False
+    assert [item["heading"] for item in observed["items"]] == ["Market update"]
+    assert datetime.fromisoformat(observed["items"][0]["published_at"]) < datetime.fromisoformat(
+        observed["received_at"]
+    )
 
 
 @pytest.mark.parametrize(

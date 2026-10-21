@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -127,6 +127,56 @@ class UpstoxMarketDataProvider:
 
     async def get_equity_session(self, trading_day: date) -> ExchangeSession | None:
         return await self._exchange_session(trading_day, "NSE")
+
+    async def get_recent_news(self, instrument_key: str) -> dict[str, Any]:
+        """Observe current Upstox headlines; index coverage is not yet established."""
+        data = await self._get(
+            "/v2/news",
+            {"category": "instrument_keys", "instrument_keys": instrument_key,
+             "page_number": "1", "page_size": "10"},
+        )
+        received_at = datetime.now(timezone.utc)
+        if not isinstance(data, dict) or (data and instrument_key not in data):
+            raise MarketDataProviderError("Upstox news response had an unexpected shape")
+        articles = data.get(instrument_key, [])
+        if not isinstance(articles, list):
+            raise MarketDataProviderError("Upstox news response had an unexpected shape")
+        items: list[dict[str, str]] = []
+        for item in articles:
+            if not isinstance(item, dict):
+                continue
+            heading, link, published_ms = (
+                item.get("heading"), item.get("article_link"), item.get("published_time")
+            )
+            if (not isinstance(heading, str) or not heading.strip()
+                    or not isinstance(link, str) or type(published_ms) is not int):
+                continue
+            try:
+                parsed = urlparse(link)
+                valid_link = parsed.scheme == "https" and parsed.hostname == "upstox.com"
+            except ValueError:
+                valid_link = False
+            if not valid_link or len(link) > 500:
+                continue
+            try:
+                published_at = datetime.fromtimestamp(published_ms / 1000, timezone.utc)
+            except (OSError, OverflowError, ValueError):
+                continue
+            if published_at > received_at or (received_at - published_at).days >= 7:
+                continue
+            items.append({
+                "heading": heading.strip()[:240],
+                "article_link": link,
+                "published_at": published_at.isoformat(),
+            })
+        return {
+            "source": "upstox_news_v2",
+            "instrument_key": instrument_key,
+            "received_at": received_at.isoformat(),
+            "coverage_reviewed": False,
+            "status": "OBSERVED_UNVERIFIED_COVERAGE" if items else "EMPTY_UNVERIFIED_COVERAGE",
+            "items": items[:5],
+        }
 
     async def _exchange_session(self, trading_day: date, exchange: str) -> ExchangeSession | None:
         data = await self._get(f"/v2/market/timings/{trading_day.isoformat()}")

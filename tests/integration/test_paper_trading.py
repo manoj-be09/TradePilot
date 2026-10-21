@@ -42,6 +42,13 @@ class FakeUpstoxProvider(UpstoxMarketDataProvider):
             contract for contract in self.contracts if expiry is None or contract.expiry == expiry
         ]
 
+    async def get_recent_news(self, instrument_key):
+        return {
+            "source": "upstox_news_v2", "instrument_key": instrument_key,
+            "received_at": datetime.now(timezone.utc).isoformat(),
+            "coverage_reviewed": False, "status": "EMPTY_UNVERIFIED_COVERAGE", "items": [],
+        }
+
     async def get_option_chain(self, underlying, expiry):
         now = datetime.now(timezone.utc)
         quotes = []
@@ -590,7 +597,7 @@ def test_no_code_entry_conditions_are_rechecked_and_persisted_from_server_snapsh
     assert condition["actual"] == "1"
     assert condition["passed"] is True
     context = response.json()["entry_rule_snapshot"]["entry_market_context"]
-    assert context["version"] == "nifty-option-observed-v4"
+    assert context["version"] == "nifty-option-observed-v5"
     assert len(context["chain_digest"]) == 64
     assert datetime.fromisoformat(context["available_at"]).tzinfo is not None
     assert context["call_volume"] is not None
@@ -609,9 +616,32 @@ def test_no_code_entry_conditions_are_rechecked_and_persisted_from_server_snapsh
     assert context["put_open_interest"] is not None
     assert context["quality_status"] == "PASS"
     assert context["buyer_count"] is None
-    assert context["news"] is None
+    assert context["news"]["status"] == "EMPTY_UNVERIFIED_COVERAGE"
+    assert context["news"]["instrument_key"] == "NSE_INDEX|Nifty 50"
+    assert context["news"]["coverage_reviewed"] is False
     assert context["validated_support"] is None
     assert context["realized_volatility"] is None
+
+
+def test_optional_news_failure_does_not_block_paper_entry(client, monkeypatch):
+    provider = FakeUpstoxProvider()
+
+    async def unavailable(_instrument_key):
+        from packages.market_data.contracts import MarketDataProviderError
+        raise MarketDataProviderError("News capability unavailable")
+
+    provider.get_recent_news = unavailable
+    monkeypatch.setattr("apps.api.main.get_market_data_provider", lambda: provider)
+    response = client.post(
+        "/paper/trades",
+        headers={**_token(client), "Idempotency-Key": str(uuid4())},
+        json={"strategy_key": "long_call", "expiry": provider.expiry.isoformat(),
+              "reference_strike": "25000", "lots": 1},
+    )
+    assert response.status_code == 201, response.text
+    news = response.json()["entry_rule_snapshot"]["entry_market_context"]["news"]
+    assert news["status"] == "UNAVAILABLE"
+    assert news["items"] == []
 
 
 def test_unsatisfied_no_code_condition_rejects_trade_without_order(client, monkeypatch):

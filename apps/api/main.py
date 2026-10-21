@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 from collections.abc import Awaitable, Callable
@@ -2225,10 +2226,15 @@ def _entry_check_dedupe_digest(snapshot: dict[str, object]) -> str:
     if isinstance(entry, dict):
         context = entry.get("entry_market_context")
         if isinstance(context, dict):
+            news = context.get("news")
             dedupe_snapshot["entry_rule_snapshot"] = {
                 **entry,
                 "entry_market_context": {
-                    key: value for key, value in context.items() if key != "available_at"
+                    **{key: value for key, value in context.items()
+                       if key not in {"available_at", "news"}},
+                    "news": ({key: value for key, value in news.items()
+                              if key != "received_at"}
+                             if isinstance(news, dict) else news),
                 },
             }
     return hashlib.sha256(json.dumps(
@@ -2462,6 +2468,21 @@ async def _open_paper_trade_with_provider(
             raise PaperSessionError(
                 "Expiry-day paper entry window is closed before the scheduled square-off"
             )
+        news_observation: dict[str, Any] = {
+            "source": "upstox_news_v2",
+            "instrument_key": index.instrument_key,
+            "status": "UNAVAILABLE",
+            "coverage_reviewed": False,
+            "items": [],
+        }
+        news_method = getattr(provider, "get_recent_news", None)
+        if index.symbol == "NIFTY" and callable(news_method):
+            try:
+                news_observation = await asyncio.wait_for(
+                    news_method(index.instrument_key), timeout=1.5
+                )
+            except (TimeoutError, MarketDataProviderError, MarketDataUnavailable):
+                pass  # Optional context cannot prevent or reprice a paper fill.
         option_contracts = await provider.get_option_contracts(index.symbol, body.expiry)
         chain = await provider.get_option_chain(index.symbol, body.expiry)
         if chain.underlying != index.symbol or chain.expiry != body.expiry:
@@ -2529,7 +2550,7 @@ async def _open_paper_trade_with_provider(
         "market_as_of": chain.as_of.isoformat(),
         "quality_status": quality.status,
         "entry_market_context": {
-            "version": "nifty-option-observed-v4",
+            "version": "nifty-option-observed-v5",
             "source": provider.provider_id,
             "availability": "SERVER_OBSERVED_AT_ENTRY",
             "available_at": datetime.now(timezone.utc).isoformat(),
@@ -2607,7 +2628,7 @@ async def _open_paper_trade_with_provider(
             "selected_leg_books": leg_quotes,
             "buyer_count": None,
             "seller_count": None,
-            "news": None,
+            "news": news_observation,
             "validated_support": None,
             "validated_resistance": None,
             "realized_volatility": None,

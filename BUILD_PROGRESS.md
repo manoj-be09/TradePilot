@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-21
 
+## 2026-10-21 — Isolated PostgreSQL canonical-parent concurrency
+
+- With the owner-started PostgreSQL container available on localhost, the existing isolated research-concurrency fixture ran in temporary schemas and cleaned them afterward. **4 PostgreSQL integration tests passed**, including a new simultaneous same-slot reservation by two differently named NIFTY studies using the identical dataset digest: exactly one consumed the canonical slot and the other was rejected. The other three checks cover same-trial idempotency, lease fencing and same-evidence finalization. Ruff and `git diff --check` passed.
+- This validates a bounded database race for exact dataset identity. It does not establish reviewed lineage for differently hashed overlapping data, authenticated owner-account Research rendering, exchange-timed books, official settlement or scientific advantage. The actual TEST ONLY position and production account records were not changed.
+
 ## 2026-10-21 — Existing NIFTY reservation retry guard
 
 - A trial with an older named-family reservation can no longer return that reservation when a NIFTY replay requests the canonical dataset parent. The retry verifies the stored trial-manifest identity and the existing reservation's account, canonical family, budget and protected scope; a mismatch fails closed for review. Already-finalized replay results remain readable through the existing idempotent result path. No paper position, order or live-trading setting changed.

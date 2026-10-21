@@ -110,6 +110,39 @@ def test_concurrent_research_slot_reservation_is_single_and_idempotent(postgres_
         assert session.scalar(select(ResearchBudgetSlot.trial_id)) == trial_id
 
 
+def test_renamed_nifty_studies_share_one_postgres_parent_slot(postgres_factory):
+    factory = postgres_factory
+    owner, first_id = _seed_research_trial(factory)
+    with factory() as session:
+        first = session.get(ResearchTrial, first_id)
+        assert first is not None
+        renamed = declare_trial(session, owner, first.candidate_id, TrialManifest.model_validate(
+            first.manifest | {"experiment_family": "renamed-nifty-study"},
+        ))
+        second_id = renamed.id
+    barrier = Barrier(2)
+
+    def reserve(trial_id):
+        with factory() as session:
+            barrier.wait(timeout=10)
+            try:
+                reserve_trial_slot(session, owner, trial_id,
+                                   nifty_parent_dataset_digest="a" * 64)
+                return "RESERVED"
+            except ValueError as exc:
+                assert "already consumed" in str(exc)
+                return "ALREADY_CONSUMED"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = [future.result(timeout=20) for future in (
+            pool.submit(reserve, first_id), pool.submit(reserve, second_id),
+        )]
+    assert sorted(results) == ["ALREADY_CONSUMED", "RESERVED"]
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(ResearchBudgetSlot)) == 1
+        assert session.scalar(select(ResearchExperiment.family)) == f"nifty-dataset:{'a' * 64}"
+
+
 def test_postgres_research_lease_takeover_fences_stale_owner(postgres_factory):
     factory = postgres_factory
     with factory() as first:

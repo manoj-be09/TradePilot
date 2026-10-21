@@ -93,7 +93,8 @@ def test_manifest_rejects_overlap_bad_hash_or_over_budget_number(changes):
 
 
 @pytest.mark.parametrize("url", ["http://example.org", "https://name:secret@example.org",
-                                "https://example.org?token=secret"])
+                                "https://example.org?token=secret",
+                                "\nhttps://example.org/public-research"])
 def test_source_rejects_credentials_and_nonpublic_reference_shape(url):
     with pytest.raises(ValidationError):
         definition(source_url=url)

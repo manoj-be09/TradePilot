@@ -29,6 +29,8 @@ class CandidateDefinition(BaseModel):
     @field_validator("source_url")
     @classmethod
     def public_source(cls, value: str) -> str:
+        if value != value.strip() or any(char in value for char in "\r\n\t"):
+            raise ValueError("Source reference cannot contain whitespace controls")
         url = urlsplit(value)
         if (url.scheme != "https" or not url.hostname or url.username or url.password
                 or url.query or url.fragment):

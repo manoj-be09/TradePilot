@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-21
 
+## 2026-10-21 — Research source-reference validation
+
+- New immutable Research evidence references now require an HTTPS or opaque `artifact:` URI and reject embedded user information, query strings, fragments and whitespace controls. Candidate public source URLs also reject leading/trailing whitespace and controls that URL parsing could otherwise discard. Already saved rows are not rewritten; an older invalid evidence reference fails closed when read through the existing readiness integrity check. This prevents common credential-bearing references from entering future evidence records, but it does not verify artifact bytes, rights, publication or availability time.
+- **36** focused candidate, evidence and readiness tests passed; Ruff, mypy and diff checks passed. No owner-account evidence, orders, cash or position changed. Deployment and owner-account acceptance for this new source remain pending a safe rebuild.
+
 ## 2026-10-21 — Deployed manual-abstention contract check
 
 - The owner pushed `83c8722` and ran the safe API/paper-worker/web rebuild. Local `HEAD` and `origin/main` match. The reachable `/openapi.json` exposes `ManualAbstentionRequest` with only `expires_at`, and the study recommendation POST references that schema; `/health`, `/ready/paper-worker` and the web root each returned HTTP 200. This verifies the deployed API contract for the new server-authored manual abstention, not an exact image-to-commit attestation or a populated-account write.

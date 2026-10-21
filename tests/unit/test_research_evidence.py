@@ -67,6 +67,27 @@ def test_evidence_rejects_unqualified_or_ambiguous_records(changes):
         evidence(**changes)
 
 
+@pytest.mark.parametrize("reference", [
+    "artifact://user:secret@dataset/2026",
+    "artifact://dataset/2026?token=secret",
+    "artifact:dataset-2026#secret",
+    "https://example.org/data?token=secret",
+    "https://user:secret@example.org/data",
+    "relative/path?token=secret",
+    "artifact:dataset-2026\nsecret",
+])
+def test_evidence_rejects_private_or_ambiguous_artifact_references(reference):
+    with pytest.raises(ValidationError):
+        evidence(artifact_ref=reference)
+
+
+def test_evidence_accepts_opaque_artifact_and_public_https_references():
+    assert evidence(artifact_ref="artifact://dataset/2026").artifact_ref == (
+        "artifact://dataset/2026")
+    assert evidence(artifact_ref="https://example.org/data/2026").artifact_ref == (
+        "https://example.org/data/2026")
+
+
 def test_evidence_route_is_owner_scoped_and_exposes_digest():
     engine, owner, candidate, trial = _fixture()
     with Session(engine) as session:

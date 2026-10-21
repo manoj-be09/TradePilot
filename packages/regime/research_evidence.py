@@ -31,13 +31,15 @@ class EvidenceRecord(BaseModel):
     @field_validator("artifact_ref")
     @classmethod
     def public_reference(cls, value: str) -> str:
+        if value != value.strip() or any(char in value for char in "\r\n\t"):
+            raise ValueError("Artifact reference cannot contain whitespace controls")
         parsed = urlsplit(value)
-        if parsed.scheme and (parsed.scheme not in {"https", "artifact"} or
-                              (parsed.scheme == "https" and (not parsed.hostname
-                               or parsed.username or parsed.password or parsed.query
-                               or parsed.fragment))):
+        if (parsed.scheme not in {"https", "artifact"}
+                or parsed.username or parsed.password or parsed.query or parsed.fragment
+                or (parsed.scheme == "https" and not parsed.hostname)
+                or (parsed.scheme == "artifact" and not (parsed.netloc or parsed.path))):
             raise ValueError(
-                "Use an HTTPS artifact reference without credentials, query or fragment"
+                "Use an HTTPS or artifact reference without credentials, query or fragment"
             )
         return value
 

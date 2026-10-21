@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-21
 
+## 2026-10-21 — Isolated paper and feed rehearsal after sandbox review
+
+- Reviewed the [Upstox sandbox contract](https://upstox.com/developer/api-documentation/sandbox/): it is a separate, free order-API rehearsal environment with phased endpoint coverage and sandbox-only tokens. It is not a live NIFTY market-data feed or a substitute for per-leg executable-book timing, and no sandbox token, account, order or external API was used. TradePilot's existing isolated paper ledger remains the software acceptance target; no second sandbox ledger was added.
+- Focused feed/quote checks: **51 passed** in the first run; one test setup could not create a temporary directory under the execution host's restricted temp path. That same test passed when rerun with a workspace-local temporary base, giving **52 passing checks** with no assertion failure. Separate paper lifecycle, option deployment and expiry-settlement integration checks: **36 passed**, with one existing Starlette/httpx deprecation warning. These are deterministic software checks, not licensed live-paper, final clearing-settlement or profitable-strategy evidence. The actual TEST ONLY position was not touched.
+
 ## 2026-10-21 — Worker warning and DhanHQ source decision
 
 - Kite Connect was additionally reviewed against its full-mode WebSocket, NFO instrument, current pricing and Zerodha staff data-use statements. A co-packet exchange tick time that advances with depth makes it a stronger technical candidate, but a staff statement restricts permanent storage and live-data paper trading. The study's permission and normal-session runtime proof remain absent. `DATA_SOURCE_DECISION.md` now records this conditional route; no subscription, integration or account change was made.

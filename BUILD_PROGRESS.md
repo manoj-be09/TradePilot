@@ -1,9 +1,15 @@
 # Build progress — updated 2026-10-21
 
+## 2026-10-21 — Canonical NIFTY dataset budget identity
+
+- NIFTY scheduled-replay reservations now use an account-scoped family derived from the frozen dataset digest, rather than a caller-supplied study or experiment name. The existing durable slot and scope constraints therefore reject a second study attempting the same slot on exactly the same dataset. A pre-existing named-family reservation blocks new canonical reservations for that legacy family until reviewed; finalized saved results remain readable.
+- This is an exact-artifact software guard. Repackaging or revising overlapping observations changes the digest, and no reviewed source lineage currently identifies equivalent datasets. The parent budget therefore remains unqualified as a complete defense against all repeated searches. No paper order or existing account position was changed.
+- Focused canonical reservation and NIFTY replay checks: **12 passed**; Ruff and mypy passed. The full suite and deployed PostgreSQL concurrency for this increment remain unverified in the present Windows sandbox.
+
 ## 2026-10-21 — NIFTY replay parent-binding safety
 
 - New NIFTY replay bindings require the matching saved account study, verify its manifest digest and the stored trial manifest digest, and require the trial's experiment family to equal the saved study key. Renaming the trial family can no longer start a fresh family allowance within that study. Already finalized matching adapter results remain idempotently readable; waiting legacy trials under other family names fail closed for deliberate review.
-- **Assumption and limit:** the immutable study key is the parent budget identity for this software boundary. A separate newly named study with overlapping data remains a possible search-budget escape until a canonical cross-study parent identity and durable uniqueness rule are implemented. This change does not qualify the holdout, costs, market source or a trading edge.
+- **Assumption and limit:** the immutable study key binds each trial to its saved study. A subsequent canonical parent reservation uses the exact declared dataset digest under one account, so changing the study or family name cannot reuse a numbered slot for identical dataset identity. Existing legacy family reservations are not silently migrated: a new trial under that old family fails closed for review. Differently hashed copies or modified versions of overlapping market observations cannot be recognized as the same parent without reviewed data lineage; holdout, costs, market source and trading edge remain unqualified.
 - Focused replay, budget and concurrency checks: **12 passed, 3 PostgreSQL-dependent skipped**; replay-specific rerun: **10 passed**. Ruff and mypy passed. The broader suite was interrupted and is not claimed as passing: a separate isolated feed-observer test timed out before application code while Windows Python constructed its asyncio loop (`socket._fallback_socketpair`), as shown by `faulthandler_timeout=8`. This is a sandbox/runtime limitation for this check, not evidence of a TradePilot regression or a successful full run. No deployed API or owner-account check was possible in this run.
 
 ## 2026-10-20 — First NIFTY market-fit preview and template safety

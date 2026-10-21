@@ -11,12 +11,16 @@ from packages.database.models import ResearchBudgetSlot, ResearchExperiment, Res
 from packages.regime.candidate_registry import TrialManifest, fingerprint
 
 
-def reserve_trial_slot(session: Session, owner: UUID, trial_id: UUID) -> ResearchBudgetSlot:
+def reserve_trial_slot(
+    session: Session, owner: UUID, trial_id: UUID, *,
+    nifty_parent_dataset_digest: str | None = None,
+) -> ResearchBudgetSlot:
     """Keep budget/scope immutable and reject slot reuse across candidates.
 
-    This is family scoped, not protection against an operator inventing another
-    family name. Legacy trials are not backfilled or qualified. A reservation is
-    not source/data review and cannot itself authorize replay or promotion.
+    NIFTY callers can bind the family to an exact frozen dataset digest. This
+    does not detect differently hashed copies of overlapping observations.
+    Legacy trials are not backfilled or qualified; reservation never authorizes
+    replay or promotion by itself.
     """
     trial = session.scalar(select(ResearchTrial).where(
         ResearchTrial.id == trial_id, ResearchTrial.user_id == owner,
@@ -41,14 +45,29 @@ def reserve_trial_slot(session: Session, owner: UUID, trial_id: UUID) -> Researc
         "cost_artifact_digest",
         "holdout_start", "holdout_end",
     )})
+    family = manifest.experiment_family
+    if nifty_parent_dataset_digest is not None:
+        if nifty_parent_dataset_digest != manifest.dataset_digest:
+            raise ValueError("NIFTY parent dataset differs from the trial manifest")
+        family = f"nifty-dataset:{nifty_parent_dataset_digest}"
+        legacy = None
+        if manifest.experiment_family != family:
+            legacy = session.scalar(select(ResearchExperiment).where(
+                ResearchExperiment.user_id == owner,
+                ResearchExperiment.family == manifest.experiment_family,
+            ))
+        if legacy is not None and session.scalar(select(ResearchBudgetSlot.trial_id).where(
+            ResearchBudgetSlot.experiment_id == legacy.id,
+        ).limit(1)) is not None:
+            raise ValueError("Legacy family reservations require parent-budget review")
     query = select(ResearchExperiment).where(
         ResearchExperiment.user_id == owner,
-        ResearchExperiment.family == manifest.experiment_family,
+        ResearchExperiment.family == family,
     )
     experiment = session.scalar(query)
     if experiment is None:
         experiment = ResearchExperiment(
-            user_id=owner, family=manifest.experiment_family,
+            user_id=owner, family=family,
             budget=manifest.declared_search_budget,
             scope_digest=scope, created_at=datetime.now(timezone.utc),
         )

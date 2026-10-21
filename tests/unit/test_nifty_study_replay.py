@@ -14,6 +14,7 @@ from packages.database.models import (
     BacktestRun,
     ResearchBudgetSlot,
     ResearchEvaluation,
+    ResearchExperiment,
     ResearchStudy,
     ResearchTrial,
     User,
@@ -31,6 +32,7 @@ from packages.regime.registered_evaluator import (
     record_registered_nifty_replay,
     record_registered_nifty_replay_job,
 )
+from packages.regime.research_budget import reserve_trial_slot
 from packages.regime.research_scheduler_lease import acquire_research_lease
 from packages.regime.research_studies import freeze_nifty_study
 
@@ -115,6 +117,9 @@ def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
         assert saved.result["promotion_eligible"] is False
         assert session.get(ResearchTrial, trial.id).result is None
         assert len(list(session.scalars(select(ResearchBudgetSlot)))) == 1
+        assert session.scalar(select(ResearchExperiment.family)) == (
+            f"nifty-dataset:{frozen.dataset_digest}"
+        )
         assert record_registered_nifty_replay(
             session, owner, trial.id, frozen, replay(trade_count=20),
         ).result_digest == saved.result_digest
@@ -149,6 +154,31 @@ def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
         assert record_registered_nifty_replay(
             session, owner, renamed_family.id, frozen, replay(),
         ).result_digest == saved.result_digest
+        second_study = study(study_key="renamed-nifty-study")
+        freeze_nifty_study(session, owner, second_study)
+        second_manifest = TrialManifest.model_validate(
+            manifest.model_dump() | {"experiment_family": second_study.study_key}
+        )
+        second_trial = declare_trial(session, owner, candidate.id, second_manifest)
+        with pytest.raises(ValueError, match="already consumed"):
+            record_registered_nifty_replay(
+                session, owner, second_trial.id, second_study, replay(),
+            )
+        legacy_study = study(study_key="legacy-nifty-study", dataset_digest="f" * 64)
+        freeze_nifty_study(session, owner, legacy_study)
+        legacy_manifest = TrialManifest.model_validate(manifest.model_dump() | {
+            "dataset_digest": legacy_study.dataset_digest,
+            "experiment_family": legacy_study.study_key,
+        })
+        legacy_trial = declare_trial(session, owner, candidate.id, legacy_manifest)
+        reserve_trial_slot(session, owner, legacy_trial.id)
+        next_legacy_trial = declare_trial(session, owner, candidate.id,
+                                          TrialManifest.model_validate(
+                                              legacy_manifest.model_dump() | {"trial_number": 2}))
+        with pytest.raises(ValueError, match="Legacy family reservations"):
+            record_registered_nifty_replay(
+                session, owner, next_legacy_trial.id, legacy_study, replay(),
+            )
         trial.manifest = trial.manifest | {"experiment_family": "tampered-family"}
         session.commit()
         with pytest.raises(ValueError, match="manifest identity"):

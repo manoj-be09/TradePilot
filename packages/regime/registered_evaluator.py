@@ -216,7 +216,9 @@ def record_registered_nifty_replay(
         return row
     if trial.result_digest is not None:
         raise ValueError("Operator-finalized trials cannot be evaluated")
-    reserve_trial_slot(session, owner, trial_id)
+    reserve_trial_slot(
+        session, owner, trial_id, nifty_parent_dataset_digest=study.dataset_digest,
+    )
     try:
         report = assess_nifty_scheduled_replay(study, replay)
         result = {

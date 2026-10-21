@@ -165,19 +165,10 @@ export function ResearchWorkspace({apiUrl, token}: {apiUrl: string; token: strin
       const response = await fetch(`${apiUrl}/research/studies/${encodeURIComponent(study.id)}/recommendations`, {
         method: "POST",
         headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
-        body: JSON.stringify({
-          decision: "ABSTAIN",
-          reason_code: "INSUFFICIENT_EVIDENCE",
-          selector_version: "readiness-gated-v1",
-          evidence_snapshot: {study_manifest_digest: study.manifest_digest, evidence_status: "UNREVIEWED"},
-          alternatives: [],
-          rejected_reasons: ["No strategy has sufficient reviewed evidence for selection."],
-          risk_context: {execution_enabled: false, promotion_eligible: false, capital: study.manifest.capital ?? "unavailable"},
-          expires_at: expiresAt,
-        }),
+        body: JSON.stringify({expires_at: expiresAt}),
       });
       if (!response.ok) throw new Error(response.status === 401 ? "Your session expired. Sign in again." : "The abstention could not be recorded.");
-      setAbstentionMessage("Abstention recorded. No strategy was selected and no order was created.");
+      setAbstentionMessage("Manual, unreviewed abstention recorded. No strategy was selected and no order was created.");
       setRefresh(value => value + 1);
     } catch (failure: unknown) {
       setRecommendationError(failure instanceof Error ? failure.message : "The abstention could not be recorded.");
@@ -195,7 +186,7 @@ export function ResearchWorkspace({apiUrl, token}: {apiUrl: string; token: strin
       <p>{study.manifest.objective}</p>
       <dl className="research-facts"><dt>Incumbent</dt><dd>{study.manifest.incumbent_rule_version}</dd><dt>Search budget</dt><dd>{study.manifest.parent_search_budget} declared trials</dd><dt>Protected holdout</dt><dd>{study.manifest.holdout_start} → {study.manifest.holdout_end}</dd><dt>Cost model</dt><dd>{study.manifest.cost_model_id}</dd></dl>
       <p className="features-note">Study identity {study.manifest_digest} · execution disabled · promotion ineligible.</p>
-      <div className="research-action-row"><button className="refresh-button" disabled={abstentionBusy || recommendationBusy || studyBusy} onClick={recordAbstention} type="button">{abstentionBusy ? "Recording abstention…" : "Record abstention"}</button><small>Research record only; this never selects or creates an order.</small></div>
+      <div className="research-action-row"><button className="refresh-button" disabled={abstentionBusy || recommendationBusy || studyBusy} onClick={recordAbstention} type="button">{abstentionBusy ? "Recording abstention…" : "Record manual abstention"}</button><small>Unreviewed research record only; this never assesses evidence, selects a strategy or creates an order.</small></div>
       {abstentionMessage ? <p className="research-notice" role="status">{abstentionMessage}</p> : null}
       {recommendationBusy ? <p role="status">Loading recommendation snapshots…</p> : recommendationError ? <p role="alert" className="error-banner">{recommendationError}</p> : recommendations.length ? <><h4>Latest recommendation snapshots</h4><ul>{recommendations.map(item => <li key={item.id}><strong>{item.decision}</strong> · {item.reason_code.replaceAll("_", " ")} · expires {new Date(item.expires_at).toLocaleDateString("en-IN")}<br /><small>Selector {item.snapshot.selector_version ?? "unknown"} · {item.snapshot.rejected_reasons?.join("; ") ?? "No rejection detail recorded."}</small>{item.snapshot.evidence_snapshot?.kind === "NIFTY_MARKET_FIT_OPPORTUNITY_V1" ? <details><summary>Opportunity source and review limits</summary><p>Chain: {item.snapshot.evidence_snapshot.chain_source ?? "unavailable"} · provider {item.snapshot.evidence_snapshot.chain_provider_id ?? "unavailable"} · timestamp basis {item.snapshot.evidence_snapshot.chain_timestamp_basis ?? "unavailable"} · server received {item.snapshot.evidence_snapshot.chain_received_at ?? "unavailable"}. Historical bars: provider {item.snapshot.evidence_snapshot.bar_provider_id ?? "unavailable"} · received {item.snapshot.evidence_snapshot.bar_received_at ?? "unavailable"}. Chain review: {item.snapshot.evidence_snapshot.chain_artifact_review ?? "unavailable"}; bars: {item.snapshot.evidence_snapshot.bar_artifact_review ?? "unavailable"}; costs: {item.snapshot.evidence_snapshot.cost_artifact_review ?? "unavailable"}; point-in-time availability: {item.snapshot.evidence_snapshot.point_in_time_availability_review ?? "unavailable"}. Derived completed-bar context: annualized realized volatility (percent) {item.snapshot.evidence_snapshot.realized_volatility_annualized_percent ?? "unavailable"}; previous 20-bar low {item.snapshot.evidence_snapshot.prior_20_bar_low ?? "unavailable"} and high {item.snapshot.evidence_snapshot.prior_20_bar_high ?? "unavailable"} ({item.snapshot.evidence_snapshot.technical_level_status ?? "unavailable"}). These levels are not validated support/resistance. This is research-only abstention, not a qualified prediction or paper entry.</p></details> : null}</li>)}</ul></> : <p className="workspace-empty">No recommendation snapshots are recorded. The system abstains until reviewed evidence is sufficient.</p>}
     </section> : null}

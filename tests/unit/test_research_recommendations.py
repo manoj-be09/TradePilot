@@ -11,6 +11,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from apps.api.research_routes import (
+    ManualAbstentionRequest,
     create_recommendation,
     recommendations,
 )
@@ -93,10 +94,6 @@ def test_recommendation_is_account_scoped_idempotent_and_non_executable():
     with Session(engine) as session:
         first = record_recommendation(session, owner, study_id, snapshot())
         assert record_recommendation(session, owner, study_id, snapshot()).id == first.id
-        view = create_recommendation(study_id, snapshot(), SimpleNamespace(id=owner), session)
-        assert view["id"] == first.id
-        assert view["execution_enabled"] is False
-        assert view["promotion_eligible"] is False
         rows = recommendations(study_id, SimpleNamespace(id=owner), session,
                                 SimpleNamespace(headers={}), 25, 0)
         assert rows[0]["decision"] == "ABSTAIN"
@@ -106,6 +103,38 @@ def test_recommendation_is_account_scoped_idempotent_and_non_executable():
             recommendations(study_id, SimpleNamespace(id=other), session,
                             SimpleNamespace(headers={}), 25, 0)
         assert error.value.status_code == 404
+    engine.dispose()
+
+
+def test_manual_abstention_is_server_labeled_unreviewed_and_bounded():
+    engine, owner, other, study_id = _fixture()
+    expiry = datetime.now(timezone.utc) + timedelta(days=1)
+    request = ManualAbstentionRequest(expires_at=expiry)
+    with Session(engine) as session:
+        view = create_recommendation(study_id, request, SimpleNamespace(id=owner), session)
+        replay = create_recommendation(study_id, request, SimpleNamespace(id=owner), session)
+        assert replay["id"] == view["id"]
+        assert view["decision"] == "ABSTAIN"
+        assert view["execution_enabled"] is False
+        assert view["promotion_eligible"] is False
+        assert view["snapshot"]["selector_version"] == "manual-abstention-v1"
+        assert view["snapshot"]["evidence_snapshot"]["evidence_status"] == "UNREVIEWED"
+        assert view["snapshot"]["evidence_snapshot"]["study_manifest_digest"] == (
+            study().manifest_digest)
+        with pytest.raises(HTTPException) as error:
+            create_recommendation(study_id, request, SimpleNamespace(id=other), session)
+        assert error.value.status_code == 404
+        with pytest.raises(HTTPException) as error:
+            create_recommendation(study_id, ManualAbstentionRequest(
+                expires_at=expiry + timedelta(days=31)), SimpleNamespace(id=owner), session)
+        assert error.value.status_code == 422
+        assert len(list(session.scalars(select(ResearchRecommendation)))) == 1
+    with pytest.raises(ValidationError):
+        ManualAbstentionRequest.model_validate({
+            "expires_at": expiry.isoformat(), "decision": "REVIEW_CANDIDATE",
+        })
+    with pytest.raises(ValidationError):
+        ManualAbstentionRequest(expires_at=datetime(2026, 1, 1))
     engine.dispose()
 
 

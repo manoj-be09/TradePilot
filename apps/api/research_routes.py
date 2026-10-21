@@ -1,5 +1,5 @@
 """Authenticated hypothesis/trial bookkeeping, without execution or promotion."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -75,6 +75,19 @@ class TrialRecommendationRequest(BaseModel):
         return value.astimezone(timezone.utc)
 
 
+class ManualAbstentionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expires_at: datetime
+
+    @field_validator("expires_at")
+    @classmethod
+    def utc_expiry(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("Recommendation expiry must include a timezone")
+        return value.astimezone(timezone.utc)
+
+
 @router.post("/studies")
 def create_study(body: FrozenNiftyStudy, user: CurrentUser,
                 session: SessionDep) -> dict[str, Any]:
@@ -119,12 +132,37 @@ def get_policy_set(study_id: UUID, user: CurrentUser,
 
 
 @router.post("/studies/{study_id}/recommendations")
-def create_recommendation(study_id: UUID, body: RecommendationSnapshot,
+def create_recommendation(study_id: UUID, body: ManualAbstentionRequest,
                           user: CurrentUser, session: SessionDep) -> dict[str, Any]:
-    try:
-        return recommendation_view(record_recommendation(session, user.id, study_id, body))
-    except LookupError:
+    """Record an operator abstention without accepting client-authored evidence claims."""
+    study = session.scalar(select(ResearchStudy).where(
+        ResearchStudy.id == study_id, ResearchStudy.user_id == user.id,
+    ))
+    if study is None:
         raise HTTPException(404, "Study not found") from None
+    try:
+        frozen = FrozenNiftyStudy.model_validate(study.manifest)
+    except ValueError:
+        raise HTTPException(409, "Study manifest requires review") from None
+    if frozen.manifest_digest != study.manifest_digest:
+        raise HTTPException(409, "Study manifest requires review")
+    review_days = frozen.review_interval_days
+    now = datetime.now(timezone.utc)
+    if not now < body.expires_at <= now + timedelta(days=review_days, minutes=1):
+        raise HTTPException(422, "Manual abstention expiry exceeds the study review interval")
+    snapshot = RecommendationSnapshot(
+        decision="ABSTAIN", reason_code="INSUFFICIENT_EVIDENCE",
+        selector_version="manual-abstention-v1",
+        evidence_snapshot={
+            "kind": "MANUAL_ABSTENTION_V1",
+            "evidence_status": "UNREVIEWED",
+            "study_manifest_digest": study.manifest_digest,
+        },
+        rejected_reasons=["No strategy has sufficient reviewed evidence for selection."],
+        risk_context={"execution_enabled": False, "promotion_eligible": False},
+        expires_at=body.expires_at,
+    )
+    return recommendation_view(record_recommendation(session, user.id, study_id, snapshot))
 
 
 @router.get("/studies/{study_id}/recommendations")

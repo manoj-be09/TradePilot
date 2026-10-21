@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-21
 
+## 2026-10-21 — Manual Research abstention provenance
+
+- The generic Research recommendation POST now accepts only an expiry for a manual abstention. The server pins the owned study manifest, bounds expiry by its review interval, and writes `MANUAL_ABSTENTION_V1` with `UNREVIEWED` evidence and execution/promotion disabled. Browser-supplied candidate selection, readiness labels, evidence claims and risk context are rejected; the separate stored-trial readiness route remains unchanged. The Research button now says “Record manual abstention” and explains that it does not assess evidence. Existing saved recommendation rows remain readable and untouched.
+- Focused unit, readiness, event and authenticated HTTP tests passed **25** cases; Ruff, API mypy, frontend TypeScript and diff checks passed. This source needs an API rebuild before the updated browser button can work against the local container. No owner-account recommendation or paper order was created. Market-data rights, exchange book timing, final settlement and policy-matched outcomes remain open; this does not qualify a ranking or POP.
+
 ## 2026-10-21 — Isolated paper and feed rehearsal after sandbox review
 
 - Reviewed the [Upstox sandbox contract](https://upstox.com/developer/api-documentation/sandbox/): it is a separate, free order-API rehearsal environment with phased endpoint coverage and sandbox-only tokens. It is not a live NIFTY market-data feed or a substitute for per-leg executable-book timing, and no sandbox token, account, order or external API was used. TradePilot's existing isolated paper ledger remains the software acceptance target; no second sandbox ledger was added.

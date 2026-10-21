@@ -6,6 +6,41 @@ from packages.options.market_fit import MarketFitAssessment
 from packages.regime.candidate_registry import fingerprint
 
 
+def test_manual_abstention_http_does_not_accept_client_evidence_or_selection(client):
+    owner = client.post("/auth/register", json={
+        "email": "manual-abstention@example.org", "password": "a-strong-test-password",
+    })
+    assert owner.status_code == 201
+    headers = {"Authorization": f"Bearer {owner.json()['access_token']}"}
+    study = client.post("/research/studies", headers=headers, json={
+        "study_key": "nifty-manual-abstention-v1",
+        "objective": "Retain an explicit no-trade decision without reviewed evidence.",
+        "incumbent_rule_version": "nifty-paper-v1",
+        "dataset_digest": "a" * 64, "calculation_digest": "b" * 64,
+        "cost_model_id": "illustrative-v1", "capital": "100000.00",
+        "parent_search_budget": 10, "review_interval_days": 30,
+        "uncertainty_note": "No strategy evidence is qualified.",
+        "train_start": "2020-01-01", "train_end": "2022-12-31",
+        "validation_start": "2023-01-01", "validation_end": "2024-12-31",
+        "holdout_start": "2025-01-01", "holdout_end": "2025-12-31",
+    })
+    assert study.status_code == 200
+    path = f"/research/studies/{study.json()['id']}/recommendations"
+    body = {"expires_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()}
+    assert client.post(path, json=body).status_code == 401
+    forged = client.post(path, headers=headers, json=body | {
+        "decision": "REVIEW_CANDIDATE", "evidence_snapshot": {"rights": "PASS"},
+    })
+    assert forged.status_code == 422
+    saved = client.post(path, headers=headers, json=body)
+    assert saved.status_code == 200
+    assert saved.json()["decision"] == "ABSTAIN"
+    assert saved.json()["snapshot"]["evidence_snapshot"]["evidence_status"] == "UNREVIEWED"
+    assert saved.json()["execution_enabled"] is False
+    assert client.post(path, headers=headers, json=body).json()["id"] == saved.json()["id"]
+    assert len(client.get(path, headers=headers).json()) == 1
+
+
 def test_opportunity_http_requires_owner_and_retains_one_abstention(client, monkeypatch):
     owner = client.post("/auth/register", json={
         "email": "opportunity-owner@example.org", "password": "a-strong-test-password",

@@ -113,6 +113,8 @@ def build_market_fit_opportunity(
         raise ValueError("Only unqualified no-trade opportunities can be recorded")
     if chain.as_of.tzinfo is None:
         raise ValueError("Opportunity time must include a timezone")
+    if chain.expiry < chain.as_of.astimezone(ZoneInfo("Asia/Kolkata")).date():
+        raise ValueError("Prospective opportunity cannot use an expired chain")
     if assessment.bar_source == "UNAVAILABLE":
         if any(value is not None for value in (
             assessment.bar_digest, assessment.bar_count, assessment.bar_received_at,

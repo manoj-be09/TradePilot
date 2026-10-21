@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
@@ -347,6 +347,13 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
     with pytest.raises(ValueError, match="protected holdout"):
         build_market_fit_opportunity(study(holdout_end="2026-02-11"), chain, assessment)
 
+    expired_chain = chain.model_copy(update={"expiry": date(2026, 2, 9)})
+    expired_assessment = assessment.model_copy(update={
+        "chain_digest": fingerprint(expired_chain.model_dump(mode="json")),
+    })
+    with pytest.raises(ValueError, match="expired chain"):
+        build_market_fit_opportunity(study(), expired_chain, expired_assessment)
+
 
 def test_market_fit_opportunity_route_is_owned_current_and_idempotent(monkeypatch):
     from apps.api import main
@@ -366,8 +373,11 @@ def test_market_fit_opportunity_route_is_owned_current_and_idempotent(monkeypatc
         reasons=["No qualified policy evidence."], candidates=[],
     )
 
-    async def assess(*_args):
-        return assessment
+    async def assess(_user, request):
+        return assessment.model_copy(update={
+            "chain_as_of": request.chain.as_of,
+            "chain_digest": fingerprint(request.chain.model_dump(mode="json")),
+        })
 
     monkeypatch.setattr(main, "analytics_options_market_fit", assess)
     with Session(engine) as session:
@@ -404,4 +414,13 @@ def test_market_fit_opportunity_route_is_owned_current_and_idempotent(monkeypatc
             asyncio.run(main.record_nifty_market_fit_opportunity(
                 study_id, stale, SimpleNamespace(id=owner), session))
         assert late.value.status_code == 422
+        expired = MarketFitRequest(
+            chain=chain.model_copy(update={"expiry": (now - timedelta(days=1)).date()}),
+            reference_strike=100,
+        )
+        with pytest.raises(HTTPException) as past_expiry:
+            asyncio.run(main.record_nifty_market_fit_opportunity(
+                study_id, expired, SimpleNamespace(id=owner), session))
+        assert past_expiry.value.status_code == 409
+        assert len(list(session.scalars(select(ResearchRecommendation)))) == 1
     engine.dispose()

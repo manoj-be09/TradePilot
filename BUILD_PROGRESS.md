@@ -1,5 +1,9 @@
 # Build progress — updated 2026-10-21
 
+## 2026-10-21 — Latest local rebuild and signed-in smoke check
+
+- The owner ran `git push origin main` followed by `docker compose up -d --build api paper-worker web`; local tracking is now aligned with `origin/main` at `51f616a`. Docker reported rebuilt API/paper-worker images, healthy API/PostgreSQL/Redis/web, and a paper worker that was still in its startup-health interval. Subsequent local HTTP checks returned 200 for `/health`, `/ready/paper-worker` and the web root. After a signed-in Edge reload, the F&O dashboard and Strategies screen rendered the real account; the TEST ONLY NIFTY 2026-10-19 one-lot 22,950 CE remained `EXPIRED · SETTLEMENT PENDING`, debit ₹7,696, settlement P&L withheld, 13 closed trades. No paper settlement or order action was taken. The shared worker banner still said `degraded`, so HTTP readiness and cycle-level operational health must not be conflated. This checks local deployment and empty-state UI, not a populated research study, final clearing settlement or qualified strategy performance.
+
 ## 2026-10-21 — Prospective market-fit expiry guard
 
 - The NIFTY opportunity recorder now rejects a chain whose expiry date precedes the chain observation's India-local date. This prevents a current-looking response for an already expired contract from entering the prospective study ledger, while still allowing an expiry-day no-trade observation. An isolated unit regression and an account-scoped HTTP regression confirm rejection without inserting a recommendation; all 10 focused tests, Ruff and source mypy passed. This is a software integrity gate, not a source-authenticity, settlement, ranking or probability qualification. No paper position, order or cash record changed.

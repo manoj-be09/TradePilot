@@ -142,6 +142,11 @@ def build_market_fit_opportunity(
         or not timedelta(0) <= assessment.bar_received_at - chain.as_of <= timedelta(minutes=5)
     ):
         raise ValueError("Hashed provider bars require the frozen completed-bar window")
+    if (assessment.chain_source == "SERVER_FETCHED_OPTION_CHAIN"
+            and assessment.bar_received_at is not None
+            and assessment.chain_received_at is not None
+            and assessment.bar_received_at > assessment.chain_received_at):
+        raise ValueError("Provider bars arrived after the chain receipt cutoff")
     as_of = chain.as_of.astimezone(timezone.utc)
     if as_of.astimezone(ZoneInfo("Asia/Kolkata")).date() <= study.holdout_end:
         raise ValueError("Prospective opportunity must follow the protected holdout")

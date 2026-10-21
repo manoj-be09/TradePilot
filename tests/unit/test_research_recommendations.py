@@ -384,6 +384,13 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
             "chain_received_at": chain.as_of + timedelta(seconds=1),
         }))
 
+    with pytest.raises(ValueError, match="after the chain receipt cutoff"):
+        build_market_fit_opportunity(study(), chain, pinned_bars.model_copy(update={
+            "chain_source": "SERVER_FETCHED_OPTION_CHAIN",
+            "chain_provider_id": "historical-fixture",
+            "chain_received_at": chain.as_of,
+        }))
+
     with pytest.raises(ValueError, match="protected holdout"):
         build_market_fit_opportunity(study(holdout_end="2026-02-11"), chain, assessment)
 
@@ -446,6 +453,33 @@ def test_market_fit_opportunity_route_is_owned_current_and_idempotent(monkeypatc
         assert first["id"] == replay["id"]
         assert first["decision"] == "ABSTAIN"
         assert len(list(session.scalars(select(ResearchRecommendation)))) == 1
+        late_bars = assessment.model_copy(update={
+            "bar_source": "PROVIDER_HISTORICAL_HASH_ONLY",
+            "bar_provider_id": "test-provider", "bar_digest": "a" * 64,
+            "bar_count": 250, "bar_received_at": now + timedelta(seconds=2),
+            "regime_as_of": now - timedelta(minutes=5),
+            "regime": "TRENDING_UP",
+            "realized_volatility_annualized_percent": Decimal("14.25"),
+        })
+
+        async def assess_late(_user, _request):
+            return late_bars
+
+        monkeypatch.setattr(main, "analytics_options_market_fit", assess_late)
+        later = asyncio.run(main._record_nifty_market_fit_opportunity(
+            study_id, body, SimpleNamespace(id=owner), session,
+            chain_provider_id="test-provider", chain_received_at=now + timedelta(seconds=1),
+        ))
+        snapshot = later["snapshot"]["evidence_snapshot"]
+        assert snapshot["chain_source"] == "SERVER_FETCHED_OPTION_CHAIN"
+        assert snapshot["bar_source"] == "UNAVAILABLE"
+        assert snapshot["bar_digest"] is None
+        assert snapshot["realized_volatility_annualized_percent"] is None
+        assert snapshot["regime"] == "UNKNOWN"
+        assert "Historical bars arrived after the option-chain receipt cutoff." in later[
+            "snapshot"]["rejected_reasons"]
+        assert later["decision"] == "ABSTAIN"
+        assert len(list(session.scalars(select(ResearchRecommendation)))) == 2
         stale = MarketFitRequest(
             chain=chain.model_copy(update={"as_of": now - timedelta(minutes=6)}),
             reference_strike=100,
@@ -462,5 +496,5 @@ def test_market_fit_opportunity_route_is_owned_current_and_idempotent(monkeypatc
             asyncio.run(main.record_nifty_market_fit_opportunity(
                 study_id, expired, SimpleNamespace(id=owner), session))
         assert past_expiry.value.status_code == 409
-        assert len(list(session.scalars(select(ResearchRecommendation)))) == 1
+        assert len(list(session.scalars(select(ResearchRecommendation)))) == 2
     engine.dispose()

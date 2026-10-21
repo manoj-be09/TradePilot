@@ -1320,6 +1320,20 @@ async def _record_nifty_market_fit_opportunity(
         policy_ids = current_policy_set_ids(policy_set)
         assessment = await analytics_options_market_fit(user, body)
         if chain_provider_id is not None:
+            # The chain receipt closes this observation's information set.
+            # Bars fetched afterward cannot be used as if known at that time.
+            if (assessment.bar_received_at is not None
+                    and chain_received_at is not None
+                    and assessment.bar_received_at > chain_received_at):
+                assessment = assess_nifty_market_fit(
+                    body.chain.model_copy(update={
+                        "quality": assess_option_chain(body.chain),
+                    }), body.reference_strike, None,
+                )
+                assessment.reasons.append(
+                    "Historical bars arrived after the option-chain receipt cutoff."
+                )
+                assessment.chain_digest = fingerprint(body.chain.model_dump(mode="json"))
             assessment = assessment.model_copy(update={
                 "chain_source": "SERVER_FETCHED_OPTION_CHAIN",
                 "chain_provider_id": chain_provider_id,

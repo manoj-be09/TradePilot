@@ -1,5 +1,7 @@
 # Algorithmic Trading Platform — Revised Project Plan
 
+The daily five-hour work queue, evidence rules and gate ledger are in [DAILY_DELIVERY_PLAN.md](DAILY_DELIVERY_PLAN.md). Update that ledger from observed acceptance, not elapsed days or estimated completion percentages.
+
 ## Paper-trading completion gates (21 October 2026)
 
 Progress is reported by passed gates, not an estimated percentage. Earlier 90% and 60% figures used different scopes and are not reliable measures. A green software test does not substitute for a normal-session market observation or a reviewed settlement. Keep the following two outcomes separate:

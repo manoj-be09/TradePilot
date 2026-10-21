@@ -277,6 +277,7 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
     assert first.evidence_snapshot["chain_expiry"] == "2026-02-20"
     assert first.evidence_snapshot["bar_digest"] is None
     assert first.evidence_snapshot["bar_source"] == "UNAVAILABLE"
+    assert first.evidence_snapshot["bar_provider_id"] is None
     assert first.evidence_snapshot["bar_received_at"] is None
     assert first.evidence_snapshot["realized_volatility_annualized_percent"] is None
     assert first.evidence_snapshot["prior_20_bar_high"] is None
@@ -295,7 +296,8 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
     assert first.expires_at == datetime(2026, 2, 10, 4, 35, tzinfo=timezone.utc)
 
     pinned_bars = assessment.model_copy(update={
-        "bar_source": "PROVIDER_HISTORICAL_HASH_ONLY", "bar_digest": "a" * 64,
+        "bar_source": "PROVIDER_HISTORICAL_HASH_ONLY",
+        "bar_provider_id": "historical-fixture", "bar_digest": "a" * 64,
         "bar_count": 250, "regime_as_of": chain.as_of - timedelta(minutes=5),
         "bar_received_at": chain.as_of + timedelta(seconds=1),
         "realized_volatility_annualized_percent": Decimal("14.25"),
@@ -303,6 +305,7 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
     })
     with_bars = build_market_fit_opportunity(study(), chain, pinned_bars)
     assert with_bars.evidence_snapshot["bar_digest"] == "a" * 64
+    assert with_bars.evidence_snapshot["bar_provider_id"] == "historical-fixture"
     assert with_bars.evidence_snapshot["bar_count"] == 250
     assert with_bars.evidence_snapshot["bar_received_at"] == (
         chain.as_of + timedelta(seconds=1)).isoformat()
@@ -315,6 +318,7 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
     for invalid in (
         assessment.model_copy(update={"bar_digest": "a" * 64}),
         pinned_bars.model_copy(update={"bar_count": 249}),
+        pinned_bars.model_copy(update={"bar_provider_id": None}),
         pinned_bars.model_copy(update={"bar_received_at": None}),
         pinned_bars.model_copy(update={"bar_received_at": chain.as_of - timedelta(seconds=1)}),
         pinned_bars.model_copy(update={"bar_received_at": chain.as_of + timedelta(minutes=6)}),
@@ -342,6 +346,13 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
             "chain_source": "SERVER_FETCHED_OPTION_CHAIN",
             "chain_provider_id": "test-provider",
             "chain_received_at": chain.as_of - timedelta(seconds=1),
+        }))
+
+    with pytest.raises(ValueError, match="providers must match"):
+        build_market_fit_opportunity(study(), chain, pinned_bars.model_copy(update={
+            "chain_source": "SERVER_FETCHED_OPTION_CHAIN",
+            "chain_provider_id": "other-provider",
+            "chain_received_at": chain.as_of + timedelta(seconds=1),
         }))
 
     with pytest.raises(ValueError, match="protected holdout"):

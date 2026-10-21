@@ -105,6 +105,9 @@ def build_market_fit_opportunity(
             raise ValueError("Server-fetched chain requires provider and receipt identity")
         if not timedelta(0) <= received - chain.as_of <= timedelta(minutes=5):
             raise ValueError("Server-fetched chain receipt must follow its current snapshot")
+        if (assessment.bar_source != "UNAVAILABLE"
+                and assessment.bar_provider_id != assessment.chain_provider_id):
+            raise ValueError("Chain and historical-bar providers must match")
     elif assessment.chain_received_at is not None:
         raise ValueError("Client chain cannot claim server receipt identity")
     if assessment.reference_strike is None:
@@ -117,7 +120,8 @@ def build_market_fit_opportunity(
         raise ValueError("Prospective opportunity cannot use an expired chain")
     if assessment.bar_source == "UNAVAILABLE":
         if any(value is not None for value in (
-            assessment.bar_digest, assessment.bar_count, assessment.bar_received_at,
+            assessment.bar_provider_id, assessment.bar_digest, assessment.bar_count,
+            assessment.bar_received_at,
         )):
             raise ValueError("Unavailable bars cannot carry a provider artifact identity")
         if any(value is not None for value in (
@@ -128,6 +132,7 @@ def build_market_fit_opportunity(
             raise ValueError("Unavailable bars cannot carry derived technical context")
     elif (
         assessment.bar_digest is None
+        or not assessment.bar_provider_id
         or assessment.bar_count != 250
         or assessment.bar_received_at is None
         or assessment.bar_received_at.tzinfo is None
@@ -182,6 +187,7 @@ def build_market_fit_opportunity(
             ),
             "payoff_basis": assessment.payoff_basis,
             "bar_source": assessment.bar_source,
+            "bar_provider_id": assessment.bar_provider_id,
             "bar_digest": assessment.bar_digest,
             "bar_count": assessment.bar_count,
             "bar_received_at": assessment.bar_received_at.isoformat()

@@ -125,6 +125,8 @@ def test_market_fit_hashes_exact_provider_bars_without_qualifying_them(monkeypat
     ) for index in range(250)]
 
     class Provider:
+        provider_id = "historical-fixture"
+
         async def get_historical(self, *_args):
             return bars
 
@@ -134,6 +136,7 @@ def test_market_fit_hashes_exact_provider_bars_without_qualifying_them(monkeypat
     first = asyncio.run(main.analytics_options_market_fit(None, body))
     second = asyncio.run(main.analytics_options_market_fit(None, body))
     assert first.bar_source == "PROVIDER_HISTORICAL_HASH_ONLY"
+    assert first.bar_provider_id == "historical-fixture"
     assert first.chain_digest == fingerprint(body.chain.model_dump(mode="json"))
     assert first.bar_count == 250
     assert first.bar_received_at is not None

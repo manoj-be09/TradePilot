@@ -172,6 +172,11 @@ def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
         })
         legacy_trial = declare_trial(session, owner, candidate.id, legacy_manifest)
         reserve_trial_slot(session, owner, legacy_trial.id)
+        with pytest.raises(ValueError, match="Existing trial reservation differs"):
+            reserve_trial_slot(
+                session, owner, legacy_trial.id,
+                nifty_parent_dataset_digest=legacy_study.dataset_digest,
+            )
         next_legacy_trial = declare_trial(session, owner, candidate.id,
                                           TrialManifest.model_validate(
                                               legacy_manifest.model_dump() | {"trial_number": 2}))

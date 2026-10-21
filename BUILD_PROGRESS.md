@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-21
 
+## 2026-10-21 — Existing NIFTY reservation retry guard
+
+- A trial with an older named-family reservation can no longer return that reservation when a NIFTY replay requests the canonical dataset parent. The retry verifies the stored trial-manifest identity and the existing reservation's account, canonical family, budget and protected scope; a mismatch fails closed for review. Already-finalized replay results remain readable through the existing idempotent result path. No paper position, order or live-trading setting changed.
+- Focused NIFTY replay and research-budget tests: **12 passed**. Ruff, targeted mypy and `git diff --check` passed. This is an exact-artifact guard, not proof of reviewed dataset lineage, protected independent validation or trading advantage. Deployed PostgreSQL acceptance for this retry path remains open.
+
 ## 2026-10-21 — Full isolated regression and rebuilt local services
 
 - With this Codex session granted local network access for Windows asyncio loopback sockets, the isolated feed-observer test passed and the full repository suite completed: **564 passed, 11 skipped, 2 warnings**. This supersedes the earlier sandbox-stalled full-suite attempt below; the skipped PostgreSQL checks are still not accepted by this run.

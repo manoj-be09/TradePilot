@@ -30,10 +30,8 @@ def reserve_trial_slot(
     existing = session.scalar(select(ResearchBudgetSlot).where(
         ResearchBudgetSlot.trial_id == trial_id,
     ))
-    if existing is not None:
+    if existing is not None and nifty_parent_dataset_digest is None:
         return existing
-    if trial.result_digest is not None:
-        raise ValueError("Cannot reserve a budget after trial finalization")
     manifest = TrialManifest.model_validate(trial.manifest)
     # Preserve hashes for legacy manifests that predate optional holdout identity.
     payload = manifest.model_dump(mode="json", exclude_none=True)
@@ -50,6 +48,17 @@ def reserve_trial_slot(
         if nifty_parent_dataset_digest != manifest.dataset_digest:
             raise ValueError("NIFTY parent dataset differs from the trial manifest")
         family = f"nifty-dataset:{nifty_parent_dataset_digest}"
+        if existing is not None:
+            saved_experiment = session.get(ResearchExperiment, existing.experiment_id)
+            if (saved_experiment is None or saved_experiment.user_id != owner
+                    or saved_experiment.family != family
+                    or saved_experiment.budget != manifest.declared_search_budget
+                    or saved_experiment.scope_digest != scope):
+                raise ValueError("Existing trial reservation differs from the NIFTY parent budget")
+            return existing
+    if trial.result_digest is not None:
+        raise ValueError("Cannot reserve a budget after trial finalization")
+    if nifty_parent_dataset_digest is not None:
         legacy = None
         if manifest.experiment_family != family:
             legacy = session.scalar(select(ResearchExperiment).where(

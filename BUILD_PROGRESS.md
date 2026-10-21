@@ -1,10 +1,15 @@
 # Build progress — updated 2026-10-21
 
+## 2026-10-21 — Full isolated regression and rebuilt local services
+
+- With this Codex session granted local network access for Windows asyncio loopback sockets, the isolated feed-observer test passed and the full repository suite completed: **564 passed, 11 skipped, 2 warnings**. This supersedes the earlier sandbox-stalled full-suite attempt below; the skipped PostgreSQL checks are still not accepted by this run.
+- The owner rebuilt `api` and `paper-worker` with Docker Compose and reported healthy PostgreSQL, Redis, API and web containers; the worker was starting in that immediate Compose output. Independent unauthenticated checks from this session returned HTTP **200** for `http://127.0.0.1:3000/`, `/health` and `/ready/paper-worker`, and HTTP **401** for the protected `/research/studies` route. These prove basic local availability and access gating, not authenticated populated Research acceptance or owner-position settlement. This Codex process still cannot access the Docker named pipe to inspect container internals.
+
 ## 2026-10-21 — Canonical NIFTY dataset budget identity
 
 - NIFTY scheduled-replay reservations now use an account-scoped family derived from the frozen dataset digest, rather than a caller-supplied study or experiment name. The existing durable slot and scope constraints therefore reject a second study attempting the same slot on exactly the same dataset. A pre-existing named-family reservation blocks new canonical reservations for that legacy family until reviewed; finalized saved results remain readable.
 - This is an exact-artifact software guard. Repackaging or revising overlapping observations changes the digest, and no reviewed source lineage currently identifies equivalent datasets. The parent budget therefore remains unqualified as a complete defense against all repeated searches. No paper order or existing account position was changed.
-- Focused canonical reservation and NIFTY replay checks: **12 passed**; Ruff and mypy passed. The full suite and deployed PostgreSQL concurrency for this increment remain unverified in the present Windows sandbox.
+- Focused canonical reservation and NIFTY replay checks: **12 passed**; Ruff and mypy passed. The later full-suite result is recorded above. Deployed PostgreSQL concurrency for this exact renamed-study path remains unverified.
 
 ## 2026-10-21 — NIFTY replay parent-binding safety
 

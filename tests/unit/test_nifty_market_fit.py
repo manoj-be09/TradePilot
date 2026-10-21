@@ -136,6 +136,9 @@ def test_market_fit_hashes_exact_provider_bars_without_qualifying_them(monkeypat
     assert first.bar_source == "PROVIDER_HISTORICAL_HASH_ONLY"
     assert first.chain_digest == fingerprint(body.chain.model_dump(mode="json"))
     assert first.bar_count == 250
+    assert first.bar_received_at is not None
+    assert first.bar_received_at.tzinfo is not None
+    assert first.bar_received_at >= first.chain_as_of
     assert first.bar_digest == second.bar_digest
     assert first.bar_digest is not None
     assert first.action == "NO_TRADE"

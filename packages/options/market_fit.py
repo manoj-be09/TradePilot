@@ -71,6 +71,7 @@ class MarketFitAssessment(BaseModel):
     bar_source: Literal["UNAVAILABLE", "PROVIDER_HISTORICAL_HASH_ONLY"] = "UNAVAILABLE"
     bar_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     bar_count: int | None = Field(default=None, ge=1)
+    bar_received_at: datetime | None = None
     regime_as_of: datetime | None
     regime: str
     realized_volatility_annualized_percent: Decimal | None = None

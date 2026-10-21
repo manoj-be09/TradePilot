@@ -277,6 +277,7 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
     assert first.evidence_snapshot["chain_expiry"] == "2026-02-20"
     assert first.evidence_snapshot["bar_digest"] is None
     assert first.evidence_snapshot["bar_source"] == "UNAVAILABLE"
+    assert first.evidence_snapshot["bar_received_at"] is None
     assert first.evidence_snapshot["realized_volatility_annualized_percent"] is None
     assert first.evidence_snapshot["prior_20_bar_high"] is None
     assert first.evidence_snapshot["prior_20_bar_low"] is None
@@ -296,12 +297,15 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
     pinned_bars = assessment.model_copy(update={
         "bar_source": "PROVIDER_HISTORICAL_HASH_ONLY", "bar_digest": "a" * 64,
         "bar_count": 250, "regime_as_of": chain.as_of - timedelta(minutes=5),
+        "bar_received_at": chain.as_of + timedelta(seconds=1),
         "realized_volatility_annualized_percent": Decimal("14.25"),
         "prior_20_bar_high": Decimal(108), "prior_20_bar_low": Decimal(92),
     })
     with_bars = build_market_fit_opportunity(study(), chain, pinned_bars)
     assert with_bars.evidence_snapshot["bar_digest"] == "a" * 64
     assert with_bars.evidence_snapshot["bar_count"] == 250
+    assert with_bars.evidence_snapshot["bar_received_at"] == (
+        chain.as_of + timedelta(seconds=1)).isoformat()
     assert with_bars.evidence_snapshot["bar_artifact_review"] == "UNREVIEWED_HASH_ONLY"
     assert with_bars.evidence_snapshot["realized_volatility_annualized_percent"] == "14.25"
     assert with_bars.evidence_snapshot["prior_20_bar_high"] == "108"
@@ -311,6 +315,9 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
     for invalid in (
         assessment.model_copy(update={"bar_digest": "a" * 64}),
         pinned_bars.model_copy(update={"bar_count": 249}),
+        pinned_bars.model_copy(update={"bar_received_at": None}),
+        pinned_bars.model_copy(update={"bar_received_at": chain.as_of - timedelta(seconds=1)}),
+        pinned_bars.model_copy(update={"bar_received_at": chain.as_of + timedelta(minutes=6)}),
         pinned_bars.model_copy(update={"regime_as_of": chain.as_of + timedelta(minutes=1)}),
     ):
         with pytest.raises(ValueError, match="bars"):

@@ -1233,6 +1233,7 @@ async def analytics_options_market_fit(
     chain = body.chain.model_copy(update={"quality": assess_option_chain(body.chain)})
     regime: MarketRegimeResult | None = None
     bar_digest: str | None = None
+    bar_received_at: datetime | None = None
     now = datetime.now(timezone.utc)
     if (
         chain.underlying == "NIFTY"
@@ -1246,6 +1247,7 @@ async def analytics_options_market_fit(
             bars = await provider.get_historical(
                 "NSE_INDEX|Nifty 50", chain.as_of - timedelta(days=14), chain.as_of, "5m"
             )
+            received_at = datetime.now(timezone.utc)
             complete = [
                 bar for bar in bars
                 if bar.timestamp.tzinfo is not None
@@ -1261,6 +1263,7 @@ async def analytics_options_market_fit(
                     "instrument": "NSE_INDEX|Nifty 50", "interval": "5m",
                     "bars": [bar.model_dump(mode="json") for bar in selected_bars],
                 })
+                bar_received_at = received_at
         except (MarketDataUnavailable, MarketDataProviderError, ValueError):
             pass
     assessment = assess_nifty_market_fit(chain, body.reference_strike, regime)
@@ -1269,6 +1272,7 @@ async def analytics_options_market_fit(
         assessment.bar_source = "PROVIDER_HISTORICAL_HASH_ONLY"
         assessment.bar_digest = bar_digest
         assessment.bar_count = 250
+        assessment.bar_received_at = bar_received_at
     return assessment
 
 

@@ -114,7 +114,9 @@ def build_market_fit_opportunity(
     if chain.as_of.tzinfo is None:
         raise ValueError("Opportunity time must include a timezone")
     if assessment.bar_source == "UNAVAILABLE":
-        if assessment.bar_digest is not None or assessment.bar_count is not None:
+        if any(value is not None for value in (
+            assessment.bar_digest, assessment.bar_count, assessment.bar_received_at,
+        )):
             raise ValueError("Unavailable bars cannot carry a provider artifact identity")
         if any(value is not None for value in (
             assessment.realized_volatility_annualized_percent,
@@ -125,9 +127,12 @@ def build_market_fit_opportunity(
     elif (
         assessment.bar_digest is None
         or assessment.bar_count != 250
+        or assessment.bar_received_at is None
+        or assessment.bar_received_at.tzinfo is None
         or assessment.regime_as_of is None
         or assessment.regime_as_of.tzinfo is None
         or not timedelta(0) <= chain.as_of - assessment.regime_as_of <= timedelta(minutes=15)
+        or not timedelta(0) <= assessment.bar_received_at - chain.as_of <= timedelta(minutes=5)
     ):
         raise ValueError("Hashed provider bars require the frozen completed-bar window")
     as_of = chain.as_of.astimezone(timezone.utc)
@@ -177,6 +182,8 @@ def build_market_fit_opportunity(
             "bar_source": assessment.bar_source,
             "bar_digest": assessment.bar_digest,
             "bar_count": assessment.bar_count,
+            "bar_received_at": assessment.bar_received_at.isoformat()
+            if assessment.bar_received_at else None,
             "bar_artifact_review": "UNREVIEWED_HASH_ONLY"
             if assessment.bar_digest is not None else "UNAVAILABLE",
             "chain_artifact_review": (

@@ -233,7 +233,7 @@ def test_from_trial_records_deterministic_abstention_without_selection():
         ))
         trial = declare_trial(session, owner, candidate.id, TrialManifest(
             dataset_digest=frozen.dataset_digest, calculation_digest=frozen.calculation_digest,
-            cost_model_id=frozen.cost_model_id, experiment_family="nifty-options",
+            cost_model_id=frozen.cost_model_id, experiment_family=frozen.study_key,
             trial_number=1, declared_search_budget=frozen.parent_search_budget, seed=0,
             train_start=frozen.train_start, train_end=frozen.train_end,
             validation_start=frozen.validation_start, validation_end=frozen.validation_end,
@@ -252,6 +252,19 @@ def test_from_trial_records_deterministic_abstention_without_selection():
         assert result["snapshot"]["trial_id"] == str(trial.id)
         assert result["snapshot"]["risk_context"]["execution_enabled"] is False
         assert result["promotion_eligible"] is False
+        assert len(list(session.scalars(select(ResearchRecommendation)))) == 1
+        wrong_family = declare_trial(session, owner, candidate.id, TrialManifest(
+            **(TrialManifest.model_validate(trial.manifest).model_dump()
+               | {"experiment_family": "renamed-parent", "trial_number": 2})
+        ))
+        with pytest.raises(HTTPException) as error:
+            recommend_from_trial(
+                study_id, wrong_family.id,
+                TrialRecommendationRequest(
+                    selector_version="selector-v1", expires_at="2026-02-01T10:00:00Z"),
+                SimpleNamespace(id=owner), session,
+            )
+        assert error.value.status_code == 409
         assert len(list(session.scalars(select(ResearchRecommendation)))) == 1
     engine.dispose()
 

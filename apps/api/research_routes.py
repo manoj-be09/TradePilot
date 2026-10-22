@@ -26,6 +26,7 @@ from packages.regime.candidate_registry import (
     TrialResult,
     declare_trial,
     finalize_trial,
+    fingerprint,
     register_candidate,
 )
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
@@ -235,6 +236,10 @@ def recommend_from_trial(study_id: UUID, trial_id: UUID,
     try:
         frozen = FrozenNiftyStudy.model_validate(study.manifest)
         manifest = TrialManifest.model_validate(trial.manifest)
+        if (frozen.manifest_digest != study.manifest_digest
+                or fingerprint(trial.manifest) != trial.manifest_digest
+                or manifest.experiment_family != frozen.study_key):
+            raise ValueError("Trial or study identity differs from the frozen NIFTY parent")
         for key in ("rights_artifact_digest", "dataset_digest", "calculation_digest",
                     "holdout_artifact_digest",
                     "cost_model_id", "cost_artifact_digest", "validation_end",

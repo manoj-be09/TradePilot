@@ -183,6 +183,12 @@ def test_cost_review_must_match_frozen_cost_artifact_digest():
     checks = {check.key: check for check in assess_trial(row, evaluation, [evidence]).checks}
     assert checks["costs"].status == "PASS"
 
+    row.manifest.pop("cost_artifact_digest")
+    row.manifest_digest = fingerprint(row.manifest)
+    checks = {check.key: check for check in assess_trial(row, evaluation, [evidence]).checks}
+    assert checks["costs"].status == "FAIL"
+    assert "not bound to an immutable trial artifact digest" in checks["costs"].detail
+
 
 def test_reviewed_rights_must_match_declared_source_artifact_digest():
     row, evaluation = records()
@@ -210,3 +216,9 @@ def test_reviewed_rights_must_match_declared_source_artifact_digest():
     evidence.evidence_digest = fingerprint(reviewed.model_dump(mode="json"))
     checks = {check.key: check for check in assess_trial(row, evaluation, [evidence]).checks}
     assert checks["rights"].status == "PASS"
+
+    row.manifest.pop("rights_artifact_digest")
+    row.manifest_digest = fingerprint(row.manifest)
+    checks = {check.key: check for check in assess_trial(row, evaluation, [evidence]).checks}
+    assert checks["rights"].status == "FAIL"
+    assert "not bound to an immutable trial artifact digest" in checks["rights"].detail

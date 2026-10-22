@@ -124,6 +124,10 @@ def assess_trial(row: ResearchTrial,
             cost_status = "FAIL"
             cost_detail = ("Reviewed cost evidence version does not match the trial's frozen cost "
                            "model; qualification remains blocked.")
+        elif cost_status == "PASS" and not manifest_artifacts["costs"]:
+            cost_status = "FAIL"
+            cost_detail = ("A cost PASS record is not bound to an immutable trial "
+                           "artifact digest; qualification remains blocked.")
         elif (cost_status == "PASS" and manifest_artifacts["costs"]
               and cost_item.artifact_digest != manifest_artifacts["costs"]):
             cost_status = "FAIL"
@@ -160,10 +164,10 @@ def assess_trial(row: ResearchTrial,
         if not evidence_integrity:
             status = "FAIL"
             detail = "Stored evidence fields do not match their immutable evidence digest."
-        holdout_unbound = key == "holdout" and status == "PASS" and not expected_digest
-        if holdout_unbound:
+        unbound = key in {"rights", "holdout"} and status == "PASS" and not expected_digest
+        if unbound:
             status = "FAIL"
-            detail = ("A protected holdout PASS record is not bound to an immutable trial "
+            detail = (f"A {key} PASS record is not bound to an immutable trial "
                       "artifact digest; qualification remains blocked.")
         identity_mismatch = (status == "PASS" and expected_digest
                              and item.artifact_digest != expected_digest)
@@ -171,7 +175,7 @@ def assess_trial(row: ResearchTrial,
             status = "FAIL"
             detail = (f"Reviewed artifact identity does not match the trial's immutable {key} "
                       "digest; qualification remains blocked.")
-        if not identity_mismatch and evidence_integrity and not holdout_unbound:
+        if not identity_mismatch and evidence_integrity and not unbound:
             detail = item.detail
         checks.append(ReadinessCheck(
             key=key, label=label, status=status, detail=detail,

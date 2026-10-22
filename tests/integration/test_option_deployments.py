@@ -13,6 +13,7 @@ from apps.paper_worker.main import run_cycle
 from packages.database.models import AuditEvent, PaperDeployment, PaperOrder, PaperTrade
 from packages.market_data.contracts import ExchangeSession, MarketDataProviderError
 from packages.paper_trading.session import exchange_today
+from packages.paper_trading.strategies import get_strategy
 
 
 def armed_setup(client, monkeypatch):
@@ -706,6 +707,51 @@ def test_expiry_day_session_outage_preserves_waiting_deployment(client, monkeypa
     with factory() as session:
         assert session.get(PaperDeployment, UUID(armed["id"])).status == "WAITING_FOR_ENTRY"
         assert list(session.scalars(select(PaperTrade))) == []
+
+
+def test_batch_sized_arming_respects_slots_retries_and_cancellation(client, monkeypatch):
+    _, headers, payload, _ = armed_setup(client, monkeypatch)
+    keys = [
+        "bull_call_spread", "bear_put_spread", "bull_put_spread",
+        "bear_call_spread", "iron_condor", "long_call",
+    ]
+    armed = []
+    for key in keys[:5]:
+        strategy = get_strategy(key)
+        assert strategy is not None
+        command = {**headers, "Idempotency-Key": f"batch_{key}_{uuid4().hex}"}
+        request = {**payload, "strategy_key": key,
+                   "expected_template_version": strategy.version}
+        response = client.post("/paper/deployments", headers=command, json=request)
+        assert response.status_code == 201, response.text
+        armed.append((command, request, response.json()))
+    assert len(client.get("/paper/deployments", headers=headers).json()) == 5
+
+    sixth = get_strategy(keys[5])
+    assert sixth is not None
+    sixth_request = {**payload, "strategy_key": keys[5],
+                     "expected_template_version": sixth.version}
+    sixth_headers = {**headers, "Idempotency-Key": f"batch_{keys[5]}_{uuid4().hex}"}
+    refused = client.post("/paper/deployments", headers=sixth_headers, json=sixth_request)
+    assert refused.status_code == 409
+    assert "five paper strategies" in refused.json()["detail"]
+
+    first_headers, first_request, first_response = armed[0]
+    replay = client.post("/paper/deployments", headers=first_headers, json=first_request)
+    assert replay.status_code == 201 and replay.json()["id"] == first_response["id"]
+    conflict = client.post("/paper/deployments", headers=first_headers,
+                           json={**first_request, "lots": 2})
+    assert conflict.status_code == 409
+    cancelled = client.post(
+        f"/paper/deployments/{first_response['id']}/cancel", headers=headers,
+    )
+    assert cancelled.status_code == 200
+    accepted = client.post("/paper/deployments", headers=sixth_headers, json=sixth_request)
+    assert accepted.status_code == 201 and accepted.json()["status"] == "WAITING_FOR_ENTRY"
+    assert len([item for item in client.get("/paper/deployments", headers=headers).json()
+                if item["status"] == "WAITING_FOR_ENTRY"]) == 5
+    assert client.get("/paper/trades", headers=headers).json()["trades"] == []
+
 
 def test_arm_requires_rules_and_is_user_scoped(client, monkeypatch):
     _, headers, payload, _ = armed_setup(client, monkeypatch)

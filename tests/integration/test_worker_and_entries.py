@@ -905,6 +905,20 @@ def test_expired_position_stays_unresolved_without_synthetic_fill(client, monkey
     assert close.status_code == 409
     assert "reconcile settlement" in close.json()["detail"]
     assert asyncio.run(run_cycle(factory, provider, get_settings())) == "DEGRADED"
+    monkeypatch.setattr(
+        "apps.api.main.exchange_today", lambda now=None: provider.expiry + timedelta(days=1),
+    )
+    status = client.get("/paper/worker", headers=headers)
+    assert status.status_code == 200
+    assert status.headers["Cache-Control"] == "no-store"
+    assert status.json()["own_expired_open_positions"] == 1
+    other = client.post("/auth/register", json={
+        "email": "other-expiry-worker@example.com", "password": "a-strong-test-password",
+    })
+    other_headers = {"Authorization": f"Bearer {other.json()['access_token']}"}
+    assert client.get("/paper/worker", headers=other_headers).json()[
+        "own_expired_open_positions"
+    ] == 0
     with factory() as session:
         assert session.get(PaperTrade, UUID(trade["id"])).status == "OPEN"
         assert len(list(session.scalars(select(PaperOrder)))) == 1

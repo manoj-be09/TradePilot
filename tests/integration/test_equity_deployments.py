@@ -1831,6 +1831,7 @@ def test_shared_worker_status_does_not_expose_another_accounts_warning(client, s
         finish(session, token, "DEGRADED", "Other account position TEST-PRIVATE expired")
     result = client.get("/paper/worker", headers=headers).json()
     assert result["status"] == "DEGRADED"
+    assert result["own_expired_open_positions"] == 0
     assert "TEST-PRIVATE" not in result["detail"]
     with factory() as session:
         assert "TEST-PRIVATE" in session.get(WorkerLease, "paper-exits").detail

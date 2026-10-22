@@ -8,6 +8,7 @@ type WorkerHealth = {
   last_success_at?: string | null;
   detail?: string;
   unverified_quotes_allowed?: boolean;
+  own_expired_open_positions?: number;
 };
 
 function formatUpdate(value: string | null | undefined): string {
@@ -61,6 +62,11 @@ export function WorkerStatus({ token, apiUrl }: { token: string; apiUrl: string 
       {!unavailable && health?.detail && <small className="worker-detail">{health.detail}</small>}
       {!unavailable && health?.heartbeat_at && <small>Last worker update: {formatUpdate(health.heartbeat_at)}</small>}
       {!unavailable && health?.last_success_at && <small>Last fully healthy cycle: {formatUpdate(health.last_success_at)}</small>}
+      {!unavailable && !!health?.own_expired_open_positions && <small>
+        Your account has {health.own_expired_open_positions} expired open paper
+        {" "}position{health.own_expired_open_positions === 1 ? "" : "s"} awaiting settlement review.
+        {" "}This may contribute to worker warnings; other checks may also need attention.
+      </small>}
       <small>A fully healthy cycle has no warnings across equity and options checks. Successful individual exits can still occur in a degraded cycle. This summary does not replace per-position quote and exit evidence.</small>
       {!unavailable && health?.unverified_quotes_allowed && <p>Options educational simulation allows unverified exchange timestamps. Strict equity mode still requires an exchange-timed book; explicitly opted-in indicative equity fills are labeled and excluded from verified strategy feedback.</p>}
     </details>

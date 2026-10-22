@@ -3285,11 +3285,18 @@ async def monitor_paper_exits(user: CurrentUser, session: SessionDep) -> PaperMo
 
 
 @app.get("/paper/worker", tags=["paper trading"])
-def paper_worker_status(user: CurrentUser, session: SessionDep) -> dict[str, object]:
-    del user
+def paper_worker_status(user: CurrentUser, session: SessionDep,
+                        response: Response) -> dict[str, object]:
+    response.headers["Cache-Control"] = "no-store"
+    own_expired_open_positions = session.scalar(select(func.count()).select_from(PaperTrade).where(
+        PaperTrade.user_id == user.id,
+        PaperTrade.status == "OPEN",
+        PaperTrade.expiry < exchange_today(),
+    )) or 0
     lease = session.get(WorkerLease, WORKER_NAME)
     if lease is None:
-        return {"status": "NOT_STARTED", "heartbeat_at": None, "last_success_at": None}
+        return {"status": "NOT_STARTED", "heartbeat_at": None, "last_success_at": None,
+                "own_expired_open_positions": own_expired_open_positions}
     heartbeat = lease.heartbeat_at
     if heartbeat.tzinfo is None:
         heartbeat = heartbeat.replace(tzinfo=timezone.utc)
@@ -3302,6 +3309,7 @@ def paper_worker_status(user: CurrentUser, session: SessionDep) -> dict[str, obj
         "status": "STALE" if age > threshold else lease.status,
         "heartbeat_at": heartbeat.isoformat(),
         "last_success_at": last_success.isoformat() if last_success else None,
+        "own_expired_open_positions": own_expired_open_positions,
         # This lease is shared by all accounts; never expose another user's trade warnings.
         "detail": (
             "Shared worker health. Reason: one or more checks need attention; "

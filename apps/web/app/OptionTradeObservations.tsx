@@ -87,7 +87,9 @@ export function OptionTradeObservations({
     {error && <p className="error-banner" role="alert">{error}</p>}
     {reconciliation && <p className="muted" aria-live="polite">
       Observed exit replay: <strong>{reconciliation.status.toLowerCase()}</strong> · {reconciliation.detail}
-      {` (${reconciliation.evaluated_count} evaluated, ${reconciliation.skipped_count} skipped)`}
+      {reconciliation.status === "MATCHED"
+        ? ` (${reconciliation.evaluated_count} evaluated, ${reconciliation.skipped_count} skipped)`
+        : ` (replay stopped after ${reconciliation.evaluated_count} evaluated, ${reconciliation.skipped_count} skipped; the list may contain more)`}
     </p>}
     {rows?.length === 0 && <p className="muted">No exit check has been recorded for this position.</p>}
     {rows && rows.length > 0 && <ul>{rows.map(row => {

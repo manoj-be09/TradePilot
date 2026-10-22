@@ -458,6 +458,30 @@ type PayoffEstimate = {
   maximum_profit_unbounded: boolean;
 };
 
+function paperTemplatePolicy(strategyKey: string, payoff: PayoffEstimate) {
+  const maximumLoss = Number(payoff.maximum_loss);
+  const maximumProfit = Number(payoff.maximum_profit);
+  if (!Number.isFinite(maximumLoss) || maximumLoss <= 0 || payoff.maximum_loss_unbounded) return null;
+  const stopLoss = Math.max(1, maximumLoss * 0.4);
+  const targetProfit = Number.isFinite(maximumProfit) && maximumProfit > 0
+    ? Math.max(1, Math.min(maximumProfit * 0.5, stopLoss * 1.75))
+    : Math.max(1, stopLoss * 1.5);
+  const trailingStop = Math.max(1, targetProfit * 0.35);
+  const bullish = new Set(["bull_call_spread", "bull_put_spread", "long_call"]);
+  const bearish = new Set(["bear_put_spread", "bear_call_spread", "long_put"]);
+  const neutral = new Set(["iron_condor"]);
+  const conditions: EntryConditionDraft[] = [
+    ...(bullish.has(strategyKey) ? [{ metric: "put_call_ratio_oi" as RuleMetric, operator: "GTE" as RuleOperator, threshold: "1.00" }] : []),
+    ...(bearish.has(strategyKey) ? [{ metric: "put_call_ratio_oi" as RuleMetric, operator: "LTE" as RuleOperator, threshold: "1.00" }] : []),
+    ...(neutral.has(strategyKey) ? [
+      { metric: "put_call_ratio_oi" as RuleMetric, operator: "GTE" as RuleOperator, threshold: "0.80" },
+      { metric: "put_call_ratio_oi" as RuleMetric, operator: "LTE" as RuleOperator, threshold: "1.20" },
+    ] : []),
+    { metric: "median_relative_spread_pct", operator: "LTE", threshold: "10.00" },
+  ];
+  return { conditions, stopLoss: Number(stopLoss.toFixed(2)), targetProfit: Number(targetProfit.toFixed(2)), trailingStop: Number(trailingStop.toFixed(2)) };
+}
+
 type PaperMonitor = {
   checked_at: string;
   evaluated_count: number;
@@ -774,6 +798,9 @@ export default function Home() {
     asOf: string; expiry: string; strike: string; lots: number;
     rows: { key: string; name: string; version: string; status: string; maximumProfit: string; maximumLoss: string }[];
   } | null>(null);
+  const [batchArmResults, setBatchArmResults] = useState<{ name: string; result: string }[]>([]);
+  const [batchArmContext, setBatchArmContext] = useState("");
+  const batchArmCommand = useRef<{ snapshot: string; key: string } | null>(null);
   const [paperTicketMessage, setPaperTicketMessage] = useState("");
   const [showAllStrategies, setShowAllStrategies] = useState(false);
   const [strategyBiasFilter, setStrategyBiasFilter] = useState<StrategyMarketBias | "ALL">("ALL");
@@ -1402,43 +1429,83 @@ export default function Home() {
     });
   }
 
+  async function armAllPaperTemplates() {
+    if (!token || selectedOptionIndex !== "NIFTY" || !paperEntry.ready || paperEntry.pending || !paperAccount || paperAccount.kill_switch_enabled || paperBusy || !chain || chain.quality?.status === "FAIL" || !selectedExpiry || chain.expiry !== selectedExpiry || !selectedPaperStrike || selectedExpiry < indiaCalendarDate() || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`) return;
+    setPaperBusy(true);
+    setPaperError("");
+    setBatchArmResults([]);
+    const snapshot = `${chain.as_of}|${selectedExpiry}|${selectedPaperStrike}|${paperLots}`;
+    setBatchArmContext(`${new Date(chain.as_of).toLocaleString("en-IN")} · expiry ${selectedExpiry} · strike ${selectedPaperStrike} · ${paperLots} lot(s)`);
+    if (batchArmCommand.current?.snapshot !== snapshot) {
+      let previous: { snapshot: string; key: string } | null = null;
+      try { previous = JSON.parse(window.sessionStorage.getItem("paper-batch-arm") || "null"); } catch { /* Start a new command if the saved value is invalid. */ }
+      batchArmCommand.current = previous?.snapshot === snapshot && /^[a-f0-9]{32}$/.test(previous.key) ? previous : { snapshot, key: crypto.randomUUID().replaceAll("-", "") };
+      window.sessionStorage.setItem("paper-batch-arm", JSON.stringify(batchArmCommand.current));
+    }
+    const results: { name: string; result: string }[] = [];
+    const quoted = new Set(strategyTilePreviews.map(({ strategy }) => strategy.key));
+    const waiting = new Set(paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY" && item.expiry === selectedExpiry && item.reference_strike === selectedPaperStrike).map(item => item.strategy_key));
+    let slots = Math.max(0, 5 - paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").length);
+    try {
+      for (const strategy of paperStrategies) {
+        const payoff = strategyPayoffs[strategy.key];
+        const hasFiniteLoss = payoff && Number(payoff.maximum_loss) > 0 && Number.isFinite(Number(payoff.maximum_loss)) && !payoff.maximum_loss_unbounded;
+        const saved = strategyVersions.filter(version => version.definition.template_key === strategy.key && version.definition.template_version === strategy.version && version.definition.lots === paperLots && (!version.definition.option_index || version.definition.option_index.symbol === "NIFTY") && version.definition.entry_conditions.length > 0 && version.definition.stop_loss_amount && version.definition.trailing_stop_amount).sort((left, right) => right.created_at.localeCompare(left.created_at))[0];
+        let result: string;
+        if (waiting.has(strategy.key)) result = "Already waiting for entry";
+        else if (!quoted.has(strategy.key)) result = "Skipped: required listed leg or quote unavailable";
+        else if (!hasFiniteLoss) result = "Skipped: finite maximum loss unavailable";
+        else if (!saved) result = "Skipped: save a reviewed matching entry and exit policy first";
+        else if (!slots) result = "Skipped: five waiting-strategy safety limit reached";
+        else {
+          try {
+            const armed = await readJson<PaperDeployment>(await fetch(`${API_URL}/paper/deployments`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "Idempotency-Key": `batch_${batchArmCommand.current!.key}_${strategy.key}` },
+              body: JSON.stringify({
+                strategy_key: strategy.key, strategy_version_id: saved.id, expected_template_version: strategy.version,
+                expiry: selectedExpiry, reference_strike: selectedPaperStrike, lots: paperLots,
+                entry_conditions: saved.definition.entry_conditions,
+                stop_loss_amount: saved.definition.stop_loss_amount,
+                target_profit_amount: saved.definition.target_profit_amount,
+                trailing_stop_amount: saved.definition.trailing_stop_amount,
+              }),
+            }));
+            setPaperDeployments(current => [armed, ...current.filter(item => item.id !== armed.id)]);
+            if (armed.status === "WAITING_FOR_ENTRY") slots -= 1;
+            result = armed.status === "WAITING_FOR_ENTRY" ? "Armed; waiting for a later qualifying paper snapshot" : `Already submitted · ${armed.status.replaceAll("_", " ")}`;
+          } catch (error) {
+            result = `Not armed: ${userFacingError(error, "Paper safety check failed")}`;
+          }
+        }
+        results.push({ name: strategy.name, result });
+        setBatchArmResults([...results]);
+      }
+      await refreshPaperWorkspace();
+    } finally {
+      setPaperBusy(false);
+    }
+  }
+
   function applyStrategyToPaperTicket(strategy: PaperStrategy, payoff: PayoffEstimate) {
-    const maximumLoss = Number(payoff.maximum_loss);
-    const maximumProfit = Number(payoff.maximum_profit);
-    if (!Number.isFinite(maximumLoss) || maximumLoss <= 0 || payoff.maximum_loss_unbounded) {
+    const policy = paperTemplatePolicy(strategy.key, payoff);
+    if (!policy) {
       setPaperTicketMessage("This strategy cannot be prepared because a finite maximum loss is unavailable.");
       return;
     }
-    const stopLoss = Math.max(1, maximumLoss * 0.4);
-    const targetProfit = Number.isFinite(maximumProfit) && maximumProfit > 0
-      ? Math.max(1, Math.min(maximumProfit * 0.5, stopLoss * 1.75))
-      : Math.max(1, stopLoss * 1.5);
-    const trailingStop = Math.max(1, targetProfit * 0.35);
-    const bullish = new Set(["bull_call_spread", "bull_put_spread", "long_call"]);
-    const bearish = new Set(["bear_put_spread", "bear_call_spread", "long_put"]);
-    const neutral = new Set(["iron_condor"]);
-    const conditions: EntryConditionDraft[] = [
-      ...(bullish.has(strategy.key) ? [{ metric: "put_call_ratio_oi" as RuleMetric, operator: "GTE" as RuleOperator, threshold: "1.00" }] : []),
-      ...(bearish.has(strategy.key) ? [{ metric: "put_call_ratio_oi" as RuleMetric, operator: "LTE" as RuleOperator, threshold: "1.00" }] : []),
-      ...(neutral.has(strategy.key) ? [
-        { metric: "put_call_ratio_oi" as RuleMetric, operator: "GTE" as RuleOperator, threshold: "0.80" },
-        { metric: "put_call_ratio_oi" as RuleMetric, operator: "LTE" as RuleOperator, threshold: "1.20" },
-      ] : []),
-      { metric: "median_relative_spread_pct", operator: "LTE", threshold: "10.00" },
-    ];
     setSelectedStrategy(strategy.key);
     if (optionFeatures?.atm_strike) setSelectedPaperStrike(optionFeatures.atm_strike);
-    setEntryConditions(conditions);
-    setStopLossInput(stopLoss.toFixed(2));
-    setTargetProfitInput(targetProfit.toFixed(2));
-    setTrailingStopInput(trailingStop.toFixed(2));
+    setEntryConditions(policy.conditions);
+    setStopLossInput(policy.stopLoss.toFixed(2));
+    setTargetProfitInput(policy.targetProfit.toFixed(2));
+    setTrailingStopInput(policy.trailingStop.toFixed(2));
     setDeploymentPreparedKey(strategy.key);
     setSelectedVersionId("");
     setCompareVersionId("");
     setVersionError("");
     setVersionMessage("");
     setPaperError("");
-    setPaperTicketMessage(`${strategy.name} is ready to arm in paper mode. Entry filters, a ₹${stopLoss.toFixed(2)} protective stop, ₹${targetProfit.toFixed(2)} target and ₹${trailingStop.toFixed(2)} trailing drawdown were generated from the current modeled risk. Review them before arming.`);
+    setPaperTicketMessage(`${strategy.name} is ready to arm in paper mode. Entry filters, a ₹${policy.stopLoss.toFixed(2)} protective stop, ₹${policy.targetProfit.toFixed(2)} target and ₹${policy.trailingStop.toFixed(2)} trailing drawdown were generated from the current modeled risk. Review them before arming.`);
     window.setTimeout(() => paperTicketRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
   }
 
@@ -1600,6 +1667,7 @@ export default function Home() {
     setSecurityActivityError("");
     setSecurityOpen(false);
     window.sessionStorage.removeItem("market-data-session");
+    window.sessionStorage.removeItem("paper-batch-arm");
     setToken(null);
     setContracts([]);
     setSelectedExpiry("");
@@ -1621,6 +1689,9 @@ export default function Home() {
     setSettlementPreview(null);
     setSettlementError("");
     deploymentCommand.current = null;
+    batchArmCommand.current = null;
+    setBatchArmResults([]);
+    setBatchArmContext("");
     setPaperOrders([]);
     setPaperStrategies([]);
     setPaperPresets([]);
@@ -2641,6 +2712,9 @@ export default function Home() {
               <p className="strategy-library-note">Public taxonomy reference: OptionStrat’s strategy list. TradingPilot uses original summaries and only enables the defined-risk templates supported by its paper payoff engine; this classification is descriptive, not a profit forecast.</p>
               <p className="strategy-library-note" role="status">{marketFitError || (marketFit ? `Decision: no trade. ${marketFit.reasons.join(" ")}` : "Checking current NIFTY market-fit inputs; no trade is recommended.")}</p>
               <button className="inline-button" disabled={!chain || !selectedPaperStrike || paperBusy || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={compareAllPaperTemplates} type="button">Compare all paper templates at this snapshot</button>
+              <button className="primary-button" disabled={!token || selectedOptionIndex !== "NIFTY" || !paperEntry.ready || !!paperEntry.pending || !paperAccount || paperAccount.kill_switch_enabled || paperBusy || !chain || chain.quality?.status === "FAIL" || !selectedExpiry || chain.expiry !== selectedExpiry || selectedExpiry < indiaCalendarDate() || !selectedPaperStrike || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={() => void armAllPaperTemplates()} type="button">{paperBusy ? "Applying paper strategies…" : "Apply all eligible paper strategies"}</button>
+              <p className="strategy-library-note">One click checks every paper-supported template, even when market-fit research says NO TRADE. Only templates with a previously saved, matching entry and exit policy can be armed; no rules are generated by this button. At most five can wait for entry across your account; other templates are listed as skipped. Arming creates no position now. Later entries must still pass the saved rules, quotes, paper risk limits and kill switch. Live orders remain disabled.</p>
+              {batchArmResults.length > 0 && <details className="workspace-disclosure" open><summary>Batch paper application · {batchArmResults.filter(item => item.result.startsWith("Armed")).length} armed, {batchArmResults.length} checked</summary><p>{batchArmContext}</p><ul>{batchArmResults.map(item => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul></details>}
               {batchComparison ? <details className="workspace-disclosure" open><summary>All-template quote and payoff comparison · {batchComparison.rows.length} templates</summary>
                 <p>Snapshot {new Date(batchComparison.asOf).toLocaleString("en-IN")} · expiry {batchComparison.expiry} · reference strike {formatPrice(batchComparison.strike)} · {batchComparison.lots} lot(s). This is a frozen on-screen comparison of available quotes and gross expiry payoff. It creates no orders, positions, research outcomes, backtest, or probability estimate.</p>
                 <div className="paper-table-scroll"><table className="paper-table"><thead><tr><th>Strategy</th><th>Availability</th><th>Max expiry profit</th><th>Max expiry loss</th></tr></thead><tbody>

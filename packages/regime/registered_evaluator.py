@@ -158,7 +158,8 @@ def bind_nifty_replay(session: Session, owner: UUID, trial_id: UUID,
         raise ValueError("Stored trial manifest identity differs")
     for key in ("rights_artifact_digest", "dataset_digest", "calculation_digest",
                 "holdout_artifact_digest",
-                "cost_model_id", "cost_artifact_digest", "validation_end",
+                "cost_model_id", "cost_artifact_digest", "train_start", "train_end",
+                "validation_start", "validation_end",
                 "holdout_start", "holdout_end"):
         if getattr(manifest, key) != getattr(study, key):
             raise ValueError("Trial manifest differs from the frozen NIFTY study")

@@ -191,20 +191,26 @@ def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
     engine.dispose()
 
 
-def test_declared_holdout_artifact_must_match_frozen_study():
+@pytest.mark.parametrize("change", [
+    {"holdout_artifact_digest": "e" * 64},
+    {"train_start": date(2020, 1, 2)},
+    {"train_end": date(2022, 12, 30)},
+    {"validation_start": date(2023, 1, 2)},
+])
+def test_declared_study_scope_must_match_frozen_study(change):
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     owner = uuid4()
     frozen = study(holdout_artifact_digest="d" * 64)
-    manifest = TrialManifest(
+    manifest = TrialManifest(**(dict(
         dataset_digest=frozen.dataset_digest, calculation_digest=frozen.calculation_digest,
         cost_model_id=frozen.cost_model_id, experiment_family=frozen.study_key,
         trial_number=1, declared_search_budget=frozen.parent_search_budget, seed=0,
         train_start=frozen.train_start, train_end=frozen.train_end,
         validation_start=frozen.validation_start, validation_end=frozen.validation_end,
         holdout_start=frozen.holdout_start, holdout_end=frozen.holdout_end,
-        holdout_artifact_digest="e" * 64,
-    )
+        holdout_artifact_digest=frozen.holdout_artifact_digest,
+    ) | change))
     definition = CandidateDefinition(
         name="Holdout binding hypothesis", family="nifty-options", market="NIFTY_OPTIONS",
         hypothesis="Test that a protected holdout cannot be silently substituted.",

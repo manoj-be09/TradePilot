@@ -242,7 +242,8 @@ def recommend_from_trial(study_id: UUID, trial_id: UUID,
             raise ValueError("Trial or study identity differs from the frozen NIFTY parent")
         for key in ("rights_artifact_digest", "dataset_digest", "calculation_digest",
                     "holdout_artifact_digest",
-                    "cost_model_id", "cost_artifact_digest", "validation_end",
+                    "cost_model_id", "cost_artifact_digest", "train_start", "train_end",
+                    "validation_start", "validation_end",
                     "holdout_start", "holdout_end"):
             if getattr(manifest, key) != getattr(frozen, key):
                 raise ValueError("Trial manifest differs from the frozen NIFTY study")

@@ -266,6 +266,19 @@ def test_from_trial_records_deterministic_abstention_without_selection():
             )
         assert error.value.status_code == 409
         assert len(list(session.scalars(select(ResearchRecommendation)))) == 1
+        shifted_window = declare_trial(session, owner, candidate.id, TrialManifest(
+            **(TrialManifest.model_validate(trial.manifest).model_dump()
+               | {"train_start": date(2020, 1, 2), "trial_number": 3})
+        ))
+        with pytest.raises(HTTPException) as error:
+            recommend_from_trial(
+                study_id, shifted_window.id,
+                TrialRecommendationRequest(
+                    selector_version="selector-v1", expires_at="2026-02-01T10:00:00Z"),
+                SimpleNamespace(id=owner), session,
+            )
+        assert error.value.status_code == 409
+        assert len(list(session.scalars(select(ResearchRecommendation)))) == 1
     engine.dispose()
 
 

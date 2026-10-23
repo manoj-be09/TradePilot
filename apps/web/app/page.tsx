@@ -1409,6 +1409,13 @@ export default function Home() {
     return counts;
   }, [strategyBiasFilter]);
 
+  const batchArmReady = !!token && selectedOptionIndex === "NIFTY" && paperEntry.ready
+    && !paperEntry.pending && !!paperAccount && !paperAccount.kill_switch_enabled
+    && !paperBusy && !!chain && chain.quality?.status !== "FAIL"
+    && !!selectedExpiry && chain.expiry === selectedExpiry
+    && selectedExpiry >= indiaCalendarDate() && !!selectedPaperStrike
+    && strategyPayoffKey === `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`;
+
   function compareAllPaperTemplates() {
     if (!chain || !selectedPaperStrike || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`) return;
     setBatchComparison({
@@ -1430,7 +1437,7 @@ export default function Home() {
   }
 
   async function armAllPaperTemplates() {
-    if (!token || selectedOptionIndex !== "NIFTY" || !paperEntry.ready || paperEntry.pending || !paperAccount || paperAccount.kill_switch_enabled || paperBusy || !chain || chain.quality?.status === "FAIL" || !selectedExpiry || chain.expiry !== selectedExpiry || !selectedPaperStrike || selectedExpiry < indiaCalendarDate() || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`) return;
+    if (!batchArmReady || !token || !chain || !selectedExpiry || !selectedPaperStrike) return;
     setPaperBusy(true);
     setPaperError("");
     setBatchArmResults([]);
@@ -2621,6 +2628,7 @@ export default function Home() {
               </div>
               <div className="paper-actions">
                 <button className="refresh-button" type="button" disabled={chainBusy || paperBusy} onClick={() => void refreshPaperWorkspace()}>↻ Refresh</button>
+                <button aria-describedby="batch-paper-safety" className="primary-button" disabled={!batchArmReady} onClick={() => void armAllPaperTemplates()} type="button">{paperBusy ? "Applying paper strategies…" : "Apply all eligible paper strategies"}</button>
                 {paperAccount ? (
                   <span className={`paper-mode-badge ${paperAccount.kill_switch_enabled ? "paused" : "active"}`}>
                     {paperAccount.kill_switch_enabled ? "ENTRIES PAUSED" : "PAPER ACTIVE"}
@@ -2632,6 +2640,8 @@ export default function Home() {
                 </button>
               </div>
             </div>
+            <p className="features-note" id="batch-paper-safety">One click checks the paper-supported NIFTY option templates for the selected expiry, strike and lot size. Only matching saved entry and exit policies can be armed, with at most five waiting across your account. Change the selection under “Add a paper strategy.” Futures strategies are not yet paper-enabled. Arming opens no position immediately; live orders remain disabled.</p>
+            {batchArmResults.length > 0 && <details className="workspace-disclosure" open><summary>Batch paper application · {batchArmResults.filter(item => item.result.startsWith("Armed")).length} armed, {batchArmResults.length} checked</summary><p>{batchArmContext}</p><ul>{batchArmResults.map(item => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul></details>}
 
             <section className="paper-readiness" aria-label="Paper trading readiness">
               <div className="paper-readiness-grid">
@@ -2712,9 +2722,6 @@ export default function Home() {
               <p className="strategy-library-note">Public taxonomy reference: OptionStrat’s strategy list. TradingPilot uses original summaries and only enables the defined-risk templates supported by its paper payoff engine; this classification is descriptive, not a profit forecast.</p>
               <p className="strategy-library-note" role="status">{marketFitError || (marketFit ? `Decision: no trade. ${marketFit.reasons.join(" ")}` : "Checking current NIFTY market-fit inputs; no trade is recommended.")}</p>
               <button className="inline-button" disabled={!chain || !selectedPaperStrike || paperBusy || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={compareAllPaperTemplates} type="button">Compare all paper templates at this snapshot</button>
-              <button className="primary-button" disabled={!token || selectedOptionIndex !== "NIFTY" || !paperEntry.ready || !!paperEntry.pending || !paperAccount || paperAccount.kill_switch_enabled || paperBusy || !chain || chain.quality?.status === "FAIL" || !selectedExpiry || chain.expiry !== selectedExpiry || selectedExpiry < indiaCalendarDate() || !selectedPaperStrike || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={() => void armAllPaperTemplates()} type="button">{paperBusy ? "Applying paper strategies…" : "Apply all eligible paper strategies"}</button>
-              <p className="strategy-library-note">One click checks every paper-supported template, even when market-fit research says NO TRADE. Only templates with a previously saved, matching entry and exit policy can be armed; no rules are generated by this button. At most five can wait for entry across your account; other templates are listed as skipped. Arming creates no position now. Later entries must still pass the saved rules, quotes, paper risk limits and kill switch. Live orders remain disabled.</p>
-              {batchArmResults.length > 0 && <details className="workspace-disclosure" open><summary>Batch paper application · {batchArmResults.filter(item => item.result.startsWith("Armed")).length} armed, {batchArmResults.length} checked</summary><p>{batchArmContext}</p><ul>{batchArmResults.map(item => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul></details>}
               {batchComparison ? <details className="workspace-disclosure" open><summary>All-template quote and payoff comparison · {batchComparison.rows.length} templates</summary>
                 <p>Snapshot {new Date(batchComparison.asOf).toLocaleString("en-IN")} · expiry {batchComparison.expiry} · reference strike {formatPrice(batchComparison.strike)} · {batchComparison.lots} lot(s). This is a frozen on-screen comparison of available quotes and gross expiry payoff. It creates no orders, positions, research outcomes, backtest, or probability estimate.</p>
                 <div className="paper-table-scroll"><table className="paper-table"><thead><tr><th>Strategy</th><th>Availability</th><th>Max expiry profit</th><th>Max expiry loss</th></tr></thead><tbody>

@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-23
 
+## 2026-10-23 — Read-only NIFTY option feed probe
+
+- Extended the existing Upstox feed probe with `--nifty-atm-call`. It selects an earliest non-expired call only when the contract master and live chain agree on token, expiry, strike and option type, and displayed bid/ask quantities are positive. The option mode records no quotes and refuses `--journal` while retention rights are unreviewed. A separate process watchdog bounds a stalled Windows event loop. It cannot place an order or change a paper position.
+- Focused deterministic selection/watchdog checks passed (6 passed, 3 deselected); Ruff on both changed Python files, mypy on the probe script, and `git diff --check` passed. The test file itself has pre-existing untyped-test mypy errors and is not a typed module. A live read-only attempt from this agent host hung without a market observation and was interrupted before the process watchdog was added. **PARTIAL:** this is probe tooling, not accepted exchange-origin NIFTY executable-book timing or a paper round trip. No option data was retained.
+
 ## 2026-10-23 — Day 1/2 delivery checkpoint
 
 - **PASS — source publication:** local `main`, `origin/main`, and the remote GitHub `main` ref all identify `7c87a03`. The signed-in Edge desktop F&O Strategies view shows the header batch button and its NIFTY option, saved-policy and five-waiting-slot limits. The button was not pressed; populated owner-account batch and phone layout remain unaccepted. The dev-server page and API `/health`, `/ready`, and `/ready/paper-worker` returned HTTP 200. Those responses do not identify the exact API image revision; agent Docker named-pipe access is denied, so exact deployed-revision acceptance remains **PARTIAL**.

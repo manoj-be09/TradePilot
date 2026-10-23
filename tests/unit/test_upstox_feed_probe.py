@@ -122,3 +122,73 @@ def test_probe_journals_actual_quote_and_disconnect_without_private_url(tmp_path
     assert [row["event"] for row in rows] == ["connected", "quote", "disconnected"]
     assert rows[1]["last"] == "100" and rows[1]["book_basis"] == "unknown"
     assert "private.example" not in path.read_text() + capsys.readouterr().out
+
+
+def test_nifty_probe_selects_only_chain_master_matched_quoted_call():
+    from datetime import date, timedelta
+    from decimal import Decimal
+
+    script = run_path(str(Path("scripts/probe-upstox-v3-feed.py")))
+    expiry = date.today() + timedelta(days=7)
+
+    def leg(token, strike, bid=10, ask=11):
+        return SimpleNamespace(
+            instrument_token=token, expiry=expiry, strike=Decimal(str(strike)),
+            option_type="CE", bid_quantity=20, ask_quantity=30,
+            quote=SimpleNamespace(bid=Decimal(str(bid)), ask=Decimal(str(ask))),
+        )
+
+    contracts = [
+        SimpleNamespace(instrument_key="valid", expiry=expiry,
+                        strike=Decimal(23000), option_type="CE"),
+        SimpleNamespace(instrument_key="wrong-strike", expiry=expiry,
+                        strike=Decimal(23200), option_type="CE"),
+    ]
+    chain = SimpleNamespace(
+        underlying="NIFTY", expiry=expiry, underlying_spot=Decimal(23010),
+        contracts=[leg("wrong-strike", 23010), leg("valid", 23000),
+                   leg("unlisted", 23010)],
+    )
+
+    assert script["choose_nifty_atm_call"](chain, contracts, expiry) == (
+        "valid", expiry.isoformat(), "23000"
+    )
+
+
+def test_nifty_probe_abstains_when_chain_identity_or_depth_is_missing():
+    from datetime import date, timedelta
+    from decimal import Decimal
+
+    script = run_path(str(Path("scripts/probe-upstox-v3-feed.py")))
+    expiry = date.today() + timedelta(days=7)
+
+    contracts = [SimpleNamespace(instrument_key="call", expiry=expiry,
+                                 strike=Decimal(23000), option_type="CE")]
+    chain = SimpleNamespace(
+        underlying="NIFTY", expiry=expiry, underlying_spot=Decimal(23000),
+        contracts=[SimpleNamespace(
+            instrument_token="call", expiry=expiry, strike=Decimal(23000),
+            option_type="CE", bid_quantity=0, ask_quantity=10,
+            quote=SimpleNamespace(bid=Decimal(10), ask=Decimal(11)),
+        )],
+    )
+
+    assert script["choose_nifty_atm_call"](chain, contracts, expiry) is None
+
+
+def test_nifty_probe_watchdog_stops_a_stalled_child_without_leaking_stderr(monkeypatch, capsys):
+    import subprocess
+
+    script = run_path(str(Path("scripts/probe-upstox-v3-feed.py")))
+
+    def stalled(command, **kwargs):
+        assert command[-2:] == ["--nifty-atm-call", "--child"]
+        assert kwargs["timeout"] == 90 and kwargs["capture_output"] is True
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"],
+                                        stderr=b"wss://private.example/?token=secret")
+
+    monkeypatch.setattr(script["subprocess"], "run", stalled)
+    script["run_nifty_probe_with_watchdog"]()
+    output = capsys.readouterr().out
+    assert "process deadline" in output
+    assert "private.example" not in output and "secret" not in output

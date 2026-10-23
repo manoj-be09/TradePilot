@@ -348,6 +348,20 @@ def test_option_chain_maps_read_only_upstox_response_and_authenticates_request()
     assert result.as_of.tzinfo is not None
 
 
+def test_option_chain_rejects_explicitly_wrong_underlying_key():
+    provider = UpstoxMarketDataProvider(
+        "test-token", transport=httpx.MockTransport(
+            lambda _request: httpx.Response(200, json={"status": "success", "data": [{
+                "underlying_key": "NSE_INDEX|Nifty Bank", "expiry": "2026-10-01",
+                "strike_price": 25000,
+                "call_options": {"instrument_key": "NSE_FO|call-key", "market_data": {"ltp": 100}},
+            }]})
+        ),
+    )
+    with pytest.raises(MarketDataProviderError, match="selected underlying"):
+        asyncio.run(provider.get_option_chain("NIFTY", date(2026, 10, 1)))
+
+
 def test_invalid_token_error_does_not_disclose_token():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["Authorization"] == "Bearer do-not-disclose-this"

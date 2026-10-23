@@ -323,6 +323,10 @@ class UpstoxMarketDataProvider:
             for row in rows:
                 if not isinstance(row, dict):
                     continue
+                if ("underlying_key" in row and row["underlying_key"] != key):
+                    raise MarketDataProviderError(
+                        "Option-chain row does not match the selected underlying"
+                    )
                 underlying_spot = _decimal(row.get("underlying_spot_price")) or underlying_spot
                 row_expiry = date.fromisoformat(str(row.get("expiry", expiry.isoformat()))[:10])
                 strike = _decimal(row.get("strike_price"))

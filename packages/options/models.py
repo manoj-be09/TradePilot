@@ -91,3 +91,4 @@ class PayoffResult(BaseModel):
     maximum_loss_unbounded: bool
     points: list[PayoffPoint]
     assumptions: list[str]
+    transaction_cost_scenario: dict[str, object] | None = None

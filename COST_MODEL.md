@@ -12,4 +12,27 @@ The read-only trade-list response recomputes each known snapshot from its origin
 
 Excluded: actual brokerage minima/caps, STT, GST, stamp duty, exchange and regulatory fees, exercise/settlement charges, market impact, additional slippage, financing and data subscriptions. Current official tariffs and instrument/date-specific tax bases must be verified before a separate broker-calibrated model is introduced. Preserve this v1 calculation unchanged when adding future versions; never relabel or recompute old evidence using new assumptions.
 
-Validation: pure unit arithmetic and file-backed disposable SQLite order-snapshot persistence/ledger preservation checks; frontend complete-only coverage checks; TypeScript, Ruff and mypy. API/worker end-to-end regression and deployed new-fill UI verification remain required on a host with functioning event-loop socketpair and Docker engine. No synthetic trades may be inserted into the owner's account for that verification.
+Validation for the illustrative order-snapshot model: pure unit arithmetic and file-backed disposable SQLite order-snapshot persistence/ledger preservation checks; frontend complete-only coverage checks; TypeScript, Ruff and mypy. API/worker end-to-end regression and deployed new-fill UI verification remain required on a host with functioning event-loop socketpair and Docker engine. No synthetic trades may be inserted into the owner's account for that verification.
+
+## Public Upstox comparison scenario
+
+`upstox-public-nfo-options-2026-10-scenario-v1` is a separate, read-only
+quote/payoff comparison benchmark, reviewed on 2026-10-23 against
+[Upstox's dated charge schedule](https://upstox.com/brokerage-charges/). It
+uses standard-plan ₹20 brokerage per separately executed NIFTY option leg
+order; NSE option transaction charges of 0.03553% of premium, effective
+1 March 2026; sell-side option STT of 0.15% of premium, effective 1 April
+2026; 0.003% buy-side stamp duty; ₹10/crore SEBI fee; and 18% GST on
+brokerage and transaction charges. Charge components are rounded to paise
+per assumed order. Upstox says IPFT is combined with transaction charges in
+its current table. [Upstox Plus may charge ₹30 per option order](https://upstox.com/help-center/does-the-brokerage-plan-change-with-upstox-plus-264072/);
+the owner's plan has not been verified.
+
+The scenario estimates entry using caller-supplied premiums and a reverse
+exit at the *same* premiums. It assumes one order per leg per side, and does
+not model the actual exit premium, exercise/settlement, account discounts,
+slippage, financing, market impact, or the broker's exact rounding. It is
+shown apart from gross expiry payoff, never deducted from paper cash or
+historical trades, and does not qualify a policy for after-cost ranking or
+profit probability. This scenario must be revised for future tariff dates;
+the existing illustrative order-snapshot model above remains unchanged.

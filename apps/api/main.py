@@ -155,6 +155,7 @@ from packages.options.models import (
 )
 from packages.options.payoff import calculate_expiry_payoff
 from packages.options.pricing import calculate_greeks
+from packages.options.upstox_cost_benchmark import upstox_option_cost_scenario
 from packages.paper_trading.costs import cost_snapshot, summarize_costs
 from packages.paper_trading.daily_risk import daily_realized_pnl, daily_risk_budget
 from packages.paper_trading.expiry_settlement import (
@@ -1430,7 +1431,9 @@ def analytics_greeks(user: CurrentUser, body: OptionGreeksInput) -> OptionGreeks
 @app.post("/analytics/payoff", response_model=PayoffResult, tags=["analytics"])
 def analytics_payoff(user: CurrentUser, body: PayoffRequest) -> PayoffResult:
     del user
-    return calculate_expiry_payoff(body)
+    payoff = calculate_expiry_payoff(body)
+    payoff.transaction_cost_scenario = upstox_option_cost_scenario(body)
+    return payoff
 
 
 @app.get(

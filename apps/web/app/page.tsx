@@ -457,6 +457,11 @@ type PayoffEstimate = {
   maximum_loss_unbounded: boolean;
   maximum_profit: string | null;
   maximum_profit_unbounded: boolean;
+  transaction_cost_scenario?: {
+    model_id: string; source_url: string; entry_charge: string;
+    unchanged_premium_exit_charge: string; round_trip_scenario_charge: string;
+    limitations: string; complete_broker_costs: boolean;
+  } | null;
 };
 
 function paperTemplatePolicy(strategyKey: string, payoff: PayoffEstimate) {
@@ -797,7 +802,7 @@ export default function Home() {
   const [strategyPayoffKey, setStrategyPayoffKey] = useState("");
   const [batchComparison, setBatchComparison] = useState<{
     asOf: string; expiry: string; strike: string; lots: number;
-    rows: { key: string; name: string; version: string; status: string; maximumProfit: string; maximumLoss: string }[];
+    rows: { key: string; name: string; version: string; status: string; maximumProfit: string; maximumLoss: string; costScenario: string | null }[];
   } | null>(null);
   const [batchArmResults, setBatchArmResults] = useState<{ name: string; result: string }[]>([]);
   const [batchArmContext, setBatchArmContext] = useState("");
@@ -1448,6 +1453,7 @@ export default function Home() {
             : payoff.maximum_loss === null ? "Maximum loss unavailable" : "Gross expiry preview only",
           maximumProfit: payoff?.maximum_profit_unbounded ? "Unbounded" : payoff?.maximum_profit ?? "Unavailable",
           maximumLoss: payoff?.maximum_loss_unbounded ? "Unbounded" : payoff?.maximum_loss ?? "Unavailable",
+          costScenario: payoff?.transaction_cost_scenario?.round_trip_scenario_charge ?? null,
         };
       }),
     });
@@ -2741,11 +2747,11 @@ export default function Home() {
               <p className="strategy-library-note" role="status">{marketFitError || (marketFit ? `Decision: no trade. ${marketFit.reasons.join(" ")}` : "Checking current NIFTY market-fit inputs; no trade is recommended.")}</p>
               <button className="inline-button" disabled={!chain || !selectedPaperStrike || paperBusy || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={compareAllPaperTemplates} type="button">Compare all paper templates at this snapshot</button>
               {batchComparison ? <details className="workspace-disclosure" open><summary>All-template quote and payoff comparison · {batchComparison.rows.length} templates</summary>
-                <p>Snapshot {new Date(batchComparison.asOf).toLocaleString("en-IN")} · expiry {batchComparison.expiry} · reference strike {formatPrice(batchComparison.strike)} · {batchComparison.lots} lot(s). This is a frozen on-screen comparison of available quotes and gross expiry payoff. It creates no orders, positions, research outcomes, backtest, or probability estimate.</p>
-                <div className="paper-table-scroll"><table className="paper-table"><thead><tr><th>Strategy</th><th>Availability</th><th>Max expiry profit</th><th>Max expiry loss</th></tr></thead><tbody>
-                  {batchComparison.rows.map((row) => <tr key={row.key}><td>{row.name} · {row.version}</td><td>{row.status}</td><td>{row.maximumProfit === "Unavailable" || row.maximumProfit === "Unbounded" ? row.maximumProfit : `₹${formatPrice(row.maximumProfit)}`}</td><td>{row.maximumLoss === "Unavailable" || row.maximumLoss === "Unbounded" ? row.maximumLoss : `₹${formatPrice(row.maximumLoss)}`}</td></tr>)}
+                <p>Snapshot {new Date(batchComparison.asOf).toLocaleString("en-IN")} · expiry {batchComparison.expiry} · reference strike {formatPrice(batchComparison.strike)} · {batchComparison.lots} lot(s). Gross expiry payoff and a separate <a href="https://upstox.com/brokerage-charges/" rel="noreferrer" target="_blank">public Upstox standard-plan charge scenario</a> are shown. The scenario assumes one order per leg and unchanged premiums at exit; your actual plan, exit prices, settlement, impact and discounts may differ. It creates no orders, positions, research outcomes, backtest, or probability estimate.</p>
+                <div className="paper-table-scroll"><table className="paper-table"><thead><tr><th>Strategy</th><th>Availability</th><th>Max expiry profit</th><th>Max expiry loss</th><th>Round-trip cost scenario</th></tr></thead><tbody>
+                  {batchComparison.rows.map((row) => <tr key={row.key}><td>{row.name} · {row.version}</td><td>{row.status}</td><td>{row.maximumProfit === "Unavailable" || row.maximumProfit === "Unbounded" ? row.maximumProfit : `₹${formatPrice(row.maximumProfit)}`}</td><td>{row.maximumLoss === "Unavailable" || row.maximumLoss === "Unbounded" ? row.maximumLoss : `₹${formatPrice(row.maximumLoss)}`}</td><td>{row.costScenario === null ? "Unavailable" : `₹${formatPrice(row.costScenario)}`}</td></tr>)}
                 </tbody></table></div>
-                <p>Catalog-only and engine-pending structures are excluded. Required entry and exit policies, costs, capital, quote timing, and market fit need separate validation before any paper application. An unavailable row remains unavailable; it is never filled with an estimated price.</p>
+                <p>Catalog-only and engine-pending structures are excluded. The cost scenario is not deducted from gross payoff or paper cash and is not an after-cost ranking. Required entry and exit policies, account-specific costs, capital, quote timing, and market fit need separate validation before any paper application. An unavailable row remains unavailable; it is never filled with an estimated price.</p>
               </details> : null}
               <details className="workspace-disclosure probability-evidence"><summary>Win / loss probability · Insufficient evidence</summary>
                 <p>No validated forecast is available. Historical paper win frequency is not a prediction for the next trade.</p>
@@ -2775,6 +2781,7 @@ export default function Home() {
                       <span>Max modeled loss<b>{payoff?.maximum_loss_unbounded ? "Unbounded" : payoff?.maximum_loss !== null && payoff?.maximum_loss !== undefined ? `₹${formatPrice(payoff.maximum_loss)}` : "Calculating…"}</b></span>
                       <span>Expiry breakeven / unit<b>{candidate.breakevens.length ? candidate.breakevens.map(formatPrice).join(" / ") : "Unavailable"}</b></span>
                       <span>Policy stop / target / unit<b>{candidate.provisional_stop && candidate.provisional_target ? `${formatPrice(candidate.provisional_stop)} / ${formatPrice(candidate.provisional_target)}` : "Unavailable"}</b></span>
+                      <span>Round-trip cost scenario<b>{payoff?.transaction_cost_scenario ? `₹${formatPrice(payoff.transaction_cost_scenario.round_trip_scenario_charge)}` : "Unavailable"}</b></span>
                     </div>
                     <small>{candidate.legs.length ? candidate.legs.map((leg) => `${leg.side} ${leg.quantity} ${formatPrice(leg.strike)} ${leg.option_type} @ ${formatPrice(leg.entry_quote)}`).join(" · ") : "Complete quote-backed basket unavailable"}</small>
                     <small>{candidate.reasons.join(" ") || "Quote-backed exposure matches the descriptive regime; entry remains unqualified."}</small>

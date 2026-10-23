@@ -1472,3 +1472,16 @@ Validation: current-source TypeScript passed; diff check passed. Edge verified d
 2026-10-23 — A research opportunity whose chain was current at request start now fails closed if the five-minute snapshot window expires during asynchronous analysis, before the abstention can be persisted. The focused unit suite passed 11 tests, the authenticated opportunity API suite passed 2 tests, and Ruff/mypy passed. The rejection creates no recommendation, order or trade. This is a software time-boundary check; source rights, exchange-origin book timing, populated study evidence, expiry clearing settlement and calibrated ranking remain open. The API needs a rebuild after publication; no deployed acceptance is claimed.
 
 2026-10-23 — Moved the existing single "Apply all eligible paper strategies" action from the collapsed builder to the visible Future & Options Strategies header, with its bounded result summary and explicit selected NIFTY option/policy/five-slot limitations nearby. There is still only one batch action; its server-side behavior and safety gates are unchanged. The signed-in connected Edge desktop tree showed the header button and explanation. Frontend TypeScript, production build and diff checks passed. The button was not pressed in the owner's account; populated batch acceptance, phone layout and futures-strategy execution are not claimed. The 22 October publication gate remains PARTIAL for exact deployed-revision and phone evidence.
+
+2026-10-23 — Added a read-only public Upstox standard-plan NIFTY option
+round-trip charge *scenario* to authenticated payoff and all-template quote
+comparisons. The scenario uses the date-labelled October 2026 published
+schedule and an unchanged-premium reverse exit; no broker/account tariff,
+future fill, settlement charge, cash ledger or historical trade was changed.
+The comparison still shows gross modeled expiry payoff separately. Pure
+arithmetic and payoff tests, Ruff, mypy and frontend TypeScript passed locally;
+the Next.js production build compiled and generated static pages but stalled
+at build tracing on this Windows host, and the authenticated HTTP test also
+stalled without output. Deployed owner-account review remains pending
+publication/rebuild. This is not a qualified after-cost strategy ranking or
+calibrated POP.

@@ -110,3 +110,7 @@ def test_authenticated_analytics_accept_chain_and_return_payoffs(client: TestCli
     assert payoff_response.status_code == 200
     assert payoff_response.json()["breakeven_prices"] == ["105"]
     assert payoff_response.json()["maximum_profit_unbounded"] is True
+    scenario = payoff_response.json()["transaction_cost_scenario"]
+    assert scenario["model_id"] == "upstox-public-nfo-options-2026-10-scenario-v1"
+    assert scenario["complete_broker_costs"] is False
+    assert scenario["round_trip_scenario_charge"] == "48.07"

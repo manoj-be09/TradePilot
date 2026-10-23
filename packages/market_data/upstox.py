@@ -618,7 +618,7 @@ def _stream_quote(
         instrument_token=instrument_key,
         timestamp=tick_at or received_at,
         received_at=received_at,
-        timestamp_basis="provider_tick" if tick_at else "api_response_received",
+        timestamp_basis="provider_tick" if tick_at else "unknown",
         book_as_of=None,
         book_timestamp_basis="unknown",
         last_trade_time=_millisecond_datetime(last_trade.ltt),

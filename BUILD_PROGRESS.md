@@ -1,4 +1,9 @@
-# Build progress — updated 2026-10-23
+# Build progress — updated 2026-10-24
+
+## 2026-10-24 — Day 4 observation-time contract
+
+- The `DATA_SOURCE_DECISION.md` contract now distinguishes REST response receipt, V3 provider tick, last-trade time, local WebSocket receipt and independently proven per-leg bid/ask book time, with explicit missing/stale/future and reconnect decisions. A V3 frame without `currentTs` now labels its fallback timestamp `unknown` rather than `api_response_received`, which was an inaccurate source claim for a WebSocket receipt. It remains in `received_at` and cannot qualify a strict fill.
+- The focused Upstox/quality/probe suite passed **52 tests**; Ruff, targeted mypy and `git diff --check` passed. This closes the Day 4 software contract/fixture package, **not** the blocked exchange-origin book-time or rights gates. No live feed, paid service, paper order or preserved position changed. Deployment of this source change is pending host push/rebuild along with the three preceding local commits.
 
 ## 2026-10-23 — Day 3 provider rights and contract identity review
 

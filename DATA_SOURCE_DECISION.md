@@ -49,6 +49,17 @@ and bounded feed-journal rows. Existing saved positions are untouched. This is
 an observation contract and software check, not approval for strict F&O fills
 or retention rights beyond the existing bounded diagnostics.
 
+| Time or missing state | Accepted interpretation | Paper-fill decision |
+| --- | --- | --- |
+| REST chain response received by TradePilot | Local receipt time, not a provider or exchange event | Useful for observation ordering; cannot certify book age. |
+| WebSocket `currentTs` when supplied | Provider tick/message time; `ltpc.ltt` remains last-trade time | Neither substitutes for a leg's bid/ask update time. |
+| WebSocket message without `currentTs` | Local `received_at` only; event-time basis is `unknown` | Fail closed. The stream receipt is not labeled an API response or exchange event. |
+| Per-leg `book_as_of` missing or basis unknown | Executable bid/ask update time unavailable | Strict fill blocked even if quote and receipt appear recent. |
+| Exchange-labeled book time stale/future | Clock or delivery inconsistency until resolved | Strict fill blocked; never replace it with local receipt time. |
+| Disconnect, reconnect, gap or clock offset | Observation continuity/latency uncertain | Expire cached quote and measure separately; no invented exchange timestamp. |
+
+The deterministic timestamp cases in `test_market_data_quality.py`, `test_upstox_market_data.py` and `test_upstox_feed_probe.py` cover missing book time, stale/future chain/quote/book times, changed-book observations, clock-offset calculation and WebSocket missing-tick labeling. **Day 4 contract/fixture package: PASS for software semantics; exchange-origin timing proof remains BLOCKED.**
+
 ## Kite Connect review — 21 October 2026
 
 Kite's [full-mode WebSocket packet](https://kite.trade/docs/connect/v3/websocket/) carries five bid and five ask levels, per-level quantity and order count, daily volume, total pending buy/sell quantities, open interest, last-trade time and an **exchange timestamp** in the same instrument packet. Zerodha [explains](https://kite.trade/forum/discussion/3158/difference-between-last-traded-timestamp-and-exchange-timestamp) that the exchange timestamp is the tick time and advances on depth changes without a trade. The [instrument master](https://kite.trade/docs/connect/v3/market-data-and-instruments/) includes NFO option expiry, strike, type, lot size and tick size. This makes a full-mode NIFTY option stream worth testing as a **packet-level book-time candidate**. It is not tick-by-tick exchange coverage; Zerodha says streamed ticks can be coalesced. Second-resolution timestamps also do not establish order within one second. Counts of orders or total pending quantities are not unique buyers and sellers.

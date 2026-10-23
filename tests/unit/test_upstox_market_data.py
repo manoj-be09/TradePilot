@@ -148,6 +148,19 @@ def test_stream_quote_retains_receipt_separately_from_provider_tick():
     assert quote.book_timestamp_basis == "unknown"
 
 
+def test_stream_without_provider_tick_does_not_call_receipt_an_api_response():
+    received_at = datetime(2026, 10, 23, 10, 0, 1, tzinfo=timezone.utc)
+    frame = feed_proto.FeedResponse()
+    market = frame.feeds["NSE_EQ|TEST"].fullFeed.marketFF
+    market.ltpc.ltp = 100
+    quote = _stream_quote("NSE_EQ|TEST", frame.feeds["NSE_EQ|TEST"], None, received_at)
+    assert quote is not None
+    assert quote.timestamp == quote.received_at == received_at
+    assert quote.timestamp_basis == "unknown"
+    assert quote.book_as_of is None
+    assert quote.book_timestamp_basis == "unknown"
+
+
 def test_v3_full_feed_decodes_initial_and_live_quotes_without_exchange_book_claim(monkeypatch):
     key = "NSE_EQ|INE002A01018"
     frames = [feed_proto.FeedResponse(type=feed_proto.market_info).SerializeToString()]

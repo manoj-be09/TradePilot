@@ -3,7 +3,7 @@
 ## 2026-10-23 — Day 1 running-image revision check prepared
 
 - The API and paper-worker Docker image now accept an explicit Git source revision as a build argument and expose it in the standard `org.opencontainers.image.revision` label. Without that argument the label is `unknown`, so an ordinary rebuild cannot be mistaken for verified source provenance. Compose configuration resolves both build arguments; `git diff --check` passed. The label identifies the declared checkout revision only when the host builds from that clean tracked checkout; it is not proof of provider data or trading behavior.
-- Host Git push, Docker rebuild, running-image label inspection, and signed-in phone acceptance are still pending. This agent's Docker named-pipe access remains denied. No container, paper record, position, volume or account configuration was changed by this source update.
+- The owner pushed `9ef76ca` and rebuilt the API and paper-worker; both were healthy and their running-container labels reported the full expected revision `9ef76ca8214db5bc801c722b6c90c05957473011`. The web development service was restarted, `/health`, `/ready/paper-worker`, and web root returned HTTP 200, and signed-in Edge showed the new batch-policy review control on desktop and approximately 390 px phone F&O layout. The actual expired TEST ONLY position remained settlement-pending; zero strategies were waiting. This closes the bounded Day 1 local source/deployment and F&O layout gate. It does not establish a qualified source, fill, ranking, settlement or an immutable web image. Agent Docker named-pipe access is still denied; image-label evidence came from the owner's Command Prompt output.
 
 ## 2026-10-23 — Read-only NIFTY option feed probe
 

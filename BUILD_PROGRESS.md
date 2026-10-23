@@ -1485,3 +1485,17 @@ at build tracing on this Windows host, and the authenticated HTTP test also
 stalled without output. Deployed owner-account review remains pending
 publication/rebuild. This is not a qualified after-cost strategy ranking or
 calibrated POP.
+
+2026-10-23 — The owner pushed through `920548f` and rebuilt API, paper worker
+and web. The running API schema exposes the cost-scenario field; paper-worker
+readiness returned `ready`. A host-side Next build had shared the web
+container's bind-mounted `.next` directory and was interrupted; the web page
+then returned HTTP 500. This is a likely cache-collision cause, not a proved
+server trace. The owner's web-only recreate restored the signed-in page.
+Read-only Edge review showed the 26-waiting-policy copy, zero matching saved
+policies, and a 26-row all-template comparison with Upstox scenario charges.
+Its quote quality was explicitly unverified/failed, and no strategy was armed
+or position changed. The Docker Compose web service now defines a dedicated
+`web-next-cache` volume to isolate future host builds from the running dev
+server; `docker compose config -q` passed locally. This Compose change still
+needs publication and a web recreate before its isolation is accepted.

@@ -44,10 +44,11 @@ services:
     volumes:
       - ./apps/web:/app
       - web-node-modules:/app/node_modules
+      - web-next-cache:/app/.next
     # The source tree is bind-mounted so the container always runs this checkout.
-    # Clear Next's host cache on container creation and invoke Next directly so
-    # CLI flags are passed to Next (pnpm run can otherwise treat them as script args).
-    command: sh -c "rm -rf .next && npm install -g pnpm@11.25.0 && pnpm install --frozen-lockfile && pnpm exec next dev --hostname 0.0.0.0"
+    # Keep the container's Next cache separate from host builds. Invoke Next
+    # directly so CLI flags reach Next rather than pnpm's script parser.
+    command: sh -c "npm install -g pnpm@11.25.0 && pnpm install --frozen-lockfile && pnpm exec next dev --hostname 0.0.0.0"
     ports: ["3000:3000"]
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
@@ -91,4 +92,5 @@ services:
 volumes:
   postgres-data:
   web-node-modules:
+  web-next-cache:
   feed-observations:

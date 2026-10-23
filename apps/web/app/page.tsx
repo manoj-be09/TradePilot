@@ -1409,12 +1409,6 @@ export default function Home() {
     return counts;
   }, [strategyBiasFilter]);
 
-  const batchArmReady = !!token && selectedOptionIndex === "NIFTY" && paperEntry.ready
-    && !paperEntry.pending && !!paperAccount && !paperAccount.kill_switch_enabled
-    && !paperBusy && !!chain && chain.quality?.status !== "FAIL"
-    && !!selectedExpiry && chain.expiry === selectedExpiry
-    && selectedExpiry >= indiaCalendarDate() && !!selectedPaperStrike
-    && strategyPayoffKey === `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`;
   const savedBatchPolicyCount = paperStrategies.filter((strategy) => strategyVersions.some((version) =>
     version.definition.template_key === strategy.key
     && version.definition.template_version === strategy.version
@@ -1424,6 +1418,12 @@ export default function Home() {
     && !!version.definition.stop_loss_amount
     && !!version.definition.trailing_stop_amount,
   )).length;
+  const batchArmReady = savedBatchPolicyCount > 0 && !!token && selectedOptionIndex === "NIFTY" && paperEntry.ready
+    && !paperEntry.pending && !!paperAccount && !paperAccount.kill_switch_enabled
+    && !paperBusy && !!chain && chain.quality?.status !== "FAIL"
+    && !!selectedExpiry && chain.expiry === selectedExpiry
+    && selectedExpiry >= indiaCalendarDate() && !!selectedPaperStrike
+    && strategyPayoffKey === `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`;
 
   function showPaperPolicyEditor() {
     const editor = document.getElementById("paper-strategy-builder") as HTMLDetailsElement | null;

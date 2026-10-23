@@ -1729,6 +1729,11 @@ async def create_strategy_version(
     strategy = get_strategy(body.strategy_key)
     if strategy is None:
         raise HTTPException(status_code=422, detail="A registered strategy template is required")
+    if (
+        body.expected_template_version is not None
+        and body.expected_template_version != strategy.version
+    ):
+        raise HTTPException(409, "Strategy template changed; refresh and review before saving")
     index = None
     if body.underlying is not None:
         try:

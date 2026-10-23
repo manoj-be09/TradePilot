@@ -1534,3 +1534,22 @@ Frontend TypeScript and diff checks passed. Exact published source and phone
 layout remain unverified. Even after policies are saved, the current Upstox
 chain is WARN and lacks exchange-origin per-leg book time, so this change
 does not make normal-session fills or after-cost ranking available.
+
+2026-10-23 — Added an explicit all-policy review flow for the shared NIFTY
+paper account. One click freezes the selected expiry/strike/lot quote preview
+and lists each existing saved policy, reviewable exploratory entry/exit draft,
+or missing/failed finite-loss reason. The table shows separate public Upstox
+round-trip charge scenarios. Only after the owner acknowledges the displayed
+drafts can a second action save reviewable, immutable strategy versions; it
+never arms entries or opens positions. Saving is sequential, account-authenticated,
+stops on an ambiguous failure, avoids identical retries, and aborts on sign-out
+or changed snapshot. The API now rejects a version save if its expected
+template version changed between review and save. The original Apply all
+action remains a separate deliberate step and still honors quote/risk gates.
+Frontend TypeScript and production build, seven strategy-version and 15
+option-deployment integration tests passed; Ruff/mypy and diff checks passed.
+The running web still returned HTTP 200 after the isolated host build. One stale test expectation for
+the already-raised 26-waiting cap was corrected after the first run failed.
+Signed-in Edge had expired, so no populated owner-account review, save or arm
+was performed. This source is local pending push/API and web rebuild; quote
+book timing, final settlement, after-cost ranking and POP remain open.

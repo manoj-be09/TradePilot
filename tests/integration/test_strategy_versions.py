@@ -36,6 +36,20 @@ def test_explicit_nifty_retains_legacy_definition_hash(client):
     assert explicit.json()["definition_hash"] == legacy["definition_hash"]
 
 
+def test_version_save_rejects_stale_template_identity(client):
+    headers = _headers(client, "template-version-guard@example.com")
+    stale = client.post("/strategies/versions", headers=headers, json=_definition(
+        expected_template_version="obsolete",
+    ))
+    assert stale.status_code == 409
+    assert client.get("/strategies/versions", headers=headers).json() == []
+    current = client.post("/strategies/versions", headers=headers, json=_definition(
+        expected_template_version="1.0.0",
+    ))
+    assert current.status_code == 201, current.text
+    assert current.json()["definition"]["template_version"] == "1.0.0"
+
+
 def test_index_identity_is_pinned_and_cannot_use_legacy_execution(client, monkeypatch):
     headers = _headers(client, "sensex-version@example.com")
     provider = FakeUpstoxProvider()

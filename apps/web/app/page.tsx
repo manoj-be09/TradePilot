@@ -807,6 +807,14 @@ export default function Home() {
   const [batchArmResults, setBatchArmResults] = useState<{ name: string; result: string }[]>([]);
   const [batchArmContext, setBatchArmContext] = useState("");
   const batchArmCommand = useRef<{ snapshot: string; key: string } | null>(null);
+  const [batchPolicyReview, setBatchPolicyReview] = useState<{
+    snapshot: string; asOf: string; expiry: string; strike: string; lots: number; quality: string;
+    rows: { key: string; name: string; version: string; policy: ReturnType<typeof paperTemplatePolicy>; status: string; maximumLoss: string | null; costScenario: string | null }[];
+  } | null>(null);
+  const [batchPolicyAcknowledged, setBatchPolicyAcknowledged] = useState(false);
+  const [batchPolicyBusy, setBatchPolicyBusy] = useState(false);
+  const [batchPolicyResults, setBatchPolicyResults] = useState<{ name: string; result: string }[]>([]);
+  const batchPolicySaveController = useRef<AbortController | null>(null);
   const [paperTicketMessage, setPaperTicketMessage] = useState("");
   const [showAllStrategies, setShowAllStrategies] = useState(false);
   const [strategyBiasFilter, setStrategyBiasFilter] = useState<StrategyMarketBias | "ALL">("ALL");
@@ -825,6 +833,14 @@ export default function Home() {
   const [trailingStopInput, setTrailingStopInput] = useState("");
   const [customLegDrafts, setCustomLegDrafts] = useState<CustomLegDraft[]>([]);
   const [entryConditions, setEntryConditions] = useState<EntryConditionDraft[]>([]);
+
+  useEffect(() => {
+    if (batchPolicyReview && (selectedOptionIndex !== "NIFTY" || selectedExpiry !== batchPolicyReview.expiry
+      || batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}`)) {
+      batchPolicySaveController.current?.abort();
+      setBatchPolicyAcknowledged(false);
+    }
+  }, [batchPolicyReview, chain?.as_of, chain?.expiry, selectedExpiry, selectedOptionIndex, selectedPaperStrike, paperLots]);
 
   useEffect(() => {
     const savedToken = window.sessionStorage.getItem("market-data-session");
@@ -1427,7 +1443,7 @@ export default function Home() {
   const savedBatchPolicyCount = paperStrategies.filter((strategy) => !!matchingBatchVersion(strategy)).length;
   const batchArmReady = savedBatchPolicyCount > 0 && !!token && selectedOptionIndex === "NIFTY" && paperEntry.ready
     && !paperEntry.pending && !!paperAccount && !paperAccount.kill_switch_enabled
-    && !paperBusy && !!chain && chain.quality?.status !== "FAIL"
+    && !paperBusy && !batchPolicyBusy && !!chain && chain.quality?.status !== "FAIL"
     && !!selectedExpiry && chain.expiry === selectedExpiry
     && selectedExpiry >= indiaCalendarDate() && !!selectedPaperStrike
     && strategyPayoffKey === `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`;
@@ -1440,7 +1456,9 @@ export default function Home() {
   }
 
   function reviewNextBatchPolicy() {
-    if (!chain || !selectedPaperStrike || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`) {
+    if (selectedOptionIndex !== "NIFTY" || !chain || !selectedPaperStrike
+      || selectedExpiry !== chain.expiry || selectedExpiry < indiaCalendarDate()
+      || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`) {
       setPaperError("Wait for the current option-chain payoff preview before reviewing batch policies.");
       return;
     }
@@ -1461,6 +1479,109 @@ export default function Home() {
     const versions = document.getElementById("strategy-version-panel") as HTMLDetailsElement | null;
     if (versions) versions.open = true;
     window.setTimeout(() => versions?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+  }
+
+  function reviewAllBatchPolicies() {
+    if (selectedOptionIndex !== "NIFTY" || !chain || !selectedPaperStrike
+      || selectedExpiry !== chain.expiry || selectedExpiry < indiaCalendarDate()
+      || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`) {
+      setPaperError("Wait for the current option-chain payoff preview before reviewing batch policies.");
+      return;
+    }
+    const quoted = new Set(strategyTilePreviews.map(({ strategy }) => strategy.key));
+    setBatchPolicyReview({
+      snapshot: strategyPayoffKey, asOf: chain.as_of, expiry: chain.expiry,
+      strike: selectedPaperStrike, lots: paperLots, quality: chain.quality?.status || "UNKNOWN",
+      rows: paperStrategies.map((strategy) => {
+        const payoff = strategyPayoffs[strategy.key];
+        const saved = matchingBatchVersion(strategy);
+        const policy = !saved && quoted.has(strategy.key) && chain.quality?.status !== "FAIL" && payoff
+          ? paperTemplatePolicy(strategy.key, payoff) : null;
+        return {
+          key: strategy.key, name: strategy.name, version: strategy.version, policy,
+          status: saved ? `Saved version ${saved.version_number} already matches`
+            : !quoted.has(strategy.key) ? "Required listed leg or quote unavailable"
+            : chain.quality?.status === "FAIL" ? "Failed quote quality; refresh before review"
+            : !payoff ? "Payoff unavailable"
+            : !policy ? "Finite maximum loss unavailable" : "Exploratory proposal; review before saving",
+          maximumLoss: payoff?.maximum_loss ?? null,
+          costScenario: payoff?.transaction_cost_scenario?.round_trip_scenario_charge ?? null,
+        };
+      }),
+    });
+    setBatchPolicyAcknowledged(false);
+    setBatchPolicyResults([]);
+    setPaperError("");
+  }
+
+  async function saveReviewedBatchPolicies() {
+    if (!token || !batchPolicyReview || !batchPolicyAcknowledged || batchPolicyBusy || paperBusy
+      || selectedOptionIndex !== "NIFTY" || selectedExpiry !== batchPolicyReview.expiry
+      || selectedExpiry < indiaCalendarDate()
+      || batchPolicyReview.snapshot !== strategyPayoffKey
+      || batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}`) return;
+    const proposals = batchPolicyReview.rows.filter((row) => row.policy);
+    if (!proposals.length) return;
+    const controller = new AbortController();
+    batchPolicySaveController.current = controller;
+    setBatchPolicyBusy(true);
+    setBatchPolicyResults([]);
+    const results: { name: string; result: string }[] = [];
+    try {
+      const existing = await readJson<StrategyVersion[]>(await fetch(`${API_URL}/strategies/versions?limit=100`, {
+        headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: controller.signal,
+      }));
+      for (const row of proposals) {
+        if (controller.signal.aborted) break;
+        const policy = row.policy!;
+        const name = `Batch study · ${row.name} · ${row.version} · ${batchPolicyReview.lots}L`;
+        const prior = existing.find((version) => version.name === name);
+        if (prior) {
+          const unchanged = prior.definition.template_key === row.key
+            && prior.definition.template_version === row.version
+            && prior.definition.lots === batchPolicyReview.lots
+            && JSON.stringify(prior.definition.entry_conditions) === JSON.stringify(policy.conditions)
+            && Number(prior.definition.stop_loss_amount) === policy.stopLoss
+            && Number(prior.definition.target_profit_amount) === policy.targetProfit
+            && Number(prior.definition.trailing_stop_amount) === policy.trailingStop;
+          results.push({ name: row.name, result: unchanged
+            ? "Identical version already saved; no duplicate created"
+            : "Stopped: a version with this name differs; review it individually before retrying" });
+          setBatchPolicyResults([...results]);
+          if (!unchanged) break;
+          continue;
+        }
+        try {
+          const version = await readJson<StrategyVersion>(await fetch(`${API_URL}/strategies/versions`, {
+            method: "POST", signal: controller.signal,
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name, strategy_key: row.key, expected_template_version: row.version,
+              lots: batchPolicyReview.lots,
+              entry_conditions: policy.conditions, stop_loss_amount: policy.stopLoss,
+              target_profit_amount: policy.targetProfit, trailing_stop_amount: policy.trailingStop,
+            }),
+          }));
+          if (controller.signal.aborted) break;
+          existing.unshift(version);
+          setStrategyVersions((current) => [version, ...current.filter((item) => item.id !== version.id)]);
+          results.push({ name: row.name, result: `Saved immutable version ${version.version_number}; not armed` });
+          setBatchPolicyResults([...results]);
+        } catch (error) {
+          if (!controller.signal.aborted) {
+            results.push({ name: row.name, result: `Stopped: save status may be uncertain. Refresh versions before retrying. ${userFacingError(error, "Policy save failed")}` });
+            setBatchPolicyResults([...results]);
+          }
+          break;
+        }
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) setPaperError(userFacingError(error, "Could not verify existing policy versions"));
+    } finally {
+      if (batchPolicySaveController.current === controller) batchPolicySaveController.current = null;
+      setBatchPolicyAcknowledged(false);
+      setBatchPolicyBusy(false);
+    }
   }
 
   function compareAllPaperTemplates() {
@@ -1714,6 +1835,11 @@ export default function Home() {
   }
 
   function signOut() {
+    batchPolicySaveController.current?.abort();
+    batchPolicySaveController.current = null;
+    setBatchPolicyReview(null);
+    setBatchPolicyResults([]);
+    setBatchPolicyAcknowledged(false);
     setAuthError("");
     setCurrentPassword("");
     setNewPassword("");
@@ -1802,7 +1928,9 @@ export default function Home() {
       const version = await readJson<StrategyVersion>(await fetch(`${API_URL}/strategies/versions`, {
         method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: strategyVersionName.trim(), strategy_key: selectedStrategy, lots: paperLots,
+          name: strategyVersionName.trim(), strategy_key: selectedStrategy,
+          expected_template_version: paperStrategies.find((strategy) => strategy.key === selectedStrategy)?.version,
+          lots: paperLots,
           ...(selectedOptionIndex !== "NIFTY" ? {underlying: selectedOptionIndex} : {}),
           entry_conditions: entryConditions, stop_loss_amount: stopLossInput || null,
           target_profit_amount: targetProfitInput || null, trailing_stop_amount: trailingStopInput || null,
@@ -2689,7 +2817,18 @@ export default function Home() {
               </div>
             </div>
             <p className="features-note" id="batch-paper-safety">One click checks the paper-supported NIFTY option templates for the selected expiry, strike and lot size. {savedBatchPolicyCount} matching saved {savedBatchPolicyCount === 1 ? "policy" : "policies"} for {paperLots} {paperLots === 1 ? "lot" : "lots"}. Up to 26 saved policies may wait in the shared paper account; the worker checks five per cycle. Actual entries remain subject to cash, daily-loss, per-trade, portfolio-risk and open-position limits. Futures strategies are not yet paper-enabled. Arming opens no position immediately; live orders remain disabled.</p>
-            {savedBatchPolicyCount < paperStrategies.length && <p className="features-note">The batch cannot arm templates without saved entry and exit policies. Review and save each exploratory policy first; no policy is generated or armed automatically. <button className="inline-button" onClick={reviewNextBatchPolicy} type="button">Review next missing policy</button></p>}
+            {savedBatchPolicyCount < paperStrategies.length && <p className="features-note">The batch cannot arm templates without saved entry and exit policies. Proposed rules are exploratory and need your review; saving does not arm a strategy. <button className="inline-button" onClick={reviewNextBatchPolicy} type="button">Review next missing policy</button> <button className="inline-button" disabled={selectedOptionIndex !== "NIFTY" || !chain || !selectedPaperStrike || selectedExpiry !== chain.expiry || selectedExpiry < indiaCalendarDate() || batchPolicyBusy || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={reviewAllBatchPolicies} type="button">Review all missing policies</button></p>}
+            {batchPolicyReview && <details className="workspace-disclosure" open><summary>Review batch policy proposals · {batchPolicyReview.rows.filter((row) => row.policy).length} reviewable</summary>
+              <p>Snapshot {new Date(batchPolicyReview.asOf).toLocaleString("en-IN")} · expiry {batchPolicyReview.expiry} · strike {formatPrice(batchPolicyReview.strike)} · {batchPolicyReview.lots} lot(s) · quote quality {batchPolicyReview.quality}. The entry filters and exits below are hypotheses derived from an indicative gross payoff, not validated trading rules or profit predictions. <a href="https://upstox.com/brokerage-charges/" rel="noreferrer" target="_blank">Upstox public-plan charges</a> are a separate scenario, not deducted from these gross risk values.</p>
+              <div className="paper-table-scroll"><table className="paper-table"><thead><tr><th>Strategy</th><th>Review status</th><th>Entry and exit proposal</th><th>Gross max loss</th><th>Round-trip cost scenario</th></tr></thead><tbody>
+                {batchPolicyReview.rows.map((row) => <tr key={row.key}><td>{row.name} · {row.version}</td><td>{row.status}</td><td>{row.policy ? <>{row.policy.conditions.map((condition) => `${ENTRY_RULE_METRICS.find((metric) => metric.key === condition.metric)?.label || condition.metric} ${operatorLabel(condition.operator)} ${condition.threshold}`).join(" · ")}<br />Stop ₹{formatPrice(String(row.policy.stopLoss))} · target ₹{formatPrice(String(row.policy.targetProfit))} · trail ₹{formatPrice(String(row.policy.trailingStop))}</> : "—"}</td><td>{row.maximumLoss === null ? "Unavailable" : `₹${formatPrice(row.maximumLoss)}`}</td><td>{row.costScenario === null ? "Unavailable" : `₹${formatPrice(row.costScenario)}`}</td></tr>)}
+              </tbody></table></div>
+              <p>Existing saved policies are kept. Strategies without a finite quote-backed loss or with failed quote quality are excluded. Saving these proposals creates immutable, account-scoped versions only; it opens no positions, arms no waiting entries and changes no ranking. Inspect individual rules in the editor if adjustments are needed.</p>
+              <label><input checked={batchPolicyAcknowledged} disabled={batchPolicyBusy || !batchPolicyReview.rows.some((row) => row.policy)} onChange={(event) => setBatchPolicyAcknowledged(event.target.checked)} type="checkbox" /> I reviewed these exploratory entry and exit proposals and want to save the reviewable versions.</label>
+              <div><button className="refresh-button" disabled={!token || !batchPolicyAcknowledged || batchPolicyBusy || paperBusy || selectedOptionIndex !== "NIFTY" || selectedExpiry !== batchPolicyReview.expiry || selectedExpiry < indiaCalendarDate() || !batchPolicyReview.rows.some((row) => row.policy) || batchPolicyReview.snapshot !== strategyPayoffKey || batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={() => void saveReviewedBatchPolicies()} type="button">{batchPolicyBusy ? "Saving reviewed versions…" : `Save ${batchPolicyReview.rows.filter((row) => row.policy).length} reviewed versions`}</button></div>
+              {batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}` && <p role="status">The selected snapshot changed. Review the policies again before saving.</p>}
+              {batchPolicyResults.length > 0 && <ul role="status">{batchPolicyResults.map((item) => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul>}
+            </details>}
             {batchArmResults.length > 0 && <details className="workspace-disclosure" open><summary>Batch paper application · {batchArmResults.filter(item => item.result.startsWith("Armed")).length} armed, {batchArmResults.length} checked</summary><p>{batchArmContext}</p><ul>{batchArmResults.map(item => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul></details>}
 
             <section className="paper-readiness" aria-label="Paper trading readiness">

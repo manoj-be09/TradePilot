@@ -766,7 +766,7 @@ def test_batch_sized_arming_respects_slots_retries_and_cancellation(client, monk
     accepted = client.post("/paper/deployments", headers=sixth_headers, json=sixth_request)
     assert accepted.status_code == 201 and accepted.json()["status"] == "WAITING_FOR_ENTRY"
     assert len([item for item in client.get("/paper/deployments", headers=headers).json()
-                if item["status"] == "WAITING_FOR_ENTRY"]) == 5
+                if item["status"] == "WAITING_FOR_ENTRY"]) == 26
     assert client.get("/paper/trades", headers=headers).json()["trades"] == []
 
 

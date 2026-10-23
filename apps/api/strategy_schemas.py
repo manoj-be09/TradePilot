@@ -14,6 +14,7 @@ class StrategyVersionCreateRequest(BaseModel):
 
     name: str = Field(min_length=1, max_length=64)
     strategy_key: str = Field(min_length=1, max_length=64)
+    expected_template_version: str | None = Field(default=None, min_length=1, max_length=32)
     lots: int = Field(ge=1, le=10)
     entry_conditions: list[PaperEntryConditionRequest] = Field(default_factory=list, max_length=5)
     stop_loss_amount: Decimal | None = Field(default=None, gt=0)

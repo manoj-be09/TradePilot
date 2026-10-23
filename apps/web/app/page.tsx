@@ -1415,6 +1415,22 @@ export default function Home() {
     && !!selectedExpiry && chain.expiry === selectedExpiry
     && selectedExpiry >= indiaCalendarDate() && !!selectedPaperStrike
     && strategyPayoffKey === `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`;
+  const savedBatchPolicyCount = paperStrategies.filter((strategy) => strategyVersions.some((version) =>
+    version.definition.template_key === strategy.key
+    && version.definition.template_version === strategy.version
+    && version.definition.lots === paperLots
+    && (!version.definition.option_index || version.definition.option_index.symbol === "NIFTY")
+    && version.definition.entry_conditions.length > 0
+    && !!version.definition.stop_loss_amount
+    && !!version.definition.trailing_stop_amount,
+  )).length;
+
+  function showPaperPolicyEditor() {
+    const editor = document.getElementById("paper-strategy-builder") as HTMLDetailsElement | null;
+    if (!editor) return;
+    editor.open = true;
+    editor.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   function compareAllPaperTemplates() {
     if (!chain || !selectedPaperStrike || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`) return;
@@ -2640,7 +2656,8 @@ export default function Home() {
                 </button>
               </div>
             </div>
-            <p className="features-note" id="batch-paper-safety">One click checks the paper-supported NIFTY option templates for the selected expiry, strike and lot size. Only matching saved entry and exit policies can be armed, with at most five waiting across your account. Change the selection under “Add a paper strategy.” Futures strategies are not yet paper-enabled. Arming opens no position immediately; live orders remain disabled.</p>
+            <p className="features-note" id="batch-paper-safety">One click checks the paper-supported NIFTY option templates for the selected expiry, strike and lot size. {savedBatchPolicyCount} matching saved {savedBatchPolicyCount === 1 ? "policy" : "policies"} for {paperLots} {paperLots === 1 ? "lot" : "lots"}. Only saved entry and exit policies can be armed, with at most five waiting across your account. Futures strategies are not yet paper-enabled. Arming opens no position immediately; live orders remain disabled.</p>
+            {savedBatchPolicyCount === 0 && <p className="features-note">To make a strategy eligible, select its template, add an entry condition, set stop loss and trailing stop, then save an immutable version. <button className="inline-button" onClick={showPaperPolicyEditor} type="button">Open policy editor</button></p>}
             {batchArmResults.length > 0 && <details className="workspace-disclosure" open><summary>Batch paper application · {batchArmResults.filter(item => item.result.startsWith("Armed")).length} armed, {batchArmResults.length} checked</summary><p>{batchArmContext}</p><ul>{batchArmResults.map(item => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul></details>}
 
             <section className="paper-readiness" aria-label="Paper trading readiness">
@@ -2683,7 +2700,7 @@ export default function Home() {
               </div> : null}
             </details>
 
-            <details className="strategy-builder strategy-composer"><summary>Add a paper strategy</summary>
+            <details className="strategy-builder strategy-composer" id="paper-strategy-builder"><summary>Add a paper strategy</summary>
               <div className={`strategy-controls ${isCustomStrategy ? "custom-strategy-controls" : ""}`}>
                 <label>
                   Strategy

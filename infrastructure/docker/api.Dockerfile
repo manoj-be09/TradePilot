@@ -1,4 +1,6 @@
 FROM python:3.12.14-slim
+ARG SOURCE_REVISION=unknown
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
 WORKDIR /app
 COPY pyproject.toml requirements.lock README.md ./
 COPY alembic.ini ./

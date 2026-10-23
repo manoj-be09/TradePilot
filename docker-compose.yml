@@ -25,6 +25,8 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/api.Dockerfile
+      args:
+        SOURCE_REVISION: ${TRADEPILOT_SOURCE_REVISION:-unknown}
     env_file: .env
     command: sh -c "alembic upgrade head && uvicorn apps.api.main:app --host 0.0.0.0 --port 8000"
     ports: ["8000:8000"]
@@ -67,6 +69,8 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/api.Dockerfile
+      args:
+        SOURCE_REVISION: ${TRADEPILOT_SOURCE_REVISION:-unknown}
     env_file: .env
     command: python -m apps.paper_worker.main
     restart: unless-stopped

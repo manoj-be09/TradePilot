@@ -1,5 +1,10 @@
 # Build progress — updated 2026-10-23
 
+## 2026-10-23 — Day 1 running-image revision check prepared
+
+- The API and paper-worker Docker image now accept an explicit Git source revision as a build argument and expose it in the standard `org.opencontainers.image.revision` label. Without that argument the label is `unknown`, so an ordinary rebuild cannot be mistaken for verified source provenance. Compose configuration resolves both build arguments; `git diff --check` passed. The label identifies the declared checkout revision only when the host builds from that clean tracked checkout; it is not proof of provider data or trading behavior.
+- Host Git push, Docker rebuild, running-image label inspection, and signed-in phone acceptance are still pending. This agent's Docker named-pipe access remains denied. No container, paper record, position, volume or account configuration was changed by this source update.
+
 ## 2026-10-23 — Read-only NIFTY option feed probe
 
 - Extended the existing Upstox feed probe with `--nifty-atm-call`. It selects an earliest non-expired call only when the contract master and live chain agree on token, expiry, strike and option type, and displayed bid/ask quantities are positive. The option mode records no quotes and refuses `--journal` while retention rights are unreviewed. A separate process watchdog bounds a stalled Windows event loop. It cannot place an order or change a paper position.

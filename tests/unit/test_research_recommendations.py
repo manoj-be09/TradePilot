@@ -506,6 +506,23 @@ def test_market_fit_opportunity_route_is_owned_current_and_idempotent(monkeypatc
             "snapshot"]["rejected_reasons"]
         assert later["decision"] == "ABSTAIN"
         assert len(list(session.scalars(select(ResearchRecommendation)))) == 2
+        with monkeypatch.context() as delayed:
+            class DelayedDateTime(datetime):
+                calls = 0
+
+                @classmethod
+                def now(cls, tz=None):
+                    cls.calls += 1
+                    return now if cls.calls == 1 else now + timedelta(minutes=6)
+
+            delayed.setattr(main, "datetime", DelayedDateTime)
+            delayed.setattr(main, "analytics_options_market_fit", assess)
+            with pytest.raises(HTTPException) as elapsed:
+                asyncio.run(main.record_nifty_market_fit_opportunity(
+                    study_id, body, SimpleNamespace(id=owner), session))
+            assert elapsed.value.status_code == 409
+            assert "expired" in elapsed.value.detail
+        assert len(list(session.scalars(select(ResearchRecommendation)))) == 2
         stale = MarketFitRequest(
             chain=chain.model_copy(update={"as_of": now - timedelta(minutes=6)}),
             reference_strike=100,

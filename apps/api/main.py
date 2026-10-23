@@ -1339,6 +1339,8 @@ async def _record_nifty_market_fit_opportunity(
                 "chain_provider_id": chain_provider_id,
                 "chain_received_at": chain_received_at,
             })
+        if datetime.now(timezone.utc) >= body.chain.as_of + timedelta(minutes=5):
+            raise HTTPException(409, "Opportunity expired before it could be recorded")
         snapshot = build_market_fit_opportunity(
             frozen, body.chain, assessment,
             policy_set_digest=policy_set.manifest_digest,

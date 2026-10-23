@@ -1,4 +1,12 @@
-# Build progress — updated 2026-10-21
+# Build progress — updated 2026-10-23
+
+## 2026-10-23 — Day 1/2 delivery checkpoint
+
+- **PASS — source publication:** local `main`, `origin/main`, and the remote GitHub `main` ref all identify `7c87a03`. The signed-in Edge desktop F&O Strategies view shows the header batch button and its NIFTY option, saved-policy and five-waiting-slot limits. The button was not pressed; populated owner-account batch and phone layout remain unaccepted. The dev-server page and API `/health`, `/ready`, and `/ready/paper-worker` returned HTTP 200. Those responses do not identify the exact API image revision; agent Docker named-pipe access is denied, so exact deployed-revision acceptance remains **PARTIAL**.
+- **PASS — bounded worker diagnosis for the observed cycle:** read-only PostgreSQL lease inspection on 23 October found a recent `DEGRADED` heartbeat with counters `evaluated=0`, `opened=0`, `closed=0`, `warnings=1`. The sole stored warning category was the unresolved expired open option position. The signed-in monitoring panel independently showed the owner's one expired open position. This explains that cycle's degraded state without implying a worker failure or silently settling the trade. Other cycles could have different warnings; no raw cross-account lease reason was exposed to the UI.
+- **PASS — internal paper cash reconciliation:** the signed-in F&O ledger check reported recorded and expected cash of ₹10,14,686.75, difference ₹0, across 27 orders, one open and 13 closed trades. It checks saved accounting only, not quote quality or final expiry settlement.
+- **PASS — isolated software regression:** `pytest tests/unit tests/integration -q` completed with 580 passed, 12 skipped and two existing deprecation warnings after `8288c25` and `7c87a03`. Frontend TypeScript and production build for the header action passed before publication. Actual work time was not measured.
+- **BLOCKED — operational acceptance:** the actual TEST ONLY NIFTY 22,950 CE expiring 19 October remains `EXPIRED SETTLEMENT PENDING`, untouched pending independent final clearing value and costs. NIFTY option executable-book update timing, a natural normal-session paper round trip, reviewed source/data/cost rights, populated policy-matched after-cost outcomes and calibrated POP remain unproven. Continue independent source and policy evidence work without inventing missing factors.
 
 ## 2026-10-21 — Separate declared review time from server receipt
 

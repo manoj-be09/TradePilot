@@ -233,6 +233,7 @@ async def security_headers(
 
 AdminUser = Annotated[User, Depends(require_roles(Role.ADMIN))]
 _CENT = Decimal("0.01")
+MAX_WAITING_PAPER_STRATEGIES = 26  # The reviewed first-release NIFTY template set.
 
 
 def _new_auth_session(
@@ -2136,8 +2137,8 @@ async def arm_paper_deployment(
         PaperDeployment.user_id == user.id,
         PaperDeployment.status == "WAITING_FOR_ENTRY",
     )).all()
-    if len(waiting) >= 5:
-        raise HTTPException(409, "At most five paper strategies can wait for entry")
+    if len(waiting) >= MAX_WAITING_PAPER_STRATEGIES:
+        raise HTTPException(409, "At most 26 paper strategies can wait for entry")
     if any(
         existing.request_data.get("strategy_key") == body.strategy_key
         and existing.request_data.get("underlying", "NIFTY") == index.symbol

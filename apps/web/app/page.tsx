@@ -17,6 +17,7 @@ import { usePaperEntry } from "./usePaperEntry";
 import { STRATEGY_CATALOG, STRATEGY_CATALOG_META, StrategyCatalogStatus, StrategyMarketBias } from "./strategyCatalog";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+const MAX_WAITING_PAPER_STRATEGIES = 26;
 
 type TokenResponse = {
   access_token: string;
@@ -1468,7 +1469,7 @@ export default function Home() {
     const results: { name: string; result: string }[] = [];
     const quoted = new Set(strategyTilePreviews.map(({ strategy }) => strategy.key));
     const waiting = new Set(paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY" && item.expiry === selectedExpiry && item.reference_strike === selectedPaperStrike).map(item => item.strategy_key));
-    let slots = Math.max(0, 5 - paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").length);
+    let slots = Math.max(0, MAX_WAITING_PAPER_STRATEGIES - paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").length);
     try {
       for (const strategy of paperStrategies) {
         const payoff = strategyPayoffs[strategy.key];
@@ -1479,7 +1480,7 @@ export default function Home() {
         else if (!quoted.has(strategy.key)) result = "Skipped: required listed leg or quote unavailable";
         else if (!hasFiniteLoss) result = "Skipped: finite maximum loss unavailable";
         else if (!saved) result = "Skipped: save a reviewed matching entry and exit policy first";
-        else if (!slots) result = "Skipped: five waiting-strategy safety limit reached";
+        else if (!slots) result = "Skipped: 26 waiting-strategy limit reached";
         else {
           try {
             const armed = await readJson<PaperDeployment>(await fetch(`${API_URL}/paper/deployments`, {
@@ -2656,7 +2657,7 @@ export default function Home() {
                 </button>
               </div>
             </div>
-            <p className="features-note" id="batch-paper-safety">One click checks the paper-supported NIFTY option templates for the selected expiry, strike and lot size. {savedBatchPolicyCount} matching saved {savedBatchPolicyCount === 1 ? "policy" : "policies"} for {paperLots} {paperLots === 1 ? "lot" : "lots"}. Only saved entry and exit policies can be armed, with at most five waiting across your account. Futures strategies are not yet paper-enabled. Arming opens no position immediately; live orders remain disabled.</p>
+            <p className="features-note" id="batch-paper-safety">One click checks the paper-supported NIFTY option templates for the selected expiry, strike and lot size. {savedBatchPolicyCount} matching saved {savedBatchPolicyCount === 1 ? "policy" : "policies"} for {paperLots} {paperLots === 1 ? "lot" : "lots"}. Up to 26 saved policies may wait in the shared paper account; the worker checks five per cycle. Actual entries remain subject to cash, daily-loss, per-trade, portfolio-risk and open-position limits. Futures strategies are not yet paper-enabled. Arming opens no position immediately; live orders remain disabled.</p>
             {savedBatchPolicyCount === 0 && <p className="features-note">To make a strategy eligible, select its template, add an entry condition, set stop loss and trailing stop, then save an immutable version. <button className="inline-button" onClick={showPaperPolicyEditor} type="button">Open policy editor</button></p>}
             {batchArmResults.length > 0 && <details className="workspace-disclosure" open><summary>Batch paper application · {batchArmResults.filter(item => item.result.startsWith("Armed")).length} armed, {batchArmResults.length} checked</summary><p>{batchArmContext}</p><ul>{batchArmResults.map(item => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul></details>}
 

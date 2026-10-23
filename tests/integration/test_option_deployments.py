@@ -531,7 +531,7 @@ def test_failed_chain_quality_keeps_leg_quote_observations_without_fill(client, 
         assert list(session.scalars(select(PaperTrade))) == []
 
 
-def test_worker_rotates_past_five_waiting_option_strategies(client, monkeypatch):
+def test_worker_rotates_across_full_waiting_option_batch(client, monkeypatch):
     provider, headers, payload, factory = armed_setup(client, monkeypatch)
     payload["entry_conditions"][0]["threshold"] = "99999"
     armed = client.post("/paper/deployments", headers=headers, json=payload)
@@ -542,7 +542,7 @@ def test_worker_rotates_past_five_waiting_option_strategies(client, monkeypatch)
         baseline = datetime.now(timezone.utc) - timedelta(minutes=1)
         original.created_at = baseline
         original.updated_at = baseline
-        for index in range(1, 6):
+        for index in range(1, 26):
             extra_id = uuid4()
             ids.append(str(extra_id))
             session.add(PaperDeployment(
@@ -565,7 +565,8 @@ def test_worker_rotates_past_five_waiting_option_strategies(client, monkeypatch)
             AuditEvent.event_type == "paper.deployment.entry_checked"
         ))}
         assert checked == set(ids[:5])
-    assert asyncio.run(run_cycle(factory, provider, get_settings())) == "HEALTHY"
+    for _ in range(5):
+        assert asyncio.run(run_cycle(factory, provider, get_settings())) == "HEALTHY"
     with factory() as session:
         checked = {row.correlation_id for row in session.scalars(select(AuditEvent).where(
             AuditEvent.event_type == "paper.deployment.entry_checked"
@@ -710,7 +711,7 @@ def test_expiry_day_session_outage_preserves_waiting_deployment(client, monkeypa
 
 
 def test_batch_sized_arming_respects_slots_retries_and_cancellation(client, monkeypatch):
-    _, headers, payload, _ = armed_setup(client, monkeypatch)
+    _, headers, payload, factory = armed_setup(client, monkeypatch)
     keys = [
         "bull_call_spread", "bear_put_spread", "bull_put_spread",
         "bear_call_spread", "iron_condor", "long_call",
@@ -727,6 +728,22 @@ def test_batch_sized_arming_respects_slots_retries_and_cancellation(client, monk
         armed.append((command, request, response.json()))
     assert len(client.get("/paper/deployments", headers=headers).json()) == 5
 
+    with factory() as session:
+        first = session.get(PaperDeployment, UUID(armed[0][2]["id"]))
+        assert first is not None
+        for index in range(21):
+            session.add(PaperDeployment(
+                user_id=first.user_id,
+                command_key=f"batch_extra_{index}_{uuid4().hex}",
+                request_hash=first.request_hash,
+                request_data=dict(first.request_data),
+                status="WAITING_FOR_ENTRY", detail="Waiting for entry signal",
+                trade_id=None, created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            ))
+        session.commit()
+    assert len(client.get("/paper/deployments", headers=headers).json()) == 26
+
     sixth = get_strategy(keys[5])
     assert sixth is not None
     sixth_request = {**payload, "strategy_key": keys[5],
@@ -734,7 +751,7 @@ def test_batch_sized_arming_respects_slots_retries_and_cancellation(client, monk
     sixth_headers = {**headers, "Idempotency-Key": f"batch_{keys[5]}_{uuid4().hex}"}
     refused = client.post("/paper/deployments", headers=sixth_headers, json=sixth_request)
     assert refused.status_code == 409
-    assert "five paper strategies" in refused.json()["detail"]
+    assert "26 paper strategies" in refused.json()["detail"]
 
     first_headers, first_request, first_response = armed[0]
     replay = client.post("/paper/deployments", headers=first_headers, json=first_request)

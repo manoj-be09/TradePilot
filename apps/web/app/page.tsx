@@ -1415,7 +1415,7 @@ export default function Home() {
     return counts;
   }, [strategyBiasFilter]);
 
-  const savedBatchPolicyCount = paperStrategies.filter((strategy) => strategyVersions.some((version) =>
+  const matchingBatchVersion = (strategy: PaperStrategy) => strategyVersions.filter((version) =>
     version.definition.template_key === strategy.key
     && version.definition.template_version === strategy.version
     && version.definition.lots === paperLots
@@ -1423,7 +1423,8 @@ export default function Home() {
     && version.definition.entry_conditions.length > 0
     && !!version.definition.stop_loss_amount
     && !!version.definition.trailing_stop_amount,
-  )).length;
+  ).sort((left, right) => right.created_at.localeCompare(left.created_at))[0];
+  const savedBatchPolicyCount = paperStrategies.filter((strategy) => !!matchingBatchVersion(strategy)).length;
   const batchArmReady = savedBatchPolicyCount > 0 && !!token && selectedOptionIndex === "NIFTY" && paperEntry.ready
     && !paperEntry.pending && !!paperAccount && !paperAccount.kill_switch_enabled
     && !paperBusy && !!chain && chain.quality?.status !== "FAIL"
@@ -1436,6 +1437,30 @@ export default function Home() {
     if (!editor) return;
     editor.open = true;
     editor.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function reviewNextBatchPolicy() {
+    if (!chain || !selectedPaperStrike || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`) {
+      setPaperError("Wait for the current option-chain payoff preview before reviewing batch policies.");
+      return;
+    }
+    const next = paperStrategies.find((strategy) => {
+      const payoff = strategyPayoffs[strategy.key];
+      return !matchingBatchVersion(strategy) && !!payoff && !!paperTemplatePolicy(strategy.key, payoff);
+    });
+    const payoff = next && strategyPayoffs[next.key];
+    if (!next || !payoff) {
+      setPaperError("No additional template has a finite quote-backed loss to prepare. Refresh the chain and review unavailable templates.");
+      return;
+    }
+    showPaperPolicyEditor();
+    applyStrategyToPaperTicket(next, payoff);
+    setDeploymentPreparedKey("");
+    setStrategyVersionName(`Paper batch study · ${next.name}`);
+    setPaperTicketMessage(`Review the proposed ${next.name} entry filter, stop, target and trailing exit below, then save its immutable version. These are exploratory rules, not validated market-fit or profit predictions. Saving does not arm a trade.`);
+    const versions = document.getElementById("strategy-version-panel") as HTMLDetailsElement | null;
+    if (versions) versions.open = true;
+    window.setTimeout(() => versions?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
   }
 
   function compareAllPaperTemplates() {
@@ -1480,7 +1505,7 @@ export default function Home() {
       for (const strategy of paperStrategies) {
         const payoff = strategyPayoffs[strategy.key];
         const hasFiniteLoss = payoff && Number(payoff.maximum_loss) > 0 && Number.isFinite(Number(payoff.maximum_loss)) && !payoff.maximum_loss_unbounded;
-        const saved = strategyVersions.filter(version => version.definition.template_key === strategy.key && version.definition.template_version === strategy.version && version.definition.lots === paperLots && (!version.definition.option_index || version.definition.option_index.symbol === "NIFTY") && version.definition.entry_conditions.length > 0 && version.definition.stop_loss_amount && version.definition.trailing_stop_amount).sort((left, right) => right.created_at.localeCompare(left.created_at))[0];
+        const saved = matchingBatchVersion(strategy);
         let result: string;
         if (waiting.has(strategy.key)) result = "Already waiting for entry";
         else if (!quoted.has(strategy.key)) result = "Skipped: required listed leg or quote unavailable";
@@ -2664,7 +2689,7 @@ export default function Home() {
               </div>
             </div>
             <p className="features-note" id="batch-paper-safety">One click checks the paper-supported NIFTY option templates for the selected expiry, strike and lot size. {savedBatchPolicyCount} matching saved {savedBatchPolicyCount === 1 ? "policy" : "policies"} for {paperLots} {paperLots === 1 ? "lot" : "lots"}. Up to 26 saved policies may wait in the shared paper account; the worker checks five per cycle. Actual entries remain subject to cash, daily-loss, per-trade, portfolio-risk and open-position limits. Futures strategies are not yet paper-enabled. Arming opens no position immediately; live orders remain disabled.</p>
-            {savedBatchPolicyCount === 0 && <p className="features-note">To make a strategy eligible, select its template, add an entry condition, set stop loss and trailing stop, then save an immutable version. <button className="inline-button" onClick={showPaperPolicyEditor} type="button">Open policy editor</button></p>}
+            {savedBatchPolicyCount < paperStrategies.length && <p className="features-note">The batch cannot arm templates without saved entry and exit policies. Review and save each exploratory policy first; no policy is generated or armed automatically. <button className="inline-button" onClick={reviewNextBatchPolicy} type="button">Review next missing policy</button></p>}
             {batchArmResults.length > 0 && <details className="workspace-disclosure" open><summary>Batch paper application · {batchArmResults.filter(item => item.result.startsWith("Armed")).length} armed, {batchArmResults.length} checked</summary><p>{batchArmContext}</p><ul>{batchArmResults.map(item => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul></details>}
 
             <section className="paper-readiness" aria-label="Paper trading readiness">
@@ -2934,7 +2959,7 @@ export default function Home() {
                   <input aria-label="Trailing stop amount in rupees" min="0.01" onChange={(event) => setTrailingStopInput(event.target.value)} placeholder="Off" step="0.01" type="number" value={trailingStopInput} />
                 </label>
               </div>
-              <details className="preset-panel" aria-label="Immutable strategy versions"><summary>Strategy versions & audit</summary>
+              <details className="preset-panel" id="strategy-version-panel" aria-label="Immutable strategy versions"><summary>Strategy versions & audit</summary>
                 <div className="preset-heading">
                   <strong>Strategy versions</strong>
                   <small>Save the template, size, entry conditions, and exits. Each revision remains available for audit.</small>

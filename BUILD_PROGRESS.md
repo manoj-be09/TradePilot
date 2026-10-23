@@ -1518,3 +1518,19 @@ and Python compilation passed. The HTTP/WebSocket test module stalled on this Wi
 sandbox despite an isolated pytest base directory, so its new assertions are
 not accepted as run. No API/worker rebuild or owner-account new-fill check is
 claimed for this source change. No saved position or historical record changed.
+
+2026-10-23 — Diagnosed the disabled shared-account batch button in the signed-in
+F&O screen: the owner has zero immutable strategy versions matching the current
+NIFTY template, lot size, nonempty entry filter, stop and trailing exit. The
+batch intentionally cannot invent those rules. Added a guided "Review next
+missing policy" action that opens the editor, proposes the existing
+exploratory template policy, names its version, and reveals the explicit Save
+version control. It does not save, arm or fill anything; the individual arm
+control stays disabled in this review flow. The header batch button remains disabled until at least one matching
+version exists and its other readiness checks pass. Signed-in Edge desktop
+showed the guided handoff, draft conditions, stop/target/trail and Save version;
+zero waiting strategies and the old expired test position were unchanged.
+Frontend TypeScript and diff checks passed. Exact published source and phone
+layout remain unverified. Even after policies are saved, the current Upstox
+chain is WARN and lacks exchange-origin per-leg book time, so this change
+does not make normal-session fills or after-cost ranking available.

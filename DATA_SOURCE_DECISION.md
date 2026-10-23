@@ -15,6 +15,26 @@ Before reconsidering a provider, obtain a written field definition and sample de
 
 This decision changes no provider configuration, account data, paper positions, fills or live-order setting.
 
+## Observation-time contract — 23 October 2026
+
+Treat these as distinct fields for every future quote review: `last_trade_time`
+is the reported transaction time; `timestamp` plus `timestamp_basis` is the
+provider response/tick time when supplied; `book_as_of` plus
+`book_timestamp_basis` is the bid/ask update time only when the provider proves
+that meaning; `received_at` is the TradePilot process time after receiving a
+packet or HTTP response; and the feed journal's `observed_at` is when that
+observation was written. Clock offset, reconnects and delayed delivery must be
+reported separately. The same numeric time in two fields does not make their
+provenance equivalent.
+
+The current Upstox adapter sets `book_as_of=None` and
+`book_timestamp_basis=unknown`; a fresh `received_at` or changing bid/ask
+cannot turn it into exchange-book evidence. Quote reception is now retained
+separately from the provider tick/response timestamp in future Upstox quotes
+and bounded feed-journal rows. Existing saved positions are untouched. This is
+an observation contract and software check, not approval for strict F&O fills
+or retention rights beyond the existing bounded diagnostics.
+
 ## Kite Connect review — 21 October 2026
 
 Kite's [full-mode WebSocket packet](https://kite.trade/docs/connect/v3/websocket/) carries five bid and five ask levels, per-level quantity and order count, daily volume, total pending buy/sell quantities, open interest, last-trade time and an **exchange timestamp** in the same instrument packet. Zerodha [explains](https://kite.trade/forum/discussion/3158/difference-between-last-traded-timestamp-and-exchange-timestamp) that the exchange timestamp is the tick time and advances on depth changes without a trade. The [instrument master](https://kite.trade/docs/connect/v3/market-data-and-instruments/) includes NFO option expiry, strike, type, lot size and tick size. This makes a full-mode NIFTY option stream worth testing as a **packet-level book-time candidate**. It is not tick-by-tick exchange coverage; Zerodha says streamed ticks can be coalesced. Second-resolution timestamps also do not establish order within one second. Counts of orders or total pending quantities are not unique buyers and sellers.

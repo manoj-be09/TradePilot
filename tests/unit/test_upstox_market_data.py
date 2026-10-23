@@ -7,7 +7,7 @@ import pytest
 
 from packages.market_data import upstox_v3_pb2 as feed_proto
 from packages.market_data.contracts import MarketDataPlanRequired, MarketDataProviderError
-from packages.market_data.upstox import UpstoxMarketDataProvider
+from packages.market_data.upstox import UpstoxMarketDataProvider, _stream_quote
 from packages.paper_trading.equity import quote_problem
 
 
@@ -107,6 +107,9 @@ def test_full_quote_distinguishes_response_time_from_last_trade_time():
 
     assert quote.timestamp_basis == "provider_response"
     assert quote.timestamp.isoformat() == "2026-09-28T15:31:00+05:30"
+    assert quote.received_at is not None
+    assert quote.received_at.tzinfo is not None
+    assert quote.received_at != quote.timestamp
     assert quote.last_trade_time is not None
     assert int(quote.last_trade_time.timestamp() * 1000) == 1790585400000
     assert quote.last_trade_time != quote.timestamp
@@ -125,7 +128,24 @@ def test_full_quote_labels_api_receipt_fallback_and_unknown_last_trade():
     quote = asyncio.run(provider.get_quote("NSE_EQ|RELIANCE"))
 
     assert quote.timestamp_basis == "api_response_received"
+    assert quote.received_at == quote.timestamp
     assert quote.last_trade_time is None
+
+
+def test_stream_quote_retains_receipt_separately_from_provider_tick():
+    received_at = datetime(2026, 10, 23, 10, 0, 1, tzinfo=timezone.utc)
+    tick_at = received_at - timedelta(seconds=1)
+    frame = feed_proto.FeedResponse()
+    market = frame.feeds["NSE_EQ|TEST"].fullFeed.marketFF
+    market.ltpc.ltp = 100
+    market.ltpc.ltt = int((tick_at - timedelta(seconds=1)).timestamp() * 1000)
+    quote = _stream_quote("NSE_EQ|TEST", frame.feeds["NSE_EQ|TEST"], tick_at, received_at)
+    assert quote is not None
+    assert quote.timestamp == tick_at
+    assert quote.timestamp_basis == "provider_tick"
+    assert quote.received_at == received_at
+    assert quote.book_as_of is None
+    assert quote.book_timestamp_basis == "unknown"
 
 
 def test_v3_full_feed_decodes_initial_and_live_quotes_without_exchange_book_claim(monkeypatch):
@@ -177,6 +197,8 @@ def test_v3_full_feed_decodes_initial_and_live_quotes_without_exchange_book_clai
     assert quotes[0].bid_quantity == 20
     assert quotes[0].ask_quantity == 25
     assert quotes[0].timestamp_basis == "provider_tick"
+    assert quotes[0].received_at is not None
+    assert quotes[0].received_at.tzinfo is not None
     assert quotes[0].book_as_of is None
     assert quotes[0].book_timestamp_basis == "unknown"
     assert quote_problem(quotes[0], key, quotes[0].timestamp) == (
@@ -314,6 +336,7 @@ def test_option_chain_maps_read_only_upstox_response_and_authenticates_request()
     call = result.contracts[0]
     assert call.instrument_token == "NSE_FO|call-key"
     assert call.quote.timestamp_basis == "api_response_received"
+    assert call.quote.received_at == result.as_of
     assert call.option_type == "CE"
     assert str(call.quote.last_price) == "150.25"
     assert call.open_interest == 12345

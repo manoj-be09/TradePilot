@@ -353,6 +353,7 @@ class UpstoxMarketDataProvider:
                             quote=Quote(
                                 instrument_token=instrument_key,
                                 timestamp=received_at,
+                                received_at=received_at,
                                 timestamp_basis="api_response_received",
                                 last_price=ltp,
                                 bid=_decimal(market.get("bid_price")),
@@ -400,11 +401,13 @@ class UpstoxMarketDataProvider:
             buys = depth.get("buy") or []
             sells = depth.get("sell") or []
             provider_timestamp = _datetime(item.get("timestamp"))
-            timestamp = provider_timestamp or datetime.now(timezone.utc)
+            received_at = datetime.now(timezone.utc)
+            timestamp = provider_timestamp or received_at
             last_trade_time = _millisecond_datetime(item.get("last_trade_time"))
             return Quote(
                 instrument_token=instrument_token,
                 timestamp=timestamp,
+                received_at=received_at,
                 timestamp_basis=(
                     "provider_response" if provider_timestamp else "api_response_received"
                 ),
@@ -606,6 +609,7 @@ def _stream_quote(
     return Quote(
         instrument_token=instrument_key,
         timestamp=tick_at or received_at,
+        received_at=received_at,
         timestamp_basis="provider_tick" if tick_at else "api_response_received",
         book_as_of=None,
         book_timestamp_basis="unknown",

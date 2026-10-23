@@ -1499,3 +1499,22 @@ or position changed. The Docker Compose web service now defines a dedicated
 `web-next-cache` volume to isolate future host builds from the running dev
 server; `docker compose config -q` passed locally. This Compose change still
 needs publication and a web recreate before its isolation is accepted.
+
+2026-10-23 — The owner pushed `ce9cb5d` and recreated the web container;
+Docker created the separate `web-next-cache` volume. Local Git matched
+`origin/main`, the web root returned HTTP 200, paper-worker readiness returned
+`ready`, and the signed-in Edge F&O screen still showed the 26-template Upstox
+comparison, zero matching saved policies, and the unchanged expired
+settlement-pending TEST ONLY position. This accepts the web recovery and cache
+isolation deployment, not a populated batch, exchange-timed fill, final
+settlement, after-cost ranking or phone layout.
+
+2026-10-23 — Added a separate process `received_at` to future Upstox option
+chain, HTTP quote and V3 feed `Quote` observations, and to bounded feed-journal
+rows. Provider response/tick time, last-trade time, exchange-book time and
+journal write time remain separate; Upstox book-update provenance stays
+unknown. The feed-journal and pure V3 packet-decoding tests passed; Ruff, mypy
+and Python compilation passed. The HTTP/WebSocket test module stalled on this Windows
+sandbox despite an isolated pytest base directory, so its new assertions are
+not accepted as run. No API/worker rebuild or owner-account new-fill check is
+claimed for this source change. No saved position or historical record changed.

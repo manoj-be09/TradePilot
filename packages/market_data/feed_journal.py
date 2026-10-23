@@ -32,6 +32,7 @@ class FeedJournal:
             data.update(
                 instrument_digest=hashlib.sha256(quote.instrument_token.encode()).hexdigest(),
                 quote_at=quote.timestamp.isoformat(), timestamp_basis=quote.timestamp_basis,
+                received_at=quote.received_at.isoformat() if quote.received_at else None,
                 trade_at=quote.last_trade_time.isoformat() if quote.last_trade_time else None,
                 book_at=quote.book_as_of.isoformat() if quote.book_as_of else None,
                 book_basis=quote.book_timestamp_basis, last=str(quote.last_price),

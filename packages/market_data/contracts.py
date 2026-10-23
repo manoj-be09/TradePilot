@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class Quote(BaseModel):
     instrument_token: str
     timestamp: datetime
+    received_at: datetime | None = None
     timestamp_basis: Literal[
         "exchange", "provider_response", "provider_tick", "api_response_received", "unknown"
     ] = "unknown"

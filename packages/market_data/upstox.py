@@ -223,11 +223,15 @@ class UpstoxMarketDataProvider:
             if not isinstance(item, dict) or (
                 not isinstance(item.get("instrument_key"), str)
                 or not item["instrument_key"].startswith(index.exchange + "_FO|")
-                or ("underlying_key" in item and item["underlying_key"] != index.instrument_key)
+                or item.get("underlying_key") != index.instrument_key
+                or (expiry is not None and item.get("expiry") != expiry.isoformat())
             ):
                 raise MarketDataProviderError(
-                    "Option contract does not match the selected index or derivatives venue"
+                    "Option contract does not match the selected index, expiry or derivatives venue"
                 )
+        keys = [item["instrument_key"] for item in raw_contracts]
+        if len(keys) != len(set(keys)):
+            raise MarketDataProviderError("Upstox returned duplicate option contract keys")
         try:
             return [
                 UpstoxOptionContract(

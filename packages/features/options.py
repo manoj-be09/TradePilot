@@ -2,6 +2,7 @@ from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
 from statistics import median
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -55,6 +56,21 @@ def _side_total(contracts: list[OptionContractQuote], side: str, field: str) -> 
     if not matching or any(value is None for value in values):
         return None
     return _sum_optional(values)
+
+
+def complete_chain_quantity_total(
+    contracts: list[OptionContractQuote], field: Literal["bid_quantity", "ask_quantity"],
+) -> int | None:
+    """A returned-chain total exists only when every contract has the field."""
+    if not contracts:
+        return None
+    values = [
+        contract.bid_quantity if field == "bid_quantity" else contract.ask_quantity
+        for contract in contracts
+    ]
+    if any(value is None for value in values):
+        return None
+    return sum(value for value in values if value is not None)
 
 
 def _oi_concentration(

@@ -616,6 +616,10 @@ def test_no_code_entry_conditions_are_rechecked_and_persisted_from_server_snapsh
     assert context["put_open_interest"] is not None
     assert context["quality_status"] == "PASS"
     assert context["buyer_count"] is None
+    assert context["seller_count"] is None
+    assert context["bid_depth_order_count"] is None
+    assert context["ask_depth_order_count"] is None
+    assert context["depth_order_count_status"] == "UNAVAILABLE_FROM_OPTION_CHAIN"
     assert context["news"]["status"] == "EMPTY_UNVERIFIED_COVERAGE"
     assert context["news"]["instrument_key"] == "NSE_INDEX|Nifty 50"
     assert context["news"]["coverage_reviewed"] is False

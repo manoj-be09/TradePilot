@@ -114,7 +114,11 @@ from packages.database.models import (
     WatchlistItem,
     WorkerLease,
 )
-from packages.features.options import OptionChainFeatures, calculate_option_features
+from packages.features.options import (
+    OptionChainFeatures,
+    calculate_option_features,
+    complete_chain_quantity_total,
+)
 from packages.indicators.calculations import calculate_indicators
 from packages.indicators.contracts import IndicatorSnapshot
 from packages.instruments.service import (
@@ -2596,14 +2600,12 @@ async def _open_paper_trade_with_provider(
                 if features.call_volume is not None and features.put_volume is not None
                 else None
             ),
-            "returned_chain_bid_quantity": sum(
-                contract.bid_quantity for contract in chain.contracts
-                if contract.bid_quantity is not None
-            ) if any(contract.bid_quantity is not None for contract in chain.contracts) else None,
-            "returned_chain_ask_quantity": sum(
-                contract.ask_quantity for contract in chain.contracts
-                if contract.ask_quantity is not None
-            ) if any(contract.ask_quantity is not None for contract in chain.contracts) else None,
+            "returned_chain_bid_quantity": complete_chain_quantity_total(
+                chain.contracts, "bid_quantity"
+            ),
+            "returned_chain_ask_quantity": complete_chain_quantity_total(
+                chain.contracts, "ask_quantity"
+            ),
             "contracts_with_bid_quantity": sum(
                 contract.bid_quantity is not None for contract in chain.contracts
             ),
@@ -2649,6 +2651,9 @@ async def _open_paper_trade_with_provider(
             "selected_leg_books": leg_quotes,
             "buyer_count": None,
             "seller_count": None,
+            "bid_depth_order_count": None,
+            "ask_depth_order_count": None,
+            "depth_order_count_status": "UNAVAILABLE_FROM_OPTION_CHAIN",
             "news": news_observation,
             "validated_support": None,
             "validated_resistance": None,

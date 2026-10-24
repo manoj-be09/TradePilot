@@ -1,7 +1,10 @@
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
-from packages.features.options import calculate_option_features
+from packages.features.options import (
+    calculate_option_features,
+    complete_chain_quantity_total,
+)
 from packages.market_data.contracts import OptionChain, OptionContractQuote, Quote
 
 
@@ -61,3 +64,14 @@ def test_option_features_calculate_ratios_skew_concentration_and_spread():
     assert result.contracts_with_delta == 4
     assert result.iv_rank_pct is None
     assert result.term_structure is None
+
+
+def test_returned_chain_quantity_total_requires_complete_coverage():
+    call = _contract("CE", "100", "C100", 100, 10, "20")
+    put = _contract("PE", "100", "P100", 150, 15, "25")
+    call.bid_quantity = 0
+    put.bid_quantity = 25
+    call.ask_quantity = 10
+    assert complete_chain_quantity_total([call, put], "bid_quantity") == 25
+    assert complete_chain_quantity_total([call, put], "ask_quantity") is None
+    assert complete_chain_quantity_total([], "bid_quantity") is None

@@ -114,6 +114,12 @@ def test_quote_path_rejects_async_basket_and_wrong_quote_side() -> None:
     assert _evaluate(request, [
         entry[0], _contract("CE25100", 25100, T + timedelta(seconds=2), "80", "81"),
     ], exit_) is None
+    duplicate_entry = _contract("CE25000", 25100, T, "80", "81")
+    duplicate_exit = _contract(
+        "CE25000", 25100, T + timedelta(minutes=5), "70", "71",
+    )
+    assert _evaluate(request, [entry[0], duplicate_entry],
+                     [exit_[0], duplicate_exit]) is None
     wrong_entry_price = request.model_copy(update={
         "legs": [request.legs[0].model_copy(
             update={"entry_premium": Decimal(99)}), request.legs[1]],

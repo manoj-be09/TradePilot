@@ -74,6 +74,7 @@ def screen_offline_nifty_quote_path(
     entry_times: list[datetime] = []
     exit_times: list[datetime] = []
     exit_prices: list[Decimal] = []
+    seen_tokens: set[str] = set()
     size_short = False
     for leg, opening, closing in zip(request.legs, entry, exit_, strict=True):
         if (
@@ -85,8 +86,10 @@ def screen_offline_nifty_quote_path(
             or opening.instrument_token != closing.instrument_token
             or opening.quote.instrument_token != opening.instrument_token
             or closing.quote.instrument_token != closing.instrument_token
+            or opening.instrument_token in seen_tokens
         ):
             return QuotePathScreen("UNRESOLVED", "CONTRACT_IDENTITY_MISMATCH")
+        seen_tokens.add(opening.instrument_token)
         units = abs(leg.quantity) * int(request.multiplier)
         side = "BUY" if leg.quantity > 0 else "SELL"
         reverse = "SELL" if side == "BUY" else "BUY"

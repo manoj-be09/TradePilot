@@ -1571,3 +1571,5 @@ the already-raised 26-waiting cap was corrected after the first run failed.
 Signed-in Edge had expired, so no populated owner-account review, save or arm
 was performed. This source is local pending push/API and web rebuild; quote
 book timing, final settlement, after-cost ranking and POP remain open.
+
+2026-10-24 — The offline research budget reservation now revalidates a previously reserved trial's stored manifest digest and frozen experiment family, budget, scope and slot on idempotent lookup. Previously the legacy lookup returned the slot before checking any of these bindings; a post-write manifest change could appear reserved. No trial/evaluation/owner data were changed. Fifteen focused budget/NIFTY replay tests passed, including the tampered-manifest regression; Ruff, targeted mypy and diff checks passed. This closes only an idempotent-read integrity gap. Canonical accounting across copied datasets, independently protected holdout and qualified ranking remain open. Local source awaits publication/deployment.

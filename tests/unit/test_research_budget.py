@@ -12,6 +12,7 @@ from packages.regime.candidate_registry import (
     TrialResult,
     declare_trial,
     finalize_trial,
+    fingerprint,
     register_candidate,
 )
 from packages.regime.research_budget import reserve_trial_slot
@@ -46,6 +47,16 @@ def test_durable_slots_share_budget_across_candidates_and_keep_failed_attempts(t
         slot = reserve_trial_slot(session, owner, trial.id)
         family_id, trial_id = slot.experiment_id, trial.id
         assert reserve_trial_slot(session, owner, trial.id).slot == 1
+        frozen_manifest = trial.manifest
+        trial.manifest = frozen_manifest | {"trial_number": 2}
+        with pytest.raises(ValueError, match="manifest identity"):
+            reserve_trial_slot(session, owner, trial.id)
+        frozen_digest = trial.manifest_digest
+        trial.manifest_digest = fingerprint(trial.manifest)
+        with pytest.raises(ValueError, match="frozen budget"):
+            reserve_trial_slot(session, owner, trial.id)
+        trial.manifest = frozen_manifest
+        trial.manifest_digest = frozen_digest
         finalize_trial(session, owner, trial.id,
                        TrialResult(outcome="ERROR", reason_code="RUN_FAILED"))
         assert reserve_trial_slot(session, owner, trial.id).slot == 1

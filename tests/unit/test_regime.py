@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from packages.market_data.contracts import HistoricalBar
 from packages.regime.classifier import classify_market_regime
@@ -43,3 +44,19 @@ def test_short_history_is_marked_uncertain_without_probability_score():
     assert result.realized_volatility_percentile is None
     assert result.prior_20_bar_high is None
     assert result.prior_20_bar_low is None
+
+
+def test_intraday_realized_volatility_excludes_overnight_jump():
+    ist = ZoneInfo("Asia/Kolkata")
+    bars = []
+    for day, close, count in ((22, Decimal(100), 30), (23, Decimal(200), 21)):
+        start = datetime(2026, 10, day, 9, 15, tzinfo=ist)
+        bars.extend(HistoricalBar(
+            timestamp=start + timedelta(minutes=5 * index),
+            open=close, high=close + 1, low=close - 1,
+            close=close, volume=100,
+        ) for index in range(count))
+    early = classify_market_regime(bars[:40], "5m")
+    complete = classify_market_regime(bars, "5m")
+    assert early.realized_volatility_annualized_percent is None
+    assert complete.realized_volatility_annualized_percent == Decimal(0)

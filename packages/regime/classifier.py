@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from math import log, sqrt
 from statistics import stdev
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
@@ -41,11 +42,28 @@ def _rolling_volatility_percentiles(
     closes = [float(bar.close) for bar in bars]
     if any(close <= 0 for close in closes):
         return None, None
+    step_minutes = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60}.get(interval)
+    ist = ZoneInfo("Asia/Kolkata")
     rolling: list[float] = []
+    latest_valid = False
     for end in range(period + 1, len(closes) + 1):
+        window = bars[end - period - 1 : end]
+        valid = step_minutes is None or all(
+            left.timestamp.tzinfo is not None and right.timestamp.tzinfo is not None
+            and left.timestamp.astimezone(ist).date()
+            == right.timestamp.astimezone(ist).date()
+            and right.timestamp - left.timestamp == timedelta(minutes=step_minutes)
+            for left, right in zip(window, window[1:], strict=False)
+        )
+        if end == len(closes):
+            latest_valid = valid
+        if not valid:
+            continue
         sample = closes[end - period - 1 : end]
         returns = [log(sample[index] / sample[index - 1]) for index in range(1, len(sample))]
         rolling.append(stdev(returns) * annualization * 100)
+    if not latest_valid:
+        return None, None
     if len(rolling) < 2:
         return (Decimal(str(rolling[-1])) if rolling else None), None
     historical = sorted(rolling[:-1][-100:])
@@ -127,7 +145,8 @@ def classify_market_regime(
         reasons=reasons,
         method=[
             "Breakout/breakdown compares the latest close with preceding lookback highs and lows.",
-            "Volatility uses the latest 20-return value and up to 100 earlier rolling windows.",
+            "Volatility uses the latest 20-return value and up to 100 earlier rolling windows; "
+            "intraday windows require continuous bars in one IST session.",
             "Trend labels use ADX >= 25 and DI direction; RANGE_BOUND uses ADX < 20.",
             "Labels are heuristics, not calibrated probabilities or trading signals.",
         ],

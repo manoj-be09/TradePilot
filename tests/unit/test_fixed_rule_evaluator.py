@@ -35,6 +35,7 @@ def test_actual_fixed_engine_is_deterministic_and_never_claims_probability():
     assert first == evaluator.evaluate_fixed_equity(raw, manifest, spec, frozen_spec_digest=digest)
     assert first["reviewed_bars"] == 70
     assert first["holdout_evaluated"] is False
+    assert first["holdout_input_excluded"] is False
     assert first["promotion_eligible"] is False
     assert first["profit_probability"] is None
     assert first["evidence_origin"] == "OFFLINE_FIXED_RULE_REPLAY"
@@ -184,3 +185,22 @@ def test_registered_replay_retains_engine_evidence_separately_and_consumes_failu
         assert session.get(ResearchEvaluation, trial_id).result_digest == saved_digest
         assert session.get(ResearchTrial, trial_id).result is None
     engine.dispose()
+
+
+def test_fixed_engine_accepts_only_preholdout_input_when_separate_artifact_declared():
+    raw, manifest, spec, digest = inputs()
+    data = json.loads(raw)
+    data["bars"] = data["bars"][:70]
+    preholdout = json.dumps(data).encode()
+    separated = TrialManifest.model_validate(manifest.model_dump() | {
+        "dataset_digest": hashlib.sha256(preholdout).hexdigest(),
+        "holdout_artifact_digest": "f" * 64,
+    })
+    report = evaluator.evaluate_fixed_equity(
+        preholdout, separated, spec, frozen_spec_digest=digest,
+    )
+    assert report["holdout_input_excluded"] is True
+    assert report["holdout_evaluated"] is False
+    assert report["promotion_eligible"] is False
+    with pytest.raises(ValueError, match="Dataset bytes"):
+        evaluator.evaluate_fixed_equity(raw, separated, spec, frozen_spec_digest=digest)

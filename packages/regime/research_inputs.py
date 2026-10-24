@@ -26,6 +26,7 @@ class ResearchWindows:
     training_count: int
     validation_count: int
     reserved_count: int
+    holdout_input_excluded: bool
 
 
 def prepare_daily_windows(
@@ -56,10 +57,15 @@ def prepare_daily_windows(
         if (any(not price.is_finite() or price <= 0 for price in prices)
                 or not bar.low <= min(bar.open, bar.close) <= max(bar.open, bar.close) <= bar.high):
             raise ValueError("Daily bar prices are inconsistent")
-    if days[0] != manifest.train_start or days[-1] != manifest.holdout_end:
+    separated = manifest.holdout_artifact_digest is not None
+    if separated and manifest.holdout_artifact_digest == manifest.dataset_digest:
+        raise ValueError("Holdout artifact must differ from the evaluation dataset")
+    expected_end = manifest.validation_end if separated else manifest.holdout_end
+    if days[0] != manifest.train_start or days[-1] != expected_end:
         raise ValueError("Dataset coverage must exactly match the declared study")
-    endpoints = (manifest.train_end, manifest.validation_start, manifest.validation_end,
-                 manifest.holdout_start)
+    endpoints = [manifest.train_end, manifest.validation_start, manifest.validation_end]
+    if not separated:
+        endpoints.append(manifest.holdout_start)
     if not all(day in days for day in endpoints):
         raise ValueError("Every window endpoint must have an observed session")
     if any((b - a).days > 10 for a, b in zip(days, days[1:], strict=False)):
@@ -72,4 +78,5 @@ def prepare_daily_windows(
         validation_count=sum(manifest.validation_start <= day <= manifest.validation_end
                              for day in days),
         reserved_count=sum(manifest.holdout_start <= day <= manifest.holdout_end for day in days),
+        holdout_input_excluded=separated,
     )

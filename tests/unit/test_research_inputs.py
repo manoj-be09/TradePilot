@@ -73,3 +73,34 @@ def test_rejects_bad_input_even_when_hash_matches(problem):
     raw, manifest = encode(data)
     with pytest.raises(ValueError):
         prepare(raw, manifest)
+
+
+def test_separate_holdout_artifact_never_enters_evaluation_input():
+    data = dataset()
+    data["bars"] = data["bars"][:70]
+    raw, manifest = encode(data)
+    manifest = TrialManifest.model_validate(manifest.model_dump() | {
+        "holdout_artifact_digest": "f" * 64,
+    })
+    windows = prepare(raw, manifest)
+    assert windows.holdout_input_excluded is True
+    assert windows.reserved_count == 0
+    assert len(windows.reviewed) == 70
+    assert windows.reviewed[-1].timestamp.date() == manifest.validation_end
+
+    full_raw, _ = encode(dataset())
+    full_manifest = TrialManifest.model_validate(manifest.model_dump() | {
+        "dataset_digest": hashlib.sha256(full_raw).hexdigest(),
+    })
+    with pytest.raises(ValueError, match="coverage"):
+        prepare(full_raw, full_manifest)
+    same_digest = TrialManifest.model_validate(manifest.model_dump() | {
+        "holdout_artifact_digest": manifest.dataset_digest,
+    })
+    with pytest.raises(ValueError, match="must differ"):
+        prepare(raw, same_digest)
+    legacy = TrialManifest.model_validate(manifest.model_dump() | {
+        "holdout_artifact_digest": None,
+    })
+    with pytest.raises(ValueError, match="coverage"):
+        prepare(raw, legacy)

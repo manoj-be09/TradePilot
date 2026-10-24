@@ -1,5 +1,7 @@
 # TradePilot daily delivery plan — 21 October 2026
 
+The current day-by-day checklist is in [TASKS.md](TASKS.md).
+
 This is a **five-hour-per-day work plan**, not a promised completion date. Default block: **09:30–14:30 Asia/Kolkata daily**. On non-trading days, use the block for source review, isolated implementation and testing; never describe those checks as an open-market acceptance. If a quota or host-access gate stops work, record actual time and resume after reset. Do not spend money or weaken a safety gate to keep the schedule.
 
 ## Dated high-level roadmap and finish forecast

@@ -3,11 +3,11 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
-from threading import Barrier
+from threading import Barrier, Event, current_thread
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, func, select, text, update
+from sqlalchemy import create_engine, event, func, select, text, update
 from sqlalchemy.orm import sessionmaker
 
 from packages.database.base import Base
@@ -26,11 +26,13 @@ from packages.regime.candidate_registry import (
     finalize_trial,
     register_candidate,
 )
+from packages.regime.frozen_nifty_study import FrozenNiftyStudy
 from packages.regime.research_budget import reserve_trial_slot
 from packages.regime.research_scheduler_lease import (
     acquire_research_lease,
     assert_research_lease,
 )
+from packages.regime.research_studies import freeze_nifty_study
 
 
 @pytest.fixture
@@ -141,6 +143,52 @@ def test_renamed_nifty_studies_share_one_postgres_parent_slot(postgres_factory):
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(ResearchBudgetSlot)) == 1
         assert session.scalar(select(ResearchExperiment.family)) == f"nifty-dataset:{'a' * 64}"
+
+
+def test_concurrent_study_freeze_blocks_overlapping_parent_reservation(postgres_factory):
+    factory = postgres_factory
+    owner, trial_id = _seed_research_trial(factory)
+    frozen_copy = FrozenNiftyStudy(
+        study_key="concurrent-rehashed-copy",
+        objective="Hold a differently hashed copy for parent-budget review.",
+        incumbent_rule_version="fixture-v1", dataset_digest="d" * 64,
+        calculation_digest="b" * 64, cost_model_id="nifty-cost-v1",
+        capital="100000.00", parent_search_budget=2, review_interval_days=30,
+        uncertainty_note="Synthetic concurrency fixture; no market evidence.",
+        train_start="2020-01-01", train_end="2021-12-31",
+        validation_start="2022-01-01", validation_end="2022-12-31",
+        holdout_start="2023-01-01", holdout_end="2023-12-31",
+    )
+    locked_attempt = Event()
+    test_thread = current_thread()
+    engine = factory.kw["bind"]
+
+    def observe_lock(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if (current_thread() is not test_thread
+                and "FOR UPDATE" in statement.upper()
+                and "users" in statement.lower()):
+            locked_attempt.set()
+
+    def reserve():
+        with factory() as session:
+            with pytest.raises(ValueError, match="canonical parent review"):
+                reserve_trial_slot(session, owner, trial_id,
+                                   nifty_parent_dataset_digest="a" * 64)
+
+    event.listen(engine, "before_cursor_execute", observe_lock)
+    try:
+        with factory() as first:
+            assert first.scalar(select(User.id).where(User.id == owner).with_for_update()) == owner
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(reserve)
+                assert locked_attempt.wait(timeout=10)
+                assert not future.done()
+                freeze_nifty_study(first, owner, frozen_copy)
+                future.result(timeout=20)
+        with factory() as session:
+            assert session.scalar(select(func.count()).select_from(ResearchBudgetSlot)) == 0
+    finally:
+        event.remove(engine, "before_cursor_execute", observe_lock)
 
 
 def test_postgres_research_lease_takeover_fences_stale_owner(postgres_factory):

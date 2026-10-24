@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 
 from packages.database.models import ResearchBudgetSlot, ResearchExperiment, ResearchTrial
 from packages.regime.candidate_registry import TrialManifest, fingerprint
-from packages.regime.research_studies import reject_overlapping_nifty_studies
+from packages.regime.research_studies import (
+    lock_nifty_parent_owner,
+    reject_overlapping_nifty_studies,
+)
 
 
 def reserve_trial_slot(
@@ -24,6 +27,8 @@ def reserve_trial_slot(
     Legacy trials are not backfilled or qualified; reservation never authorizes
     replay or promotion by itself.
     """
+    if nifty_parent_dataset_digest is not None:
+        lock_nifty_parent_owner(session, owner)
     trial = session.scalar(select(ResearchTrial).where(
         ResearchTrial.id == trial_id, ResearchTrial.user_id == owner,
     ))

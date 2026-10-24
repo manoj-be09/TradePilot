@@ -6,13 +6,20 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from packages.database.models import ResearchStudy
+from packages.database.models import ResearchStudy, User
 from packages.regime.candidate_registry import fingerprint
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
 
 
+def lock_nifty_parent_owner(session: Session, owner: UUID) -> None:
+    """Serialize study freezes and new parent reservations for one account."""
+    if session.scalar(select(User.id).where(User.id == owner).with_for_update()) is None:
+        raise LookupError("Research owner not found")
+
+
 def freeze_nifty_study(session: Session, owner: UUID,
                        study: FrozenNiftyStudy) -> ResearchStudy:
+    lock_nifty_parent_owner(session, owner)
     payload = study.manifest
     digest = study.manifest_digest
     existing = session.scalar(select(ResearchStudy).where(

@@ -10,11 +10,45 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from packages.market_data.contracts import OptionChain, OptionContractQuote
+from packages.market_data.contracts import HistoricalBar, OptionChain, OptionContractQuote
 from packages.options.models import PayoffLeg, PayoffRequest
 from packages.options.payoff import calculate_expiry_payoff
 from packages.paper_trading.strategies import STRATEGY_REGISTRY
 from packages.regime.classifier import MarketRegimeResult
+
+
+def select_completed_regime_bars(
+    bars: list[HistoricalBar], as_of: datetime,
+) -> list[HistoricalBar] | None:
+    """Use only a complete, ordered 250-bar 5-minute window for research context.
+
+    Same-session gaps make the derived regime unavailable. A returned window is
+    still hash-only, with point-in-time availability and source rights unreviewed.
+    """
+    if as_of.tzinfo is None or any(bar.timestamp.tzinfo is None for bar in bars):
+        return None
+    if any(left.timestamp >= right.timestamp for left, right in zip(bars, bars[1:], strict=False)):
+        return None
+    interval = timedelta(minutes=5)
+    completed = [bar for bar in bars if bar.timestamp + interval <= as_of]
+    if len(completed) < 250:
+        return None
+    selected = completed[-250:]
+    if not timedelta(0) <= as_of - selected[-1].timestamp <= timedelta(minutes=15):
+        return None
+    ist = ZoneInfo("Asia/Kolkata")
+    for bar in selected:
+        prices = (bar.open, bar.high, bar.low, bar.close)
+        if (any(not price.is_finite() for price in prices)
+                or not 0 < bar.low <= min(bar.open, bar.close)
+                <= max(bar.open, bar.close) <= bar.high):
+            return None
+    for left, right in zip(selected, selected[1:], strict=False):
+        if (left.timestamp.astimezone(ist).date()
+                == right.timestamp.astimezone(ist).date()
+                and right.timestamp - left.timestamp != interval):
+            return None
+    return selected
 
 
 class MarketFitLeg(BaseModel):

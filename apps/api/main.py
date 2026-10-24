@@ -145,6 +145,7 @@ from packages.options.market_fit import (
     MarketFitRequest,
     ProviderMarketFitRequest,
     assess_nifty_market_fit,
+    select_completed_regime_bars,
 )
 from packages.options.models import (
     OptionGreeksInput,
@@ -1252,16 +1253,8 @@ async def analytics_options_market_fit(
                 "NSE_INDEX|Nifty 50", chain.as_of - timedelta(days=14), chain.as_of, "5m"
             )
             received_at = datetime.now(timezone.utc)
-            complete = [
-                bar for bar in bars
-                if bar.timestamp.tzinfo is not None
-                and bar.timestamp + timedelta(minutes=5) <= chain.as_of
-            ]
-            if (
-                len(complete) >= 250
-                and timedelta(0) <= chain.as_of - complete[-1].timestamp <= timedelta(minutes=15)
-            ):
-                selected_bars = complete[-250:]
+            selected_bars = select_completed_regime_bars(bars, chain.as_of)
+            if selected_bars is not None:
                 regime = classify_market_regime(selected_bars, "5m")
                 bar_digest = fingerprint({
                     "instrument": "NSE_INDEX|Nifty 50", "interval": "5m",

@@ -5,7 +5,11 @@ from decimal import Decimal
 from apps.api import main
 from packages.market_data.contracts import HistoricalBar, OptionChain, OptionContractQuote, Quote
 from packages.market_data.quality import assess_option_chain
-from packages.options.market_fit import MarketFitRequest, assess_nifty_market_fit
+from packages.options.market_fit import (
+    MarketFitRequest,
+    assess_nifty_market_fit,
+    select_completed_regime_bars,
+)
 from packages.regime.candidate_registry import fingerprint
 from packages.regime.classifier import MarketRegimeResult
 
@@ -115,6 +119,35 @@ def test_missing_book_time_and_stale_regime_abstain_without_fake_pop():
     assert any("stale" in reason for reason in result.reasons)
     assert all(item.fit != "MATCH" for item in result.candidates)
     assert any("book time" in reason for item in result.candidates for reason in item.reasons)
+
+
+
+def test_regime_bar_window_rejects_same_session_gaps_and_bad_order():
+    from zoneinfo import ZoneInfo
+
+    ist = ZoneInfo("Asia/Kolkata")
+    sessions = [datetime(2026, 10, day, 9, 15, tzinfo=ist) for day in (19, 20, 21, 22)]
+    stamps = [start + timedelta(minutes=5 * index)
+              for start in sessions for index in range(75)][:250]
+    bars = [HistoricalBar(timestamp=stamp, open=100, high=101, low=99,
+                          close=100, volume=10) for stamp in stamps]
+    as_of = bars[-1].timestamp + timedelta(minutes=5)
+    assert select_completed_regime_bars(bars, as_of) == bars
+
+    missing = bars[:200] + bars[201:]
+    missing.append(bars[-1].model_copy(update={
+        "timestamp": bars[-1].timestamp + timedelta(minutes=5),
+    }))
+    assert select_completed_regime_bars(missing, as_of + timedelta(minutes=5)) is None
+    assert select_completed_regime_bars(bars[:100] + bars[101:102] + bars[100:101]
+                                        + bars[102:], as_of) is None
+    assert select_completed_regime_bars(bars, as_of + timedelta(minutes=20)) is None
+    inconsistent = list(bars)
+    inconsistent[120] = bars[120].model_copy(update={"high": Decimal(98)})
+    assert select_completed_regime_bars(inconsistent, as_of) is None
+    inconsistent[120] = bars[120].model_copy(update={"high": Decimal("Infinity")})
+    assert select_completed_regime_bars(inconsistent, as_of) is None
+
 
 
 def test_market_fit_hashes_exact_provider_bars_without_qualifying_them(monkeypatch):

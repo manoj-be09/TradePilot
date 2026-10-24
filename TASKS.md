@@ -47,7 +47,8 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
   - [ ] Record policy-matched unresolved, rejected and no-fill observations prospectively and idempotently.
 - [ ] **Day 17 — 7 Nov: Complete release security and recovery checks.**
   - [x] Run full CI on `74d34c5` (passed), including the configured isolated PostgreSQL test service.
-  - [ ] Finish final migration, account-isolation, lease/recovery, failure-path and skip-reason review for the release candidate.
+  - [x] Run the later isolated local suite after the parent-lock change: 609 passed, 13 skipped, with two existing deprecation warnings; Ruff, mypy and Bandit passed.
+  - [ ] Run the new PostgreSQL race test in CI and finish final migration, account-isolation, lease/recovery, failure-path and skip-reason review for the release candidate.
 - [ ] **Day 18 — 8 Nov: Verify the final desktop and phone screens.**
   - [x] Inspect earlier signed-in F&O desktop and approximately 390 px phone layouts.
   - [ ] Verify current populated Research/F&O views, cost/source/uncertainty labels and accessible abstention states.

@@ -368,7 +368,8 @@ async def process_equities(
                 if problem:
                     state["detail"] = problem
                 elif row.status == "WAITING_FOR_ENTRY":
-                    assert quote.ask is not None
+                    if quote.ask is None:
+                        raise ValueError("Validated entry quote has no ask")
                     if not bars:
                         state["detail"] = "Waiting for completed candle history"
                     else:
@@ -419,7 +420,8 @@ async def process_equities(
                                     row.state = state
                                     session.commit()
                                     continue
-                                assert quote.last_trade_time is not None
+                                if quote.last_trade_time is None:
+                                    raise ValueError("Validated entry quote has no trade time")
                                 book_at = (
                                     quote.book_as_of.isoformat()
                                     if quote.book_timestamp_basis == "exchange" and quote.book_as_of
@@ -475,10 +477,8 @@ async def process_equities(
                                     },
                                 ))
                 else:
-                    assert (
-                        quote.bid is not None
-                        and quote.last_trade_time is not None
-                    )
+                    if quote.bid is None or quote.last_trade_time is None:
+                        raise ValueError("Validated exit quote lacks price or trade time")
                     book_at = (
                         quote.book_as_of.isoformat()
                         if quote.book_timestamp_basis == "exchange" and quote.book_as_of

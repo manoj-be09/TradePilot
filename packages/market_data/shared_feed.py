@@ -127,7 +127,7 @@ class SharedQuoteFeed:
             except Exception:
                 # Provider errors may include private connection URLs. Do not log
                 # or expose them through feed status.
-                pass
+                self._connected = False
             finally:
                 self._connected = False
                 self._quotes.clear()

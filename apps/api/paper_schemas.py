@@ -231,7 +231,8 @@ class PaperDeploymentResponse(BaseModel):
     @classmethod
     def from_model(cls, model: Any) -> "PaperDeploymentResponse":
         body = PaperTradeCreateRequest.model_validate(model.request_data)
-        assert body.reference_strike is not None
+        if body.reference_strike is None:
+            raise ValueError("Saved deployment has no reference strike")
         return cls(
             id=model.id,
             strategy_key=body.strategy_key,

@@ -190,7 +190,8 @@ def assess_nifty_market_fit(
     candidates: list[MarketFitCandidate] = []
     for key, matching_regimes in _POLICIES:
         strategy = STRATEGY_REGISTRY.get(key)
-        assert strategy is not None
+        if strategy is None:
+            raise ValueError("Frozen market-fit strategy is unavailable")
         local_reasons: list[str] = input_blocks.copy()
         legs: list[MarketFitLeg] = []
         payoff_legs: list[PayoffLeg] = []

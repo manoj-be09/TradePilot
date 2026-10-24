@@ -71,7 +71,8 @@ def expiry_square_off_due(
     """Return whether an expiring option is in the provider's final session window."""
     instant = now or datetime.now(timezone.utc)
     require_derivatives_session_open(session, expected_exchange, instant)
-    assert session is not None
+    if session is None:
+        raise PaperSessionError("NFO scheduled session is missing; no paper fill recorded")
     if minutes_before_close <= 0:
         raise PaperSessionError("NFO scheduled session data is invalid; no paper fill recorded")
     if expiry != exchange_today(instant):

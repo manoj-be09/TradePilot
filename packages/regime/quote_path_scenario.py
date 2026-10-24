@@ -109,14 +109,15 @@ def screen_offline_nifty_quote_path(
             return QuotePathScreen("UNRESOLVED", "QUOTE_EVIDENCE_GAP")
         if entry_price is not None and leg.entry_premium != entry_price:
             return QuotePathScreen("UNRESOLVED", "ENTRY_SIDE_MISMATCH")
-        assert opening.quote.book_as_of is not None
-        assert closing.quote.book_as_of is not None
+        if opening.quote.book_as_of is None or closing.quote.book_as_of is None:
+            return QuotePathScreen("UNRESOLVED", "QUOTE_EVIDENCE_GAP")
         entry_times.append(opening.quote.book_as_of)
         exit_times.append(closing.quote.book_as_of)
         if "SIZE_SHORT" in (entry_state, exit_state):
             size_short = True
         else:
-            assert exit_price is not None
+            if exit_price is None:
+                return QuotePathScreen("UNRESOLVED", "QUOTE_EVIDENCE_GAP")
             exit_prices.append(exit_price)
     if (
         max(entry_times) - min(entry_times) > timedelta(seconds=1)

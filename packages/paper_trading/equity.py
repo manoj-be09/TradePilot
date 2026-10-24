@@ -441,7 +441,8 @@ def replay_events(
             exit_price = target
         if exit_price is not None:
             _, net = proceeds(position, exit_price)
-            assert signal_at is not None and entry_at is not None
+            if signal_at is None or entry_at is None:
+                raise ValueError("Replay exit has no matching entry timestamps")
             trades.append(ReplayTrade(
                 signal_at=signal_at, entry_at=entry_at, exit_at=bar.timestamp,
                 net_pnl=net - Decimal(position["cost"]),

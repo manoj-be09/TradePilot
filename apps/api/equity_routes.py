@@ -436,10 +436,13 @@ async def strategies(
         elif quote_issue:
             live_detail = f"{quote_issue}; ranking uses completed daily history only"
     except Exception:
-        pass  # Historical evidence is still useful; it must not be presented as live.
+        # Provider errors may contain private URLs; retain only the safe fallback.
+        live = False
+        quote = None
     distance = risk_distance(bars)
     price = quote.ask if live and quote is not None else bars[-1].close
-    assert price is not None
+    if price is None:
+        raise HTTPException(503, "No usable quote or daily close is available")
     proposed = open_position(price, distance, body.budget, body.risk_budget)
     context = describe_stock_context(bars)
     rows = []

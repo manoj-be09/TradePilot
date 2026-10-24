@@ -2103,7 +2103,8 @@ async def arm_paper_deployment(
     if expiry_has_passed(body.expiry):
         raise HTTPException(409, "Option expiry has passed")
     strategy = get_strategy(body.strategy_key)
-    assert strategy is not None
+    if strategy is None:
+        raise HTTPException(422, "Only registered defined-risk templates can be armed")
     _require_template_acknowledgement(body, strategy)
     if body.strategy_version_id is not None:
         version = session.scalar(select(StrategyVersion).where(

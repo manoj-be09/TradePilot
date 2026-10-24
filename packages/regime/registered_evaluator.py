@@ -109,7 +109,8 @@ def run_registered_equity(session: Session, owner: UUID, trial_id: UUID,
     saved = session.scalar(select(ResearchEvaluation).where(
         ResearchEvaluation.trial_id == trial_id,
     ).execution_options(populate_existing=True))
-    assert saved is not None
+    if saved is None:
+        raise ValueError("Research evaluation disappeared after finalization")
     if saved.result_digest != digest:
         raise ValueError("Evaluation already finalized with different evidence")
     return saved
@@ -254,7 +255,8 @@ def record_registered_nifty_replay(
     saved = session.scalar(select(ResearchEvaluation).where(
         ResearchEvaluation.trial_id == trial_id,
     ).execution_options(populate_existing=True))
-    assert saved is not None
+    if saved is None:
+        raise ValueError("Research evaluation disappeared after finalization")
     if saved.result_digest != digest:
         raise ValueError("Evaluation already finalized with different evidence")
     return saved

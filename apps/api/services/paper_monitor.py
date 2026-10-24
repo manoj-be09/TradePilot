@@ -489,6 +489,8 @@ async def monitor_exits(
             require_derivatives_session_open(
                 nfo_session, index.derivatives_exchange, evaluation_instant
             )
+            if nfo_session is None:
+                raise PaperSessionError("No verified derivatives session is available")
         except PaperSessionError as error:
             session.rollback()
             warnings.append(str(error))
@@ -502,7 +504,6 @@ async def monitor_exits(
                 break
             continue
         evaluated_count += 1
-        assert nfo_session is not None
         decision = evaluate_exit(
             pnl=pnl,
             peak_pnl=trade.peak_unrealized_pnl or Decimal(0),

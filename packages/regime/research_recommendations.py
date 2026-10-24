@@ -206,6 +206,11 @@ def build_market_fit_opportunity(
             ),
             "cost_artifact_review": "UNREVIEWED_DECLARATION",
             "point_in_time_availability_review": "UNVERIFIED",
+            "news_factor_status": "UNAVAILABLE_FOR_RESEARCH",
+            "news_factor_reason": (
+                "No reviewed licensed, timestamped historical NIFTY news archive or "
+                "instrument coverage is bound to this study."
+            ),
             "regime": assessment.regime,
             "realized_volatility_annualized_percent": (
                 str(assessment.realized_volatility_annualized_percent)

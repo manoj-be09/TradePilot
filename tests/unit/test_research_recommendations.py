@@ -342,6 +342,7 @@ def test_market_fit_opportunity_freezes_inputs_and_retains_rejected_alternatives
     assert first.evidence_snapshot["bar_artifact_review"] == "UNAVAILABLE"
     assert first.evidence_snapshot["cost_artifact_review"] == "UNREVIEWED_DECLARATION"
     assert first.evidence_snapshot["point_in_time_availability_review"] == "UNVERIFIED"
+    assert first.evidence_snapshot["news_factor_status"] == "UNAVAILABLE_FOR_RESEARCH"
     assert first.evidence_snapshot["policy_set_digest"] == "d" * 64
     assert first.evidence_snapshot["alternatives"][0]["reasons"] == ["No complete basket."]
     assert first.evidence_snapshot["alternatives"][0]["legs"][0]["entry_quote"] == "5"

@@ -162,3 +162,43 @@ def test_displayed_size_shortfall_is_separate_from_missing_evidence() -> None:
     assert complete.status == "UNQUALIFIED_SCENARIO"
     assert complete.scenario is not None
     assert complete.scenario["promotion_eligible"] is False
+
+
+def test_quote_path_rejects_post_expiry_exit_and_mixed_expiries() -> None:
+    request = _request(
+        PayoffLeg(option_type="CE", strike=Decimal(25000), quantity=1,
+                  entry_premium=Decimal(100)),
+        PayoffLeg(option_type="CE", strike=Decimal(25100), quantity=-1,
+                  entry_premium=Decimal(80)),
+    )
+    entry = [
+        _contract("CE25000", 25000, T, "99", "100"),
+        _contract("CE25100", 25100, T, "80", "81"),
+    ]
+    exit_ = [
+        _contract("CE25000", 25000, T + timedelta(minutes=5), "120", "121"),
+        _contract("CE25100", 25100, T + timedelta(minutes=5), "70", "71"),
+    ]
+    later = T + timedelta(days=1)
+    post_expiry = screen_offline_nifty_quote_path(
+        request, entry, [
+            _contract("CE25000", 25000, later, "120", "121"),
+            _contract("CE25100", 25100, later, "70", "71"),
+        ], signal_at=T, entry_available_at=T + timedelta(seconds=1),
+        exit_signal_at=later, exit_available_at=later + timedelta(seconds=1),
+    )
+    assert post_expiry.status == "UNRESOLVED"
+    assert post_expiry.reason == "QUOTE_AFTER_EXPIRY"
+    assert post_expiry.scenario is None
+
+    mixed_entry = entry[1].model_copy(update={"expiry": date(2026, 11, 3)})
+    mixed_exit = exit_[1].model_copy(update={"expiry": date(2026, 11, 3)})
+    mixed = screen_offline_nifty_quote_path(
+        request, [entry[0], mixed_entry], [exit_[0], mixed_exit],
+        signal_at=T, entry_available_at=T + timedelta(seconds=1),
+        exit_signal_at=T + timedelta(minutes=5),
+        exit_available_at=T + timedelta(minutes=5, seconds=1),
+    )
+    assert mixed.status == "UNRESOLVED"
+    assert mixed.reason == "CONTRACT_IDENTITY_MISMATCH"
+    assert mixed.scenario is None

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from packages.market_data.contracts import OptionContractQuote, Quote
 from packages.options.models import PayoffRequest
@@ -13,6 +14,7 @@ from packages.options.upstox_cost_benchmark import upstox_option_two_price_scena
 ScreenStatus = Literal[
     "UNRESOLVED", "NO_FILL_AT_DISPLAYED_SIZE", "UNQUALIFIED_SCENARIO",
 ]
+_EXCHANGE_ZONE = ZoneInfo("Asia/Kolkata")
 
 
 @dataclass(frozen=True)
@@ -75,6 +77,9 @@ def screen_offline_nifty_quote_path(
     exit_times: list[datetime] = []
     exit_prices: list[Decimal] = []
     seen_tokens: set[str] = set()
+    basket_expiry = entry[0].expiry
+    if exit_available_at.astimezone(_EXCHANGE_ZONE).date() > basket_expiry:
+        return QuotePathScreen("UNRESOLVED", "QUOTE_AFTER_EXPIRY")
     size_short = False
     for leg, opening, closing in zip(request.legs, entry, exit_, strict=True):
         if (
@@ -82,6 +87,7 @@ def screen_offline_nifty_quote_path(
             or closing.option_type != leg.option_type
             or opening.strike != leg.strike or closing.strike != leg.strike
             or opening.expiry != closing.expiry
+            or opening.expiry != basket_expiry
             or not opening.instrument_token
             or opening.instrument_token != closing.instrument_token
             or opening.quote.instrument_token != opening.instrument_token

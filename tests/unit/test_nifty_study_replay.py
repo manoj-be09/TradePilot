@@ -379,11 +379,25 @@ def test_overlapping_rehashed_nifty_study_requires_parent_review():
         candidate = register_candidate(session, owner, definition)
         trial = declare_trial(session, owner, candidate.id, manifest)
         assert bind_nifty_replay(session, owner, trial.id, frozen).trial_id == trial.id
+        original_slot = reserve_trial_slot(
+            session, owner, trial.id,
+            nifty_parent_dataset_digest=frozen.dataset_digest,
+        )
         freeze_nifty_study(session, owner, copied)
         assert bind_nifty_replay(session, owner, trial.id, frozen).trial_id == trial.id
+        assert reserve_trial_slot(
+            session, owner, trial.id,
+            nifty_parent_dataset_digest=frozen.dataset_digest,
+        ).trial_id == original_slot.trial_id
         next_trial = declare_trial(session, owner, candidate.id,
                                    TrialManifest.model_validate(
                                        manifest.model_dump() | {"trial_number": 2}))
         with pytest.raises(ValueError, match="canonical parent review"):
             bind_nifty_replay(session, owner, next_trial.id, frozen)
+        with pytest.raises(ValueError, match="canonical parent review"):
+            reserve_trial_slot(
+                session, owner, next_trial.id,
+                nifty_parent_dataset_digest=frozen.dataset_digest,
+            )
+        assert len(list(session.scalars(select(ResearchBudgetSlot)))) == 1
     engine.dispose()

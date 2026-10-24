@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from packages.database.models import ResearchBudgetSlot, ResearchExperiment, ResearchTrial
 from packages.regime.candidate_registry import TrialManifest, fingerprint
+from packages.regime.research_studies import reject_overlapping_nifty_studies
 
 
 def reserve_trial_slot(
@@ -17,8 +18,9 @@ def reserve_trial_slot(
 ) -> ResearchBudgetSlot:
     """Keep budget/scope immutable and reject slot reuse across candidates.
 
-    NIFTY callers can bind the family to an exact frozen dataset digest. This
-    does not detect differently hashed copies of overlapping observations.
+    NIFTY callers bind the family to an exact frozen dataset digest. Saved
+    studies with differently hashed, overlapping declared windows require
+    review; declared dates cannot prove observational lineage.
     Legacy trials are not backfilled or qualified; reservation never authorizes
     replay or promotion by itself.
     """
@@ -58,6 +60,10 @@ def reserve_trial_slot(
     if trial.result_digest is not None:
         raise ValueError("Cannot reserve a budget after trial finalization")
     if nifty_parent_dataset_digest is not None:
+        reject_overlapping_nifty_studies(
+            session, owner, manifest.dataset_digest,
+            manifest.train_start, manifest.holdout_end,
+        )
         legacy = None
         if manifest.experiment_family != family:
             legacy = session.scalar(select(ResearchExperiment).where(

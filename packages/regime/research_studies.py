@@ -1,5 +1,5 @@
 """Immutable account-scoped parent study contracts."""
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from packages.database.models import ResearchStudy
+from packages.regime.candidate_registry import fingerprint
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
 
 
@@ -36,6 +37,21 @@ def freeze_nifty_study(session: Session, owner: UUID,
             raise
         return existing
     return row
+
+
+def reject_overlapping_nifty_studies(
+    session: Session, owner: UUID, dataset_digest: str,
+    train_start: date, holdout_end: date,
+) -> None:
+    """Require review before a differently hashed study spends another parent slot."""
+    for row in session.scalars(select(ResearchStudy).where(ResearchStudy.user_id == owner)):
+        if fingerprint(row.manifest) != row.manifest_digest:
+            raise ValueError("Overlapping study parent requires integrity review")
+        earlier = FrozenNiftyStudy.model_validate(row.manifest)
+        if (earlier.dataset_digest != dataset_digest
+                and earlier.train_start <= holdout_end
+                and train_start <= earlier.holdout_end):
+            raise ValueError("Overlapping study datasets require canonical parent review")
 
 
 def study_view(row: ResearchStudy) -> dict[str, object]:

@@ -36,7 +36,8 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
   - [ ] Review actual observational lineage across copied/rehashed datasets, concurrency around newly frozen studies, and retention/counting of every failed or rejected search.
 - [ ] **Day 13 — 3 Nov: Protect an independent holdout.**
   - [x] Exclude declared holdout rows from an offline fixed-equity evaluation input.
-  - [ ] Audit independent holdout access, artifact authenticity and leakage/failure paths for the NIFTY study.
+  - [x] Audit current source paths and limits in [HOLDOUT_ACCESS_AUDIT.md](HOLDOUT_ACCESS_AUDIT.md).
+  - [ ] Verify an authentic, separately controlled NIFTY holdout, access logs and an independent validation account with leakage/failure tests.
 - [ ] **Day 14 — 4 Nov: Evaluate the exact frozen policy after costs.**
   - [x] Screen supplied option quote paths for contract identity, timing, side, spread, displayed size, expiry and explicit unresolved/no-fill outcomes.
   - [ ] Run reproducible policy-matched chronological entry and exit on reviewed data with full costs and conservative nonfill; label daily-close illustrations separately.

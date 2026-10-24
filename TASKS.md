@@ -2,6 +2,10 @@
 
 Source: [DAILY_DELIVERY_PLAN.md](DAILY_DELIVERY_PLAN.md) and [PROJECT_PLAN.md](PROJECT_PLAN.md). Status checked against [BUILD_PROGRESS.md](BUILD_PROGRESS.md) on **25 October 2026**. Dates are work targets, not proof of completion. A checked box means the stated bounded task has evidence; it does not qualify a paper fill, final settlement, profitability, or a calibrated probability.
 
+## Working rule
+
+Complete the tasks below in order. After a task meets its stated evidence gate, check it off and move directly to the next one. Do not pause for routine confirmation. If a task is blocked by missing access, external evidence or an unsafe dependency, leave it unchecked, record the blocker and continue with the next independent task. Return to blocked tasks when their evidence becomes available. Keep paper-only safety controls and the evidence rules in the linked plans in force.
+
 ## Dated work
 
 - [x] **Day 1 — 22 Oct: Publish and verify the local build.** Confirm the pushed source, healthy API/worker/web and signed-in desktop and phone F&O views.

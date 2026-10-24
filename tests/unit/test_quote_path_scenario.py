@@ -3,7 +3,10 @@ from decimal import Decimal
 
 from packages.market_data.contracts import OptionContractQuote, Quote
 from packages.options.models import PayoffLeg, PayoffRequest
-from packages.regime.quote_path_scenario import offline_nifty_quote_path_scenario
+from packages.regime.quote_path_scenario import (
+    offline_nifty_quote_path_scenario,
+    screen_offline_nifty_quote_path,
+)
 
 T = datetime(2026, 10, 27, 4, 30, tzinfo=timezone.utc)
 
@@ -116,3 +119,40 @@ def test_quote_path_rejects_async_basket_and_wrong_quote_side() -> None:
             update={"entry_premium": Decimal(99)}), request.legs[1]],
     })
     assert _evaluate(wrong_entry_price, entry, exit_) is None
+
+
+
+def test_displayed_size_shortfall_is_separate_from_missing_evidence() -> None:
+    request = _request(PayoffLeg(
+        option_type="CE", strike=Decimal(25000), quantity=1,
+        entry_premium=Decimal(100),
+    ))
+    opening = _contract("CE25000", 25000, T, "99", "100")
+    closing = _contract("CE25000", 25000, T + timedelta(minutes=5), "120", "121")
+
+    def screen(entry_quote: OptionContractQuote):
+        return screen_offline_nifty_quote_path(
+            request, [entry_quote], [closing], signal_at=T,
+            entry_available_at=T + timedelta(seconds=1),
+            exit_signal_at=T + timedelta(minutes=5),
+            exit_available_at=T + timedelta(minutes=5, seconds=1),
+        )
+
+    short = screen(opening.model_copy(update={
+        "quote": opening.quote.model_copy(update={"ask_quantity": 74}),
+    }))
+    assert short.status == "NO_FILL_AT_DISPLAYED_SIZE"
+    assert short.reason == "TOP_OF_BOOK_SIZE_SHORTFALL"
+    assert short.scenario is None
+
+    missing = screen(opening.model_copy(update={
+        "quote": opening.quote.model_copy(update={"ask_quantity": None}),
+    }))
+    assert missing.status == "UNRESOLVED"
+    assert missing.reason == "QUOTE_EVIDENCE_GAP"
+    assert missing.scenario is None
+
+    complete = screen(opening)
+    assert complete.status == "UNQUALIFIED_SCENARIO"
+    assert complete.scenario is not None
+    assert complete.scenario["promotion_eligible"] is False

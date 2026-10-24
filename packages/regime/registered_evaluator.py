@@ -184,6 +184,19 @@ def bind_nifty_replay(session: Session, owner: UUID, trial_id: UUID,
         return existing
     if manifest.experiment_family != study.study_key:
         raise ValueError("Trial family must match the frozen NIFTY parent study key")
+    # Differently hashed studies over shared sessions cannot silently reset the
+    # search parent by copying or renaming a dataset. A reviewer must resolve
+    # their lineage before either study can bind a replay.
+    for other in session.scalars(select(ResearchStudy).where(
+        ResearchStudy.user_id == owner, ResearchStudy.id != saved_study.id,
+    )):
+        if fingerprint(other.manifest) != other.manifest_digest:
+            raise ValueError("Overlapping study parent requires integrity review")
+        earlier = FrozenNiftyStudy.model_validate(other.manifest)
+        if (earlier.dataset_digest != study.dataset_digest
+                and earlier.train_start <= study.holdout_end
+                and study.train_start <= earlier.holdout_end):
+            raise ValueError("Overlapping study datasets require canonical parent review")
     if trial.result_digest is not None:
         raise ValueError("Cannot bind after operator result finalization")
     row = ResearchEvaluation(trial_id=trial_id, adapter=payload, adapter_digest=digest,

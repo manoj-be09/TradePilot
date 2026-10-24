@@ -180,7 +180,7 @@ def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
         next_legacy_trial = declare_trial(session, owner, candidate.id,
                                           TrialManifest.model_validate(
                                               legacy_manifest.model_dump() | {"trial_number": 2}))
-        with pytest.raises(ValueError, match="Legacy family reservations"):
+        with pytest.raises(ValueError, match="canonical parent review"):
             record_registered_nifty_replay(
                 session, owner, next_legacy_trial.id, legacy_study, replay(),
             )
@@ -342,3 +342,48 @@ def test_authenticated_route_records_only_owned_stored_replay():
 def test_assessment_rejects_unfrozen_or_unidentified_replays(changes):
     with pytest.raises(ValueError):
         assess_nifty_scheduled_replay(study(), replay(**changes))
+
+
+def test_overlapping_rehashed_nifty_study_requires_parent_review():
+    from packages.regime.registered_evaluator import bind_nifty_replay
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    owner, other_owner = uuid4(), uuid4()
+    frozen = study()
+    copied = study(study_key="renamed-nifty-study", dataset_digest="d" * 64)
+    manifest = TrialManifest(
+        dataset_digest=frozen.dataset_digest, calculation_digest=frozen.calculation_digest,
+        cost_model_id=frozen.cost_model_id, experiment_family=frozen.study_key,
+        trial_number=1, declared_search_budget=frozen.parent_search_budget, seed=0,
+        train_start=frozen.train_start, train_end=frozen.train_end,
+        validation_start=frozen.validation_start, validation_end=frozen.validation_end,
+        holdout_start=frozen.holdout_start, holdout_end=frozen.holdout_end,
+    )
+    definition = CandidateDefinition(
+        name="Parent budget fixture", family="nifty-options", market="NIFTY_OPTIONS",
+        hypothesis="Reject overlapping differently hashed parent research data.",
+        source_url="https://example.org/parent-budget", source_license="UNREVIEWED",
+        entry_rule="Use the frozen study entry rule.",
+        exit_rule="Use the frozen study exit rule.",
+        limitation="Synthetic fixture with no source-rights proof.",
+    )
+    with Session(engine) as session:
+        session.add_all([
+            User(id=owner, email="overlap-owner@example.org", password_hash="fixture"),
+            User(id=other_owner, email="overlap-other@example.org", password_hash="fixture"),
+        ])
+        session.commit()
+        freeze_nifty_study(session, owner, frozen)
+        freeze_nifty_study(session, other_owner, copied)
+        candidate = register_candidate(session, owner, definition)
+        trial = declare_trial(session, owner, candidate.id, manifest)
+        assert bind_nifty_replay(session, owner, trial.id, frozen).trial_id == trial.id
+        freeze_nifty_study(session, owner, copied)
+        assert bind_nifty_replay(session, owner, trial.id, frozen).trial_id == trial.id
+        next_trial = declare_trial(session, owner, candidate.id,
+                                   TrialManifest.model_validate(
+                                       manifest.model_dump() | {"trial_number": 2}))
+        with pytest.raises(ValueError, match="canonical parent review"):
+            bind_nifty_replay(session, owner, next_trial.id, frozen)
+    engine.dispose()

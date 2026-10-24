@@ -86,6 +86,21 @@ def test_probe_failure_does_not_expose_credentials(capsys):
     assert "private.example" not in output
 
 
+def test_missing_provider_tick_is_not_reported_as_zero_latency():
+    from datetime import datetime, timedelta, timezone
+
+    labels = run_path(str(Path("scripts/probe-upstox-v3-feed.py")))["tick_time_labels"]
+    observed = datetime(2026, 10, 24, 10, 0, tzinfo=timezone.utc)
+    quote = SimpleNamespace(timestamp=observed, timestamp_basis="unknown")
+    assert labels(quote, observed, 1.0) == ("unknown", "unknown", "unknown")
+
+    quote.timestamp = observed - timedelta(seconds=3)
+    quote.timestamp_basis = "provider_tick"
+    assert labels(quote, observed, 1.0) == (
+        quote.timestamp.isoformat(), "3.00", "2.00",
+    )
+
+
 def test_probe_journals_actual_quote_and_disconnect_without_private_url(tmp_path, capsys):
     import json
     from datetime import datetime, timezone

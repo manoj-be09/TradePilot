@@ -80,6 +80,17 @@ def observation_changes(
     )
 
 
+def tick_time_labels(
+    quote: Any, observed_at: datetime, clock_offset: float | None,
+) -> tuple[str, str, str]:
+    """Never report local receipt fallback as a measured provider tick delay."""
+    if quote.timestamp_basis != "provider_tick":
+        return "unknown", "unknown", "unknown"
+    lag = (observed_at - quote.timestamp).total_seconds()
+    adjusted = f"{lag - clock_offset:.2f}" if clock_offset is not None else "unknown"
+    return quote.timestamp.isoformat(), f"{lag:.2f}", adjusted
+
+
 def probe_conclusion(
     before: str, after: str, price_changes: int, book_changes: int,
     last_change_elapsed_seconds: float,
@@ -210,25 +221,23 @@ async def main(provider: Any = None, journal: FeedJournal | None = None,
                         quote.last_trade_time.isoformat()
                         if quote.last_trade_time else "unknown"
                     )
-                    tick_lag = (observed_at - quote.timestamp).total_seconds()
+                    tick_at, tick_lag_label, adjusted_lag = tick_time_labels(
+                        quote, observed_at, clock_offset,
+                    )
                     trade_lag = (
                         (observed_at - quote.last_trade_time).total_seconds()
                         if quote.last_trade_time else None
                     )
                     trade_lag_label = f"{trade_lag:.2f}" if trade_lag is not None else "unknown"
                     if received <= MAX_DISPLAYED_QUOTES and not nifty_option:
-                        adjusted_lag = (
-                            f"{tick_lag - clock_offset:.2f}"
-                            if clock_offset is not None else "unknown"
-                        )
                         print(
                             f"#{received} observed={observed_at.isoformat()} "
-                            f"tick={quote.timestamp.isoformat()} "
+                            f"tick={tick_at} "
                             f"trade={trade_at} "
                             f"last={quote.last_price} bid={quote.bid}/{quote.bid_quantity} "
                             f"ask={quote.ask}/{quote.ask_quantity} "
                             f"price_changed={changed_price} book_changed={changed_book} "
-                            f"receive_minus_tick_s={tick_lag:.2f} "
+                            f"receive_minus_tick_s={tick_lag_label} "
                             f"clock_adjusted_tick_lag_estimate_s={adjusted_lag} "
                             f"receive_minus_trade_s={trade_lag_label} "
                             f"book_basis={quote.book_timestamp_basis}"

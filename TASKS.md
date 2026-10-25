@@ -51,7 +51,9 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
   - [x] Run the later isolated local suite after the parent-lock change: 609 passed, 13 skipped, with two existing deprecation warnings; Ruff, mypy and Bandit passed.
   - [x] Suppress a research evaluation wrapper's saved result when its lease outcome is not COMPLETED; focused lease/evaluator checks passed.
   - [x] Roll back failed or stale research task transactions before lease status/recovery handling; focused regression checks passed.
-  - [ ] Run the new PostgreSQL race test in CI and finish final migration, account-isolation, lease/recovery, failure-path and skip-reason review for the release candidate.
+  - [x] Run the new PostgreSQL study-freeze/reservation race test in CI with `TEST_POSTGRES_URL`; backend and frontend jobs passed on `05d41c0`.
+  - [x] Audit the 13 local skip reasons: 11 PostgreSQL-only cases require the CI test database and two historical-settlement cases require an explicit opt-in NSE archive date.
+  - [ ] Finish final migration, account-isolation, lease/recovery and failure-path review against the release candidate and verify the deployed revision.
 - [ ] **Day 18 — 8 Nov: Verify the final desktop and phone screens.**
   - [x] Inspect earlier signed-in F&O desktop and approximately 390 px phone layouts.
   - [x] Show the frozen study's declared cost artifact status and uncertainty note in the Research summary; frontend type check passed.

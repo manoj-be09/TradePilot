@@ -80,7 +80,7 @@ def test_twenty_trades_are_reviewable_but_not_qualified():
     assert result.promotion_eligible is False
 
 
-def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
+def test_registered_replay_persists_assessment_and_consumes_one_family_slot(monkeypatch):
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     owner = uuid4()
@@ -125,6 +125,19 @@ def test_registered_replay_persists_assessment_and_consumes_one_family_slot():
         ).result_digest == saved.result_digest
         job_trial = declare_trial(session, owner, candidate.id, TrialManifest.model_validate(
             manifest.model_dump() | {"trial_number": 2}))
+        from packages.paper_trading.worker_lease import LeaseToken
+        from packages.regime.research_scheduler_lease import ResearchJobStale
+
+        with monkeypatch.context() as patch:
+            patch.setattr("packages.regime.registered_evaluator.assert_research_lease",
+                          lambda _session, _token: False)
+            with pytest.raises(ResearchJobStale):
+                record_registered_nifty_replay(
+                    session, owner, job_trial.id, frozen, replay(),
+                    lease=LeaseToken("stale", 1, "research-evaluator"),
+                )
+        session.rollback()
+        assert session.get(ResearchEvaluation, job_trial.id).result_digest is None
         outcome, job_result = record_registered_nifty_replay_job(
             session, owner, job_trial.id, frozen, replay(), "nifty-research-job", 60,
         )

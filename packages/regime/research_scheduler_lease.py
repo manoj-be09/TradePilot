@@ -20,6 +20,10 @@ class ResearchJobCancelled(Exception):
     """Cooperative cancellation signal for a bounded research task."""
 
 
+class ResearchJobStale(Exception):
+    """A task lost its fenced lease before a guarded write."""
+
+
 def acquire_research_lease(session: Session, owner: str, seconds: int) -> LeaseToken | None:
     """Acquire a fenced research lease using the existing lease table."""
     if seconds <= 0:
@@ -44,7 +48,7 @@ def finish_research_lease(session: Session, token: LeaseToken, status: str, deta
 
 
 def run_research_job(session: Session, owner: str, seconds: int,
-                     task: Callable[[], None],
+                     task: Callable[[LeaseToken], None],
                      cancel_requested: Callable[[], bool] | None = None,
                      ) -> ResearchJobOutcome:
     """Run one bounded research task under a fenced lease.
@@ -65,11 +69,14 @@ def run_research_job(session: Session, owner: str, seconds: int,
         finish_research_lease(session, token, "CANCELLED", "Research task cancelled.")
         return ResearchJobOutcome("CANCELLED", "Research task cancelled before start.")
     try:
-        task()
+        task(token)
     except ResearchJobCancelled:
         session.rollback()
         finish_research_lease(session, token, "CANCELLED", "Research task cancelled.")
         return ResearchJobOutcome("CANCELLED", "Research task cancelled.")
+    except ResearchJobStale:
+        session.rollback()
+        return ResearchJobOutcome("STALE", "Research lease was lost before result commit.")
     except Exception:
         session.rollback()
         finish_research_lease(session, token, "DEGRADED", "Research task failed.")

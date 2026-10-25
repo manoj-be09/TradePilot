@@ -51,6 +51,7 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
   - [x] Run the later isolated local suite after the parent-lock change: 609 passed, 13 skipped, with two existing deprecation warnings; Ruff, mypy and Bandit passed.
   - [x] Suppress a research evaluation wrapper's saved result when its lease outcome is not COMPLETED; focused lease/evaluator checks passed.
   - [x] Roll back failed or stale research task transactions before lease status/recovery handling; focused regression checks passed.
+  - [x] Fence offline equity and NIFTY research result writes against the current lease generation in the same transaction; focused stale-result checks passed.
   - [x] Run the new PostgreSQL study-freeze/reservation race test in CI with `TEST_POSTGRES_URL`; backend and frontend jobs passed on `05d41c0`.
   - [x] Audit the 13 local skip reasons: 11 PostgreSQL-only cases require the CI test database and two historical-settlement cases require an explicit opt-in NSE archive date.
   - [ ] Finish final migration, account-isolation, lease/recovery and failure-path review against the release candidate and verify the deployed revision.

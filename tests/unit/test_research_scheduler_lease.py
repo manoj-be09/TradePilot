@@ -9,6 +9,7 @@ from packages.regime import research_scheduler_lease
 from packages.regime.research_scheduler_lease import (
     RESEARCH_WORKER_NAME,
     ResearchJobCancelled,
+    ResearchJobStale,
     acquire_research_lease,
     assert_research_lease,
     finish_research_lease,
@@ -49,24 +50,34 @@ def test_research_job_runner_handles_completion_busy_and_failure():
     with Session(engine) as session:
         calls: list[str] = []
         completed = run_research_job(session, "research-one", 60,
-                                     lambda: calls.append("ran"))
+                                     lambda _token: calls.append("ran"))
         assert completed.status == "COMPLETED"
         assert calls == ["ran"]
 
         held = acquire_research_lease(session, "research-held", 60)
         assert held is not None
         skipped = run_research_job(session, "research-two", 60,
-                                   lambda: calls.append("wrong-worker"))
+                                   lambda _token: calls.append("wrong-worker"))
         assert skipped.status == "SKIPPED"
         assert calls == ["ran"]
         finish_research_lease(session, held, "HEALTHY", "released")
 
-        failed = run_research_job(session, "research-three", 60,
-                                  lambda: (_ for _ in ()).throw(RuntimeError("secret detail")))
+        failed = run_research_job(
+            session, "research-three", 60,
+            lambda _token: (_ for _ in ()).throw(RuntimeError("secret detail")),
+        )
         assert failed.status == "FAILED"
         lease = session.get(WorkerLease, RESEARCH_WORKER_NAME)
         assert lease is not None and lease.status == "DEGRADED"
         assert "secret detail" not in lease.detail
+
+        def lose_lease(_token) -> None:
+            raise ResearchJobStale()
+
+        stale = run_research_job(session, "research-stale-task", 60, lose_lease)
+        assert stale.status == "STALE"
+        lease = session.get(WorkerLease, RESEARCH_WORKER_NAME)
+        assert lease is not None and lease.status == "RUNNING"
     engine.dispose()
 
 
@@ -76,7 +87,7 @@ def test_research_job_runner_rejects_invalid_lease_duration():
     with Session(engine) as session:
         calls: list[str] = []
         outcome = run_research_job(session, "research-invalid", 0,
-                                   lambda: calls.append("wrong"))
+                                   lambda _token: calls.append("wrong"))
         assert outcome.status == "FAILED"
         assert calls == []
         token = acquire_research_lease(session, "research-valid", 60)
@@ -93,7 +104,7 @@ def test_research_job_runner_cancels_before_task_and_releases_lease():
         calls: list[str] = []
         outcome = run_research_job(
             session, "research-cancel-before-start", 60,
-            lambda: calls.append("wrong"), cancel_requested=lambda: True,
+            lambda _token: calls.append("wrong"), cancel_requested=lambda: True,
         )
         assert outcome.status == "CANCELLED"
         assert calls == []
@@ -110,7 +121,7 @@ def test_research_job_runner_records_cooperative_task_cancellation():
     with Session(engine) as session:
         outcome = run_research_job(
             session, "research-cancel-during-task", 60,
-            lambda: (_ for _ in ()).throw(ResearchJobCancelled()),
+            lambda _token: (_ for _ in ()).throw(ResearchJobCancelled()),
         )
         assert outcome.status == "CANCELLED"
         lease = session.get(WorkerLease, RESEARCH_WORKER_NAME)
@@ -137,7 +148,7 @@ def test_failed_task_rolls_back_before_recording_degraded_lease():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     with Session(engine) as session:
-        def fail_during_flush() -> None:
+        def fail_during_flush(_token) -> None:
             session.expunge_all()
             now = datetime.now(timezone.utc)
             session.add(WorkerLease(
@@ -163,7 +174,7 @@ def test_stale_task_rolls_back_its_uncommitted_work(monkeypatch):
         monkeypatch.setattr(research_scheduler_lease, "assert_research_lease",
                             lambda _session, _token: next(checks))
 
-        def stage_without_commit() -> None:
+        def stage_without_commit(_token) -> None:
             now = datetime.now(timezone.utc)
             session.add(WorkerLease(
                 name="uncommitted-research-row", owner="stale", generation=0,

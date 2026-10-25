@@ -77,7 +77,9 @@ def test_adapter_excludes_crossing_trades_and_passes_no_holdout_to_engine(monkey
         evaluator.FixedEquitySpec(**(spec.model_dump() | {"risk_budget": "20000"}))
 
 
-def test_registered_replay_retains_engine_evidence_separately_and_consumes_failures(tmp_path):
+def test_registered_replay_retains_engine_evidence_separately_and_consumes_failures(
+    tmp_path, monkeypatch,
+):
     from uuid import uuid4
 
     from sqlalchemy import create_engine, select
@@ -171,6 +173,19 @@ def test_registered_replay_retains_engine_evidence_separately_and_consumes_failu
         job_trial = declare_trial(session, owner, candidate.id, TrialManifest.model_validate(
             manifest.model_dump() | {"trial_number": 3}))
         bind_fixed_equity(session, owner, job_trial.id, spec)
+        from packages.paper_trading.worker_lease import LeaseToken
+        from packages.regime.research_scheduler_lease import ResearchJobStale
+
+        with monkeypatch.context() as patch:
+            patch.setattr("packages.regime.registered_evaluator.assert_research_lease",
+                          lambda _session, _token: False)
+            with pytest.raises(ResearchJobStale):
+                run_registered_equity(
+                    session, owner, job_trial.id, raw,
+                    lease=LeaseToken("stale", 1, "research-evaluator"),
+                )
+        session.rollback()
+        assert session.get(ResearchEvaluation, job_trial.id).result_digest is None
         outcome, job_result = run_registered_equity_job(
             session, owner, job_trial.id, raw, "research-job", 60,
         )

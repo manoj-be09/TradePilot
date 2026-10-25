@@ -14,12 +14,18 @@ from packages.database.models import (
     ResearchStudy,
     ResearchTrial,
 )
+from packages.paper_trading.worker_lease import LeaseToken
 from packages.regime.candidate_registry import TrialManifest, fingerprint
 from packages.regime.fixed_rule_evaluator import FixedEquitySpec, evaluate_fixed_equity
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
 from packages.regime.nifty_study_replay import assess_nifty_scheduled_replay
 from packages.regime.research_budget import reserve_trial_slot
-from packages.regime.research_scheduler_lease import ResearchJobOutcome, run_research_job
+from packages.regime.research_scheduler_lease import (
+    ResearchJobOutcome,
+    ResearchJobStale,
+    assert_research_lease,
+    run_research_job,
+)
 from packages.regime.research_studies import reject_overlapping_nifty_studies
 
 
@@ -72,7 +78,7 @@ def bind_fixed_equity(session: Session, owner: UUID, trial_id: UUID,
 
 
 def run_registered_equity(session: Session, owner: UUID, trial_id: UUID,
-                          raw: bytes) -> ResearchEvaluation:
+                          raw: bytes, lease: LeaseToken | None = None) -> ResearchEvaluation:
     """Consume durable budget before replay and atomically retain one result.
 
     Results stay unqualified even if metrics look good. This offline entry point
@@ -103,6 +109,9 @@ def run_registered_equity(session: Session, owner: UUID, trial_id: UUID,
         result = {"outcome": "ERROR", "reason_code": "RUN_FAILED",
                   "evidence_origin": "ENGINE_RESEARCH_REPLAY", "promotion_eligible": False}
     digest = fingerprint(result)
+    # Hold the lease row lock through this result update and its commit.
+    if lease is not None and not assert_research_lease(session, lease):
+        raise ResearchJobStale()
     session.execute(update(ResearchEvaluation).where(
         ResearchEvaluation.trial_id == trial_id, ResearchEvaluation.result_digest.is_(None),
     ).values(result=result, result_digest=digest, completed_at=datetime.now(timezone.utc)))
@@ -130,9 +139,9 @@ def run_registered_equity_job(
     """
     saved: ResearchEvaluation | None = None
 
-    def evaluate() -> None:
+    def evaluate(token: LeaseToken) -> None:
         nonlocal saved
-        saved = run_registered_equity(session, owner, trial_id, raw)
+        saved = run_registered_equity(session, owner, trial_id, raw, lease=token)
 
     outcome = run_research_job(session, job_owner, lease_seconds, evaluate)
     return outcome, saved if outcome.status == "COMPLETED" else None
@@ -209,7 +218,7 @@ def bind_nifty_replay(session: Session, owner: UUID, trial_id: UUID,
 
 def record_registered_nifty_replay(
     session: Session, owner: UUID, trial_id: UUID, study: FrozenNiftyStudy,
-    replay: ScheduledOptionsBacktestResult,
+    replay: ScheduledOptionsBacktestResult, lease: LeaseToken | None = None,
 ) -> ResearchEvaluation:
     """Persist a bounded NIFTY replay assessment after a separate engine run.
 
@@ -240,6 +249,9 @@ def record_registered_nifty_replay(
             "evidence_origin": "ENGINE_RESEARCH_REPLAY", "promotion_eligible": False,
         }
     digest = fingerprint(result)
+    # Hold the lease row lock through this result update and its commit.
+    if lease is not None and not assert_research_lease(session, lease):
+        raise ResearchJobStale()
     session.execute(update(ResearchEvaluation).where(
         ResearchEvaluation.trial_id == trial_id, ResearchEvaluation.result_digest.is_(None),
     ).values(result=result, result_digest=digest, completed_at=datetime.now(timezone.utc)))
@@ -266,9 +278,11 @@ def record_registered_nifty_replay_job(
     """
     saved: ResearchEvaluation | None = None
 
-    def record() -> None:
+    def record(token: LeaseToken) -> None:
         nonlocal saved
-        saved = record_registered_nifty_replay(session, owner, trial_id, study, replay)
+        saved = record_registered_nifty_replay(
+            session, owner, trial_id, study, replay, lease=token,
+        )
 
     outcome = run_research_job(session, job_owner, lease_seconds, record)
     return outcome, saved if outcome.status == "COMPLETED" else None

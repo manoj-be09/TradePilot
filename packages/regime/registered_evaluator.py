@@ -135,7 +135,7 @@ def run_registered_equity_job(
         saved = run_registered_equity(session, owner, trial_id, raw)
 
     outcome = run_research_job(session, job_owner, lease_seconds, evaluate)
-    return outcome, saved
+    return outcome, saved if outcome.status == "COMPLETED" else None
 
 
 def bind_nifty_replay(session: Session, owner: UUID, trial_id: UUID,
@@ -271,4 +271,4 @@ def record_registered_nifty_replay_job(
         saved = record_registered_nifty_replay(session, owner, trial_id, study, replay)
 
     outcome = run_research_job(session, job_owner, lease_seconds, record)
-    return outcome, saved
+    return outcome, saved if outcome.status == "COMPLETED" else None

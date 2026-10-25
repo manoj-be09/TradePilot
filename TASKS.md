@@ -49,6 +49,7 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
 - [ ] **Day 17 — 7 Nov: Complete release security and recovery checks.**
   - [x] Run full CI on `74d34c5` (passed), including the configured isolated PostgreSQL test service.
   - [x] Run the later isolated local suite after the parent-lock change: 609 passed, 13 skipped, with two existing deprecation warnings; Ruff, mypy and Bandit passed.
+  - [x] Suppress a research evaluation wrapper's saved result when its lease outcome is not COMPLETED; focused lease/evaluator checks passed.
   - [ ] Run the new PostgreSQL race test in CI and finish final migration, account-isolation, lease/recovery, failure-path and skip-reason review for the release candidate.
 - [ ] **Day 18 — 8 Nov: Verify the final desktop and phone screens.**
   - [x] Inspect earlier signed-in F&O desktop and approximately 390 px phone layouts.

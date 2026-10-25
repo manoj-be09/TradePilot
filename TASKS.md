@@ -44,6 +44,7 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
 - [ ] **Day 15 — 5 Nov: Compare qualified policies with `NO_TRADE`.** Apply capital, tail-risk and uncertainty gates; otherwise abstain. Publish no invented probability of profit.
 - [ ] **Day 16 — 6 Nov: Retain prospective decisions and outcomes.**
   - [x] Keep existing time-bounded account-scoped recommendation/abstention records separate from orders and promotion.
+  - [x] Bind newly recorded shadow no-fill and rejection events to the saved frozen policy artifact; preserve idempotent replay of earlier records.
   - [ ] Record policy-matched unresolved, rejected and no-fill observations prospectively and idempotently.
 - [ ] **Day 17 — 7 Nov: Complete release security and recovery checks.**
   - [x] Run full CI on `74d34c5` (passed), including the configured isolated PostgreSQL test service.

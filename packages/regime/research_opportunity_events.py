@@ -8,7 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from packages.database.models import ResearchOpportunityEvent, ResearchRecommendation
+from packages.database.models import (
+    ResearchOpportunityEvent,
+    ResearchPolicySet,
+    ResearchRecommendation,
+)
 from packages.regime.candidate_registry import fingerprint
 
 
@@ -65,6 +69,7 @@ def record_opportunity_event(session: Session, owner: UUID, recommendation_id: U
     if (event.observed_at < as_of or event.available_at > now
             or event.observed_at > now):
         raise ValueError("Outcome evidence is future-dated or precedes the opportunity")
+    policy_binding: dict[str, str] | None = None
     if event.strategy_key is not None:
         alternatives = evidence.get("alternatives", [])
         matching = [item for item in alternatives
@@ -77,14 +82,49 @@ def record_opportunity_event(session: Session, owner: UUID, recommendation_id: U
             or not matching[0].get("frozen_in_study")
         ):
             raise ValueError("Shadow outcome requires a frozen study policy")
+        if event.status != "UNRESOLVED":
+            policy_set = session.scalar(select(ResearchPolicySet).where(
+                ResearchPolicySet.study_id == recommendation.study_id,
+                ResearchPolicySet.user_id == owner,
+            ))
+            if (policy_set is None
+                    or policy_set.manifest_digest != evidence["policy_set_digest"]
+                    or fingerprint(policy_set.manifest) != policy_set.manifest_digest
+                    or policy_set.manifest.get("study_manifest_digest")
+                    != evidence.get("study_manifest_digest")):
+                raise ValueError("Frozen policy artifact does not match the opportunity")
+            incumbent = policy_set.manifest.get("incumbent")
+            challengers = policy_set.manifest.get("challengers")
+            if not isinstance(incumbent, dict) or not isinstance(challengers, list):
+                raise ValueError("Frozen policy artifact is incomplete")
+            policies = [incumbent, *challengers]
+            pinned = [item for item in policies if isinstance(item, dict)
+                      and item.get("strategy_key") == event.strategy_key
+                      and item.get("strategy_version") == event.strategy_version]
+            if len(pinned) != 1:
+                raise ValueError("Candidate is not in the frozen policy artifact")
+            binding_keys = ("policy_version", "policy_artifact_digest",
+                            "template_digest")
+            if not all(isinstance(pinned[0].get(key), str)
+                       and pinned[0][key] for key in binding_keys):
+                raise ValueError("Frozen policy artifact is incomplete")
+            policy_binding = {
+                "policy_set_digest": policy_set.manifest_digest,
+                **{key: pinned[0][key] for key in binding_keys},
+            }
     payload = event.model_dump(mode="json")
+    if policy_binding is not None:
+        payload["frozen_policy_binding"] = policy_binding
     digest = fingerprint(payload)
     existing = session.scalar(select(ResearchOpportunityEvent).where(
         ResearchOpportunityEvent.recommendation_id == recommendation_id,
         ResearchOpportunityEvent.event_key == event.event_key,
     ))
     if existing is not None:
-        if existing.user_id == owner and existing.payload_digest == digest:
+        legacy_digest = fingerprint(event.model_dump(mode="json"))
+        if (existing.user_id == owner
+                and existing.payload_digest in (digest, legacy_digest)
+                and fingerprint(existing.payload) == existing.payload_digest):
             return existing
         raise ValueError("Event key already has different immutable evidence")
     row = ResearchOpportunityEvent(

@@ -1,3 +1,4 @@
+# Generated from the Upstox V3 schema. MIT licence; see third_party/upstox/LICENSE.txt.
 # mypy: disable-error-code="type-arg"
 from google.protobuf import wrappers_pb2 as _wrappers_pb2
 from google.protobuf.internal import containers as _containers

@@ -1,10 +1,11 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import create_engine, update
 from sqlalchemy.orm import Session
 
 from packages.database.base import Base
 from packages.database.models import WorkerLease
+from packages.regime import research_scheduler_lease
 from packages.regime.research_scheduler_lease import (
     RESEARCH_WORKER_NAME,
     ResearchJobCancelled,
@@ -129,4 +130,48 @@ def test_research_lease_acquisition_rejects_invalid_duration():
             else:
                 raise AssertionError("Invalid research lease duration was accepted")
         assert session.get(WorkerLease, RESEARCH_WORKER_NAME) is None
+    engine.dispose()
+
+
+def test_failed_task_rolls_back_before_recording_degraded_lease():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        def fail_during_flush() -> None:
+            session.expunge_all()
+            now = datetime.now(timezone.utc)
+            session.add(WorkerLease(
+                name=RESEARCH_WORKER_NAME, owner="duplicate", generation=0,
+                lease_until=now, heartbeat_at=now, status="RUNNING", detail="",
+            ))
+            session.flush()
+
+        outcome = run_research_job(session, "research-failed-flush", 60,
+                                   fail_during_flush)
+        assert outcome.status == "FAILED"
+        lease = session.get(WorkerLease, RESEARCH_WORKER_NAME)
+        assert lease is not None and lease.status == "DEGRADED"
+        assert acquire_research_lease(session, "research-recovered", 60) is not None
+    engine.dispose()
+
+
+def test_stale_task_rolls_back_its_uncommitted_work(monkeypatch):
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        checks = iter((True, False))
+        monkeypatch.setattr(research_scheduler_lease, "assert_research_lease",
+                            lambda _session, _token: next(checks))
+
+        def stage_without_commit() -> None:
+            now = datetime.now(timezone.utc)
+            session.add(WorkerLease(
+                name="uncommitted-research-row", owner="stale", generation=0,
+                lease_until=now, heartbeat_at=now, status="RUNNING", detail="",
+            ))
+
+        outcome = run_research_job(session, "research-stale", 60,
+                                   stage_without_commit)
+        assert outcome.status == "STALE"
+        assert session.get(WorkerLease, "uncommitted-research-row") is None
     engine.dispose()

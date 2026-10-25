@@ -67,12 +67,15 @@ def run_research_job(session: Session, owner: str, seconds: int,
     try:
         task()
     except ResearchJobCancelled:
+        session.rollback()
         finish_research_lease(session, token, "CANCELLED", "Research task cancelled.")
         return ResearchJobOutcome("CANCELLED", "Research task cancelled.")
     except Exception:
+        session.rollback()
         finish_research_lease(session, token, "DEGRADED", "Research task failed.")
         return ResearchJobOutcome("FAILED", "Research task failed; no exception details retained.")
     if not assert_research_lease(session, token):
+        session.rollback()
         return ResearchJobOutcome("STALE", "Research lease was taken over before completion.")
     finish_research_lease(session, token, "HEALTHY", "Research task completed.")
     return ResearchJobOutcome("COMPLETED", "Research task completed under a fenced lease.")

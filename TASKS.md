@@ -56,6 +56,7 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
   - [x] Fence offline equity and NIFTY research result writes against the current lease generation in the same transaction; focused stale-result checks passed.
   - [x] Run the full isolated local regression after the result fence: 611 passed, 13 skipped; Ruff, mypy and Bandit passed.
   - [x] Run the new PostgreSQL study-freeze/reservation race test in CI with `TEST_POSTGRES_URL`; backend and frontend jobs passed on `05d41c0`.
+  - [x] Recheck the same-trial concurrent slot reservation fix in PostgreSQL CI; backend and frontend jobs passed on `f69f3fd`.
   - [x] Audit the 13 local skip reasons: 11 PostgreSQL-only cases require the CI test database and two historical-settlement cases require an explicit opt-in NSE archive date.
   - [ ] Finish final migration, account-isolation, lease/recovery and failure-path review against the release candidate and verify the deployed revision.
 - [ ] **Day 18 — 8 Nov: Verify the final desktop and phone screens.**

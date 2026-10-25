@@ -17,6 +17,7 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
   - [ ] Retain bounded raw observations and decide whether every selected leg has a usable exchange-origin executable-book time. Record `NOT OBSERVED` if no eligible session is available.
 - [ ] **Day 6 — 27 Oct: Retain point-in-time NIFTY chain and bar artifacts.**
   - [x] Validate declared event, availability and receipt times, source identity, revisions, exact bytes and late corrections in offline fixtures.
+  - [x] Review published Upstox community guidance for private Feed V3 retention/replay and private NSE F&O display; record its scope in [DATA_SOURCE_DECISION.md](DATA_SOURCE_DECISION.md).
   - [ ] Review actual source rights and retained raw chain/bar artifacts for the owner study.
 - [ ] **Day 7 — 28 Oct: Record available market fields with provenance.**
   - [x] Track returned-chain expiry, underlying, volume/OI/IV/Greek and bid/ask quantity coverage; keep partial totals and missing depth-order counts explicit.

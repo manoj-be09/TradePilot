@@ -1,5 +1,6 @@
 """Bounded local feed diagnostics; never accept connection strings or exceptions."""
 
+import base64
 import hashlib
 import json
 import logging
@@ -9,6 +10,8 @@ from pathlib import Path
 from typing import Literal
 
 from packages.market_data.contracts import Quote
+
+MAX_RAW_FRAME_BYTES = 100_000
 
 FeedEvent = Literal["connected", "disconnected", "reconnect", "stale", "quote", "stopped"]
 
@@ -40,6 +43,26 @@ class FeedJournal:
                 ask=str(quote.ask) if quote.ask is not None else None,
                 bid_size=quote.bid_quantity, ask_size=quote.ask_quantity,
             )
+        self._handler.emit(logging.LogRecord(
+            "feed_journal", logging.INFO, "", 0, json.dumps(data), (), None,
+        ))
+
+    def record_frame(self, payload: bytes, received_at: datetime) -> None:
+        """Retain exact bounded V3 frame bytes without connection metadata."""
+        if received_at.tzinfo is None:
+            raise ValueError("Frame receipt time must have a timezone")
+        data: dict[str, object] = {
+            "event": "raw_v3_frame",
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "received_at": received_at.isoformat(),
+            "byte_count": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+        if len(payload) > MAX_RAW_FRAME_BYTES:
+            data["event"] = "raw_v3_frame_omitted"
+            data["reason"] = "frame_size_limit"
+        else:
+            data["payload_base64"] = base64.b64encode(payload).decode("ascii")
         self._handler.emit(logging.LogRecord(
             "feed_journal", logging.INFO, "", 0, json.dumps(data), (), None,
         ))

@@ -201,10 +201,21 @@ def test_v3_full_feed_decodes_initial_and_live_quotes_without_exchange_book_clai
         ))
     )
 
+    captured_frames = []
+
+    def record_frame(payload, received_at):
+        captured_frames.append((payload, received_at))
+
     async def collect():
-        return [item async for item in provider.subscribe([key, key])]
+        return [
+            item async for item in provider.subscribe(
+                [key, key], raw_frame_recorder=record_frame,
+            )
+        ]
 
     quotes = asyncio.run(collect())
+    assert [payload for payload, _ in captured_frames] == frames[1:]
+    assert all(received_at.tzinfo is not None for _, received_at in captured_frames)
     assert len(quotes) == 2
     assert [quote.last_price for quote in quotes] == [100, 101]
     assert quotes[0].bid_quantity == 20

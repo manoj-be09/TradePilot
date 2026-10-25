@@ -5,8 +5,8 @@ python scripts/probe-upstox-v3-feed.py
 python scripts/probe-upstox-v3-feed.py --nifty-atm-call
 
 The NIFTY mode samples one chain/master-matched call. An optional bounded
-normalized quote journal must stay under the private, Git-ignored work directory.
-It does not establish exchange-origin book timing.
+quote and exact-frame journal must stay under the private, Git-ignored work
+directory. It does not establish exchange-origin book timing.
 """
 
 import argparse
@@ -26,6 +26,7 @@ sys.path.insert(0, str(repo))
 
 from packages.market_data.feed_journal import FeedJournal  # noqa: E402
 from packages.market_data.provider import get_market_data_provider  # noqa: E402
+from packages.market_data.upstox import UpstoxMarketDataProvider  # noqa: E402
 
 INSTRUMENT = "NSE_EQ|INE002A01018"  # RELIANCE
 SECONDS = 45
@@ -196,8 +197,14 @@ async def main(provider: Any = None, journal: FeedJournal | None = None,
         last_change_elapsed_seconds = 0.0
         largest_gap_seconds = 0.0
         try:
+            stream = (
+                provider.subscribe([instrument], raw_frame_recorder=journal.record_frame)
+                if nifty_option and journal is not None
+                and isinstance(provider, UpstoxMarketDataProvider)
+                else provider.subscribe([instrument])
+            )
             async with asyncio.timeout(SECONDS):
-                async for quote in provider.subscribe([instrument]):
+                async for quote in stream:
                     observed_at = datetime.now(timezone.utc)
                     if journal is not None:
                         if received == 0:

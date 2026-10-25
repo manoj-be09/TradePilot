@@ -1,5 +1,5 @@
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -514,8 +514,11 @@ class UpstoxMarketDataProvider:
             raise MarketDataProviderError("Upstox expired-candle response had an unexpected shape")
         return _parse_historical_bars(candles)
 
-    def subscribe(self, instrument_tokens: list[str]) -> AsyncIterator[Quote]:
-        """Stream read-only V3 full-feed quotes without inventing exchange book times."""
+    def subscribe(
+        self, instrument_tokens: list[str],
+        *, raw_frame_recorder: Callable[[bytes, datetime], None] | None = None,
+    ) -> AsyncIterator[Quote]:
+        """Stream read-only V3 quotes; optionally retain exact received frames."""
         keys = list(dict.fromkeys(instrument_tokens))
 
         async def stream() -> AsyncIterator[Quote]:
@@ -535,6 +538,7 @@ class UpstoxMarketDataProvider:
                     async for payload in ws:
                         if not isinstance(payload, bytes):
                             raise MarketDataProviderError("Upstox sent a nonbinary market frame")
+                        received_at = datetime.now(timezone.utc)
                         try:
                             frame = upstox_v3_pb2.FeedResponse.FromString(payload)
                         except DecodeError as error:
@@ -547,7 +551,8 @@ class UpstoxMarketDataProvider:
                             upstox_v3_pb2.initial_feed, upstox_v3_pb2.live_feed,
                         ):
                             continue
-                        received_at = datetime.now(timezone.utc)
+                        if raw_frame_recorder is not None:
+                            raw_frame_recorder(payload, received_at)
                         tick_at = _millisecond_datetime(frame.currentTs)
                         for key in keys:
                             if key in frame.feeds:

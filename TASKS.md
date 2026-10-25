@@ -14,7 +14,7 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
 - [x] **Day 4 — 25 Oct: Define the timestamp contract.** Distinguish source event, executable-book, last-trade, provider-response and server-receipt times; specify missing, stale and future-data behavior. Provider proof of exchange-origin book time remains open under Day 5 and the external gates below.
 - [ ] **Day 5 — 26 Oct: Probe a normal-session feed when the exchange is open.**
   - [x] Make the read-only probe and deterministic fixtures report missing provider tick time as unknown.
-  - [x] Permit a bounded, normalized NIFTY V3 quote journal only under the private, Git-ignored work directory; keep the probe read-only.
+  - [x] Permit a bounded NIFTY V3 quote and exact-frame journal only under the private, Git-ignored work directory; keep the probe read-only.
   - [ ] Retain bounded raw observations and decide whether every selected leg has a usable exchange-origin executable-book time. Record `NOT OBSERVED` if no eligible session is available.
 - [ ] **Day 6 — 27 Oct: Retain point-in-time NIFTY chain and bar artifacts.**
   - [x] Validate declared event, availability and receipt times, source identity, revisions, exact bytes and late corrections in offline fixtures.

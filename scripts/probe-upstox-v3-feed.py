@@ -4,8 +4,9 @@ Run from the repository root with the project Python environment:
 python scripts/probe-upstox-v3-feed.py
 python scripts/probe-upstox-v3-feed.py --nifty-atm-call
 
-The NIFTY mode samples one chain/master-matched call in memory only. It does not
-save option quotes or establish licensed exchange-origin book timing.
+The NIFTY mode samples one chain/master-matched call. An optional bounded
+normalized quote journal must stay under the private, Git-ignored work directory.
+It does not establish exchange-origin book timing.
 """
 
 import argparse
@@ -32,6 +33,15 @@ MAX_DISPLAYED_QUOTES = 8
 MIN_OBSERVED_SPAN_SECONDS = 20.0
 TOTAL_TIMEOUT_SECONDS = 75
 WATCHDOG_SECONDS = 90
+NIFTY_JOURNAL_ROOT = repo / "work" / "feed-observations"
+
+
+def private_nifty_journal_path(path: Path) -> Path:
+    """Keep provider observations in a Git-ignored private workspace folder."""
+    resolved = path.resolve()
+    if not resolved.is_relative_to(NIFTY_JOURNAL_ROOT.resolve()):
+        raise ValueError("NIFTY journal must be under work/feed-observations")
+    return resolved
 
 
 def clock_offset_seconds(
@@ -145,8 +155,6 @@ async def nifty_atm_call(provider: Any) -> tuple[str, str, str] | None:
 
 async def main(provider: Any = None, journal: FeedJournal | None = None,
                nifty_option: bool = False) -> None:
-    if nifty_option and journal is not None:
-        raise ValueError("NIFTY option observations require reviewed retention rights")
     provider = provider or get_market_data_provider()
     if provider.provider_id != "upstox":
         print("Upstox token is not configured; no stream attempted.")
@@ -274,11 +282,14 @@ async def main(provider: Any = None, journal: FeedJournal | None = None,
         print(f"Probe failed ({type(error).__name__}); no market-data claim made.")
 
 
-def run_nifty_probe_with_watchdog() -> None:
+def run_nifty_probe_with_watchdog(journal_path: Path | None = None) -> None:
     """Bound the process even if Windows cannot start or interrupt its event loop."""
     try:
+        command = [sys.executable, str(Path(__file__).resolve()), "--nifty-atm-call", "--child"]
+        if journal_path is not None:
+            command.extend(["--journal", str(private_nifty_journal_path(journal_path))])
         result = subprocess.run(
-            [sys.executable, str(Path(__file__).resolve()), "--nifty-atm-call", "--child"],
+            command,
             capture_output=True, text=True, timeout=WATCHDOG_SECONDS, check=False,
         )
     except subprocess.TimeoutExpired:
@@ -301,9 +312,12 @@ if __name__ == "__main__":
     parser.add_argument("--child", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.nifty_atm_call and args.journal is not None:
-        parser.error("NIFTY option observations cannot be journaled without reviewed data rights")
+        try:
+            args.journal = private_nifty_journal_path(args.journal)
+        except ValueError:
+            parser.error("NIFTY journal must be under work/feed-observations")
     if args.nifty_atm_call and not args.child:
-        run_nifty_probe_with_watchdog()
+        run_nifty_probe_with_watchdog(args.journal)
         raise SystemExit(0)
     journal = FeedJournal(args.journal) if args.journal else None
     try:

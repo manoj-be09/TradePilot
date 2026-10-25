@@ -207,3 +207,76 @@ def test_nifty_probe_watchdog_stops_a_stalled_child_without_leaking_stderr(monke
     output = capsys.readouterr().out
     assert "process deadline" in output
     assert "private.example" not in output and "secret" not in output
+
+
+def test_nifty_journal_path_stays_in_git_ignored_private_area():
+    import pytest
+
+    script = run_path(str(Path("scripts/probe-upstox-v3-feed.py")))
+    validate = script["private_nifty_journal_path"]
+    accepted = Path("work/feed-observations/nifty-v3.jsonl")
+    assert validate(accepted) == accepted.resolve()
+    with pytest.raises(ValueError, match="work/feed-observations"):
+        validate(Path("nifty-v3.jsonl"))
+    with pytest.raises(ValueError, match="work/feed-observations"):
+        validate(Path("work/feed-observations/../../tracked.jsonl"))
+
+
+def test_nifty_watchdog_forwards_only_private_journal_path(monkeypatch, capsys):
+    import subprocess
+
+    script = run_path(str(Path("scripts/probe-upstox-v3-feed.py")))
+    path = Path("work/feed-observations/nifty-v3.jsonl")
+
+    def observed(command, **kwargs):
+        assert command[-4:-2] == ["--nifty-atm-call", "--child"]
+        assert command[-2:] == ["--journal", str(path.resolve())]
+        assert kwargs["timeout"] == 90
+        return subprocess.CompletedProcess(command, 0, stdout="Read-only probe complete.\n")
+
+    monkeypatch.setattr(script["subprocess"], "run", observed)
+    script["run_nifty_probe_with_watchdog"](path)
+    assert "Read-only probe complete." in capsys.readouterr().out
+
+
+def test_nifty_probe_can_write_bounded_normalized_observation(tmp_path, capsys):
+    from datetime import datetime, timezone
+
+    from packages.market_data.contracts import Quote
+    from packages.market_data.feed_journal import FeedJournal
+
+    script = run_path(str(Path("scripts/probe-upstox-v3-feed.py")))
+
+    async def clock():
+        return None
+
+    async def selected(provider):
+        return ("NSE_FO|TEST_ONLY", "2026-10-27", "22400")
+
+    class Provider:
+        provider_id = "upstox"
+
+        async def _get(self, path):
+            return {"status": "NORMAL_OPEN"}
+
+        async def subscribe(self, instruments):
+            assert instruments == ["NSE_FO|TEST_ONLY"]
+            yield Quote(
+                instrument_token=instruments[0], timestamp=datetime.now(timezone.utc),
+                last_price=100, bid=99, ask=101, timestamp_basis="provider_tick",
+                bid_quantity=65, ask_quantity=65,
+            )
+
+    script["main"].__globals__["estimate_provider_clock_offset"] = clock
+    script["main"].__globals__["nifty_atm_call"] = selected
+    path = tmp_path / "nifty-observation.jsonl"
+    journal = FeedJournal(path)
+    try:
+        asyncio.run(script["main"](Provider(), journal, nifty_option=True))
+    finally:
+        journal.close()
+    saved = path.read_text()
+    assert "NSE_FO|TEST_ONLY" not in saved
+    assert '"event": "quote"' in saved
+    assert '"book_basis": "unknown"' in saved
+    assert "exchange-origin book time remains unverified" not in capsys.readouterr().out

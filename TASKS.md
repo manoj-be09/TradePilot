@@ -54,6 +54,7 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
   - [ ] Run the new PostgreSQL race test in CI and finish final migration, account-isolation, lease/recovery, failure-path and skip-reason review for the release candidate.
 - [ ] **Day 18 — 8 Nov: Verify the final desktop and phone screens.**
   - [x] Inspect earlier signed-in F&O desktop and approximately 390 px phone layouts.
+  - [x] Show the frozen study's declared cost artifact status and uncertainty note in the Research summary; frontend type check passed.
   - [ ] Verify current populated Research/F&O views, cost/source/uncertainty labels and accessible abstention states.
 - [ ] **Day 19 — 9 Nov: Attempt normal-session paper lifecycle acceptance only after the book-time gate passes.** Observe a natural policy-pinned signal, entry, exit, rejected/no-fill paths and ledger reconciliation. If no qualified feed or signal exists, record the waiting evidence; do not force a trade.
 - [ ] **Day 20 — 10 Nov: Decide on the bounded software release candidate.** Review exact deployment revision, test/skip results and the gate ledger; review final expiry evidence without changing the saved trade unless independently justified.

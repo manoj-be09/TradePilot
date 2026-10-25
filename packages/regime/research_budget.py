@@ -102,6 +102,8 @@ def reserve_trial_slot(
         raise ValueError("Experiment family budget or protected scope differs")
     occupied = session.get(ResearchBudgetSlot, (experiment.id, manifest.trial_number))
     if occupied is not None:
+        if occupied.trial_id == trial_id:
+            return occupied
         raise ValueError("Experiment trial slot is already consumed")
     reservation = ResearchBudgetSlot(
         experiment_id=experiment.id, slot=manifest.trial_number, trial_id=trial_id,

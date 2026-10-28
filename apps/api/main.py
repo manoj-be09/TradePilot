@@ -1269,6 +1269,13 @@ async def _completed_nifty_regime(
         bars = await provider.get_historical(
             "NSE_INDEX|Nifty 50", chain.as_of - timedelta(days=14), chain.as_of, "5m"
         )
+        # The historical endpoint stops at the previous session; today's bars come
+        # from the intraday endpoint. Intraday wins on a shared timestamp.
+        if callable(getattr(provider, "get_intraday", None)):
+            intraday = await provider.get_intraday("NSE_INDEX|Nifty 50", "5m")
+            by_time = {bar.timestamp: bar for bar in bars}
+            by_time.update({bar.timestamp: bar for bar in intraday})
+            bars = sorted(by_time.values(), key=lambda bar: bar.timestamp)
         received_at = datetime.now(timezone.utc)
         selected_bars = select_completed_regime_bars(bars, chain.as_of)
         if selected_bars is None:

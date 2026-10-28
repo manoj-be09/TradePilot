@@ -175,3 +175,16 @@ def test_volatility_specialist_backs_off_expensive_options():
     assert next(v for v in cheap if v.stance == "VOLATILITY").conviction > next(
         v for v in dear if v.stance == "VOLATILITY"
     ).conviction
+
+
+def test_unlimited_upside_is_valued_at_a_one_sigma_move_not_capped_maximum():
+    now = _now()
+    result = rank_nifty_strategies(_inputs(now))
+    long_call = next(item for item in result.candidates if item.strategy_key == "long_call")
+    spread = next(item for item in result.candidates if item.strategy_key == "bull_call_spread")
+    assert long_call.maximum_profit_unbounded
+    assert long_call.reward_basis == "ONE_SIGMA_MOVE"
+    assert spread.reward_basis == "EXPIRY_MAXIMUM"
+    # A 1-sigma move (about 2.8 points here) does not recover the 6.1 premium.
+    assert long_call.status != "ELIGIBLE"
+    assert any("exceed the modeled reward" in reason for reason in long_call.reasons)

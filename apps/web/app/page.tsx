@@ -2915,6 +2915,20 @@ export default function Home() {
               </div> : null}
             </details>
 
+            {token && selectedOptionIndex === "NIFTY" ? (
+              <StrategyRanking
+                apiUrl={API_URL}
+                chain={chain}
+                onUse={(key) => {
+                  setSelectedStrategy(key); setDeploymentPreparedKey(""); setPaperTicketMessage("");
+                  const builder = document.getElementById("paper-strategy-builder");
+                  if (builder instanceof HTMLDetailsElement) { builder.open = true; builder.scrollIntoView({ behavior: "smooth", block: "start" }); }
+                }}
+                referenceStrike={selectedPaperStrike}
+                token={token}
+              />
+            ) : null}
+
             <details className="strategy-builder strategy-composer" id="paper-strategy-builder"><summary>Add a paper strategy</summary>
               <div className={`strategy-controls ${isCustomStrategy ? "custom-strategy-controls" : ""}`}>
                 <label>
@@ -2938,15 +2952,6 @@ export default function Home() {
                   <input disabled={paperBusy} max={10} min={1} onChange={(event) => { setPaperLots(Math.max(1, Math.min(10, Math.trunc(Number(event.target.value) || 1)))); setDeploymentPreparedKey(""); setPaperTicketMessage(""); }} type="number" value={paperLots} />
                 </label>
               </div>
-              {token && selectedOptionIndex === "NIFTY" ? (
-                <StrategyRanking
-                  apiUrl={API_URL}
-                  chain={chain}
-                  onUse={(key) => { setSelectedStrategy(key); setDeploymentPreparedKey(""); setPaperTicketMessage(""); }}
-                  referenceStrike={selectedPaperStrike}
-                  token={token}
-                />
-              ) : null}
               <div className="strategy-ranking-heading">
                 <div><strong>NIFTY market-fit research preview</strong><small>Frozen vertical/range exposure recipes · no automatic entry</small></div>
                 <span>{marketFit?.regime || "UNKNOWN"} · NO TRADE</span>

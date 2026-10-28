@@ -23,6 +23,7 @@ type RankedCandidate = {
   estimated_round_trip_costs_per_lot: string | null;
   costs_verified: boolean;
   reward_to_risk_after_costs: string | null;
+  reward_basis: "EXPIRY_MAXIMUM" | "ONE_SIGMA_MOVE" | null;
 };
 
 export type RankingResult = {
@@ -125,6 +126,7 @@ export function StrategyRanking({
             ))}
           </div>
           <p className="strategy-library-note" role="status">{result.reasons.join(" ")}</p>
+          {ranked.length === 0 ? <p className="specialist-empty">No specialist has a view right now, so no strategy is ranked. Ranking resumes when the market regime supports one of the four views.</p> : null}
           <div className="specialist-candidates">
             {shown.map((item, index) => (
               <article className={`specialist-candidate specialist-candidate--${item.status.toLowerCase()} ${item.strategy_key === selected ? "selected" : ""}`} key={item.strategy_key}>
@@ -137,7 +139,7 @@ export function StrategyRanking({
                   <div><dt>Max loss / lot</dt><dd>{money(item.maximum_loss_per_lot)}</dd></div>
                   <div><dt>Max profit / lot</dt><dd>{item.maximum_profit_unbounded ? "Unbounded" : item.maximum_profit_per_unit && item.lot_size ? money(String(Number(item.maximum_profit_per_unit) * item.lot_size)) : "Unavailable"}</dd></div>
                   <div><dt>Est. costs / lot</dt><dd>{money(item.estimated_round_trip_costs_per_lot)}{item.costs_verified ? "" : "*"}</dd></div>
-                  <div><dt>Reward : risk after costs</dt><dd>{item.reward_to_risk_after_costs ? `${Number(item.reward_to_risk_after_costs).toFixed(2)} : 1` : "Unavailable"}</dd></div>
+                  <div><dt>Reward : risk after costs</dt><dd>{item.reward_to_risk_after_costs ? `${Number(item.reward_to_risk_after_costs).toFixed(2)} : 1${item.reward_basis === "ONE_SIGMA_MOVE" ? " at 1σ move" : ""}` : "Unavailable"}</dd></div>
                   <div><dt>Expiry breakeven</dt><dd>{item.breakevens.length ? item.breakevens.map((value) => Number(value).toFixed(2)).join(" / ") : "Unavailable"}</dd></div>
                 </dl>
                 {item.reasons.length ? <small className="specialist-blocked">{item.reasons.join(" ")}</small> : null}

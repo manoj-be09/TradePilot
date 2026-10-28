@@ -7,6 +7,9 @@ at most one candidate; it never opens a position. Entries still go through the p
 entry handler's own checks.
 
 Score = specialist weight x conviction x (0.5 + 0.5 x min(after-cost reward/risk, 3) / 3).
+Reward is the expiry maximum profit, except for unlimited-upside structures, where it is
+the better expiry payoff at spot +/- one standard deviation (ATM IV x sqrt(days / 365)),
+so an uncapped payoff alone never earns the top score.
 Weights default to 1 and are the input a later learning loop adjusts. Scores are
 heuristic orderings, not probabilities or expected returns.
 """
@@ -80,6 +83,7 @@ class RankedCandidate(BaseModel):
     cost_schedule_id: str | None = None
     costs_verified: bool = False
     reward_to_risk_after_costs: Decimal | None = None
+    reward_basis: Literal["EXPIRY_MAXIMUM", "ONE_SIGMA_MOVE"] | None = None
 
 
 class SpecialistSummary(BaseModel):
@@ -152,6 +156,26 @@ def _chain_blocks(inputs: RankingInputs) -> list[str]:
     return blocks
 
 
+def _payoff_at(legs: list[RankedLeg], price: Decimal) -> Decimal:
+    """Per-unit expiry payoff at one underlying price, before costs."""
+    total = _ZERO
+    for leg in legs:
+        moneyness = price - leg.strike if leg.option_type == "CE" else leg.strike - price
+        intrinsic = max(_ZERO, moneyness)
+        sign = 1 if leg.side == "BUY" else -1
+        total += sign * leg.quantity_ratio * (intrinsic - leg.price)
+    return total
+
+
+def _one_sigma_move(
+    chain: OptionChain, atm_iv_pct: Decimal | None, now: datetime
+) -> Decimal | None:
+    if atm_iv_pct is None or chain.underlying_spot is None:
+        return None
+    days = max(1, (chain.expiry - now.astimezone(_IST).date()).days)
+    return chain.underlying_spot * atm_iv_pct / 100 * (Decimal(days) / 365).sqrt()
+
+
 def _find(chain: OptionChain, strike: Decimal, option_type: str) -> OptionContractQuote | None:
     return next(
         (
@@ -177,6 +201,7 @@ def _build_candidate(
     inputs: RankingInputs,
     strikes: list[Decimal],
     global_blocks: list[str],
+    sigma_move: Decimal | None,
 ) -> RankedCandidate:
     chain = inputs.chain
     reasons = list(global_blocks)
@@ -192,14 +217,20 @@ def _build_candidate(
             break
         contract = _find(chain, strikes[target], definition.option_type)
         quote = contract.quote if contract else None
-        if quote is None or quote.bid is None or quote.ask is None or quote.bid <= 0 \
-                or quote.ask < quote.bid:
+        if (contract is None or quote is None or quote.bid is None or quote.ask is None
+                or quote.bid <= 0 or quote.ask < quote.bid):
             reasons.append(f"{strikes[target]} {definition.option_type} lacks a two-sided quote.")
             break
         mid = (quote.ask + quote.bid) / 2
         if (quote.ask - quote.bid) / mid > MAX_SPREAD_FRACTION:
             reasons.append(f"{strikes[target]} {definition.option_type} spread exceeds 5%.")
-        displayed = quote.ask_quantity if definition.side == "BUY" else quote.bid_quantity
+        # Same source as the paper fill check: contract-level displayed size first.
+        displayed = (
+            (contract.ask_quantity if contract.ask_quantity is not None else quote.ask_quantity)
+            if definition.side == "BUY"
+            else (contract.bid_quantity if contract.bid_quantity is not None
+                  else quote.bid_quantity)
+        )
         needed = definition.quantity_ratio * (lot or 1)
         if displayed is None or displayed < needed:
             reasons.append(
@@ -283,13 +314,23 @@ def _build_candidate(
     candidate.cost_schedule_id = schedule.schedule_id
     candidate.costs_verified = verified
 
+    reward_risk: Decimal | None
     if payoff.maximum_profit_unbounded or payoff.maximum_profit is None:
-        reward_risk = REWARD_RISK_CAP
+        spot = chain.underlying_spot
+        if sigma_move is None or spot is None:
+            reward_risk = None
+            reasons.append("Unlimited-upside reward needs ATM IV and spot for a one-sigma move.")
+        else:
+            reward = max(_payoff_at(legs, spot + sigma_move), _payoff_at(legs, spot - sigma_move))
+            reward_risk = (reward * lot - costs) / (max_loss_lot + costs)
+            candidate.reward_basis = "ONE_SIGMA_MOVE"
     else:
         reward_risk = (payoff.maximum_profit * lot - costs) / (max_loss_lot + costs)
-    candidate.reward_to_risk_after_costs = _q(min(reward_risk, REWARD_RISK_CAP), "0.0001")
-    if reward_risk <= 0:
-        reasons.append("Estimated costs exceed the modeled maximum profit.")
+        candidate.reward_basis = "EXPIRY_MAXIMUM"
+    if reward_risk is not None:
+        candidate.reward_to_risk_after_costs = _q(min(reward_risk, REWARD_RISK_CAP), "0.0001")
+        if reward_risk <= 0:
+            reasons.append("Estimated costs exceed the modeled reward.")
 
     if inputs.account is not None and inputs.limits is not None:
         decision = evaluate_entry(
@@ -309,7 +350,7 @@ def _build_candidate(
         return _finish(candidate, reasons)
     candidate.score = _q(
         weight * view.conviction
-        * (Decimal("0.5") + Decimal("0.5") * min(max(reward_risk, _ZERO), REWARD_RISK_CAP)
+        * (Decimal("0.5") + Decimal("0.5") * min(max(reward_risk or _ZERO, _ZERO), REWARD_RISK_CAP)
            / REWARD_RISK_CAP),
         "0.0001",
     )
@@ -332,6 +373,7 @@ def rank_nifty_strategies(inputs: RankingInputs) -> RankingResult:
     weights = {stance: inputs.weights.get(stance, Decimal(1)) for stance in views}
     strikes = sorted({c.strike for c in chain.contracts if c.expiry == chain.expiry})
     global_blocks = _chain_blocks(inputs)
+    sigma_move = _one_sigma_move(chain, vol.atm_iv_pct, inputs.evaluated_at)
     reasons = list(global_blocks)
     if inputs.allow_unverified_book_time:
         reasons.append(
@@ -348,6 +390,7 @@ def rank_nifty_strategies(inputs: RankingInputs) -> RankingResult:
                 continue
             candidates.append(_build_candidate(
                 strategy, stance, views[stance], weights[stance], inputs, strikes, global_blocks,
+                sigma_move,
             ))
     candidates.sort(key=lambda item: (_STATUS_ORDER[item.status], -item.score, item.strategy_key))
 

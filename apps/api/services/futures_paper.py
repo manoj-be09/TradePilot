@@ -53,6 +53,7 @@ from packages.paper_trading.transactions import (
     assert_consistent_ledger,
     lock_account,
     open_futures_trades,
+    option_cash_reserve,
 )
 from packages.paper_trading.worker_lease import LeaseToken, assert_owned
 from packages.recorder.universe import nifty_futures
@@ -358,8 +359,12 @@ async def open_trade(
         projected_cash = money(account.cash_balance - margin)
         if projected_cash < 0:
             raise FuturesError(409, f"Paper cash cannot cover the ₹{margin} futures margin")
-        # Losses come out of the blocked margin first, then free cash.
-        if current_risk + max_loss > projected_cash + margin:
+        # Losses come out of the blocked margin first, then free cash. Open option trades
+        # hold the larger of their maximum loss and their recorded margin estimate.
+        held = option_cash_reserve(session, open_options) + sum(
+            (trade.max_loss for trade in open_futures), Decimal(0)
+        )
+        if held + max_loss > projected_cash + margin:
             raise FuturesError(
                 409, "Available paper cash cannot cover maximum loss across open positions"
             )

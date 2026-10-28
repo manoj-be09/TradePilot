@@ -65,6 +65,17 @@ def test_hedged_spread_needs_far_less_than_the_naked_short():
     assert spread.total < naked.total / 2
 
 
+def test_short_option_minimum_nets_only_within_each_option_type():
+    covered_put = estimate_position_margin(
+        [_option("PE", 24500, -75), _option("CE", 25500, 75)], PARAMS
+    )
+    assert covered_put.short_option_minimum == Decimal("56250.00")
+    strangle = estimate_position_margin(
+        [_option("PE", 24500, -75), _option("CE", 25500, -75)], PARAMS
+    )
+    assert strangle.short_option_minimum == Decimal("56250.00")
+
+
 def test_bad_legs_are_rejected():
     with pytest.raises(ValueError):
         estimate_position_margin([], PARAMS)

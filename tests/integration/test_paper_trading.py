@@ -964,10 +964,12 @@ def test_estimated_margin_must_fit_in_cash_even_when_maximum_loss_does(client, m
     assert margin["model_id"] == "nifty-span-style-scenarios-v1"
     assert Decimal("1025") < Decimal(margin["total"]) < Decimal("20000")
 
-    # Tie up all but about ₹3,000 of cash in a saved position with a small recorded risk.
+    # Leave enough free cash for the new spread's own margin and every maximum loss, but
+    # not for the margin the first spread already holds.
+    free_cash = Decimal(margin["total"]) + Decimal("5000")
     with client.app.state.test_session_factory() as session:
         account = session.scalar(select(PaperAccount))
-        spent = account.cash_balance - Decimal("3000")
+        spent = account.cash_balance - free_cash
         trade = PaperTrade(
             account_id=account.id, user_id=account.user_id, strategy_key="long_call",
             strategy_name="Cash fixture", underlying="NIFTY",
@@ -984,10 +986,8 @@ def test_estimated_margin_must_fit_in_cash_even_when_maximum_loss_does(client, m
             action="OPEN", status="EXECUTED", net_cash_flow=-spent,
             fill_snapshot={"paper_only": True, "fills": []},
         ))
-        account.cash_balance = Decimal("3000")
+        account.cash_balance = free_cash
         session.commit()
-
-    # Maximum loss (₹1,025 each) still fits, but exposure on the short leg is about ₹12,500.
     rejected = open_spread()
     assert rejected.status_code == 409
     assert "estimated" in rejected.json()["detail"]

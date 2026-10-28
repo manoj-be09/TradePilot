@@ -211,6 +211,7 @@ from packages.paper_trading.transactions import (
     assert_consistent_ledger,
     lock_account,
     open_futures_trades,
+    option_cash_reserve,
     reconcile_account,
 )
 from packages.paper_trading.worker_lease import WORKER_NAME, LeaseToken, assert_owned
@@ -3143,8 +3144,11 @@ async def _open_paper_trade_with_provider(
             detail="Available paper cash cannot cover maximum loss across open positions",
         )
     # Defined-risk structures reserve their maximum loss; short legs can still need more
-    # exchange margin than that, so the estimate must also fit in free cash.
-    if current_risk + option_margin.total > projected_cash:
+    # exchange margin than that, so open and new margin estimates must fit in free cash.
+    held = option_cash_reserve(session, list(open_trades)) + sum(
+        (trade.max_loss for trade in open_futures), Decimal(0)
+    )
+    if held + max(max_loss, option_margin.total) > projected_cash:
         raise HTTPException(
             status_code=409,
             detail=(

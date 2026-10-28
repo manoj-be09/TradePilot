@@ -153,7 +153,12 @@ def estimate_position_margin(
     worst_label, worst_loss = max(scenarios, key=lambda item: item[1])
 
     options = [leg for leg in legs if leg.instrument != "FUT"]
-    net_short_units = max(0, -sum(leg.quantity_units for leg in options))
+    # Net within each option type: a long call does not cover a short put. Only one side
+    # of a short strangle can finish in the money, so the larger side is charged.
+    net_short_units = max(
+        max(0, -sum(leg.quantity_units for leg in options if leg.instrument == kind))
+        for kind in ("CE", "PE")
+    )
     reference = max((leg.underlying_price for leg in options), default=Decimal(0))
     short_minimum = money(
         reference * net_short_units * parameters.short_option_minimum_pct / Decimal(100)

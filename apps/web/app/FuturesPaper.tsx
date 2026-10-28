@@ -7,8 +7,8 @@ type Contract = { instrument_key: string; trading_symbol: string; expiry: string
 type FuturesQuote = {
   contract: Contract;
   quote: { bid: string | null; ask: string | null; last_price: string; quote_timestamp: string; timestamp_basis: string };
-  margin_pct: number;
   margin_per_lot: string | null;
+  margin_breakdown: { span: string; exposure: string; worst_scenario: string } | null;
   margin_disclaimer: string;
 };
 
@@ -161,11 +161,15 @@ export function FuturesPaper({ token, apiUrl }: { token: string; apiUrl: string 
       {quote ? (
         <p className="futures-quote" role="status">
           Bid {rupees(quote.quote.bid)} · Ask {rupees(quote.quote.ask)} · as of {new Date(quote.quote.quote_timestamp).toLocaleTimeString("en-IN")}
-          {marginEstimate !== null ? ` · margin ≈ ${rupees(String(marginEstimate))} (${quote.margin_pct}% illustrative)` : ""}
+          {marginEstimate !== null ? ` · margin ≈ ${rupees(String(marginEstimate))} (estimate)` : ""}
           <button className="inline-button" disabled={busy} onClick={() => void loadQuote()} type="button">Refresh quote</button>
         </p>
       ) : null}
-      {quote ? <p className="strategy-library-note">{quote.margin_disclaimer}</p> : null}
+      {quote?.margin_breakdown ? (
+        <p className="strategy-library-note">
+          Per lot: SPAN-style {rupees(quote.margin_breakdown.span)} (worst case {quote.margin_breakdown.worst_scenario}) + exposure {rupees(quote.margin_breakdown.exposure)}. {quote.margin_disclaimer}
+        </p>
+      ) : quote ? <p className="strategy-library-note">{quote.margin_disclaimer}</p> : null}
       <label className="futures-ack">
         <input checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} type="checkbox" />
         I understand a price gap can lose more than the stop-loss amount.

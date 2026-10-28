@@ -174,6 +174,12 @@ from packages.paper_trading.expiry_settlement import (
     calculate_expiry_settlement,
 )
 from packages.paper_trading.index_scope import saved_option_index
+from packages.paper_trading.margin import (
+    FALLBACK_VOLATILITY_PCT,
+    MarginLeg,
+    estimate_position_margin,
+    years_to_expiry,
+)
 from packages.paper_trading.observed_entries import replay_observed_entries
 from packages.paper_trading.observed_exits import replay_observed_exits
 from packages.paper_trading.official_index_close import (
@@ -2920,10 +2926,31 @@ async def _open_paper_trade_with_provider(
     fills: list[dict[str, object]] = []
     saved_legs: list[dict[str, object]] = []
     payoff_legs: list[PayoffLeg] = []
+    margin_legs: list[MarginLeg] = []
+    underlying_spot = chain.underlying_spot
+    if underlying_spot is None or underlying_spot <= 0:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Underlying price is unavailable, so margin cannot be estimated; "
+                "no fill recorded"
+            ),
+        )
+    margin_years = years_to_expiry(body.expiry)
     for option_contract, side, leg_lots in selected:
         quantity_units = leg_lots * lot_size
         fill_price, market_contract = _require_quote(
             chain, option_contract.instrument_key, side, quantity_units
+        )
+        margin_legs.append(
+            MarginLeg(
+                instrument="CE" if option_contract.option_type == "CE" else "PE",
+                quantity_units=quantity_units if side == "BUY" else -quantity_units,
+                underlying_price=underlying_spot,
+                strike=option_contract.strike,
+                years_to_expiry=margin_years,
+                volatility_pct=market_contract.implied_volatility or FALLBACK_VOLATILITY_PCT,
+            )
         )
         amount = (fill_price * quantity_units).quantize(_CENT, rounding=ROUND_HALF_UP)
         leg_cash_flow = -amount if side == "BUY" else amount
@@ -3000,6 +3027,7 @@ async def _open_paper_trade_with_provider(
         raise HTTPException(
             status_code=409, detail="Calculated maximum loss is invalid; trade rejected"
         )
+    option_margin = estimate_position_margin(margin_legs, settings.paper_margin_parameters)
 
     locked_account = lock_account(session, user.id)
     if lease is not None and not assert_owned(session, lease):
@@ -3114,6 +3142,16 @@ async def _open_paper_trade_with_provider(
             status_code=409,
             detail="Available paper cash cannot cover maximum loss across open positions",
         )
+    # Defined-risk structures reserve their maximum loss; short legs can still need more
+    # exchange margin than that, so the estimate must also fit in free cash.
+    if current_risk + option_margin.total > projected_cash:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Available paper cash cannot cover the estimated ₹{option_margin.total} "
+                "margin alongside open-position risk"
+            ),
+        )
 
     trade = PaperTrade(
         account_id=account.id,
@@ -3157,6 +3195,7 @@ async def _open_paper_trade_with_provider(
                 "quality_status": quality.status,
                 "entry_rule_snapshot": entry_rule_snapshot,
                 "modeled_costs": cost_snapshot(fills),
+                "estimated_margin": option_margin.snapshot(),
                 "fills": fills,
                 "method": (
                     "Immediate simulated fills: buys at ask and sells at bid; "

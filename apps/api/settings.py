@@ -1,8 +1,11 @@
+from decimal import Decimal
 from functools import lru_cache
 from typing import Self
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from packages.paper_trading.margin import MarginParameters
 
 
 class Settings(BaseSettings):
@@ -31,8 +34,12 @@ class Settings(BaseSettings):
     paper_quote_max_age_seconds: int = Field(default=60, ge=1, le=300)
     paper_expiry_square_off_minutes_before_close: int = Field(default=20, ge=5, le=60)
     paper_allow_unverified_quotes: bool = False
-    # Illustrative flat margin for NIFTY futures paper trades (percent of notional).
-    paper_futures_margin_pct: int = Field(default=12, ge=5, le=50)
+    # SPAN-style paper margin parameters (packages/paper_trading/margin.py). Estimates
+    # only; calibrate against broker figures before relying on them.
+    paper_margin_price_scan_pct: int = Field(default=9, ge=3, le=30)
+    paper_margin_volatility_scan_points: int = Field(default=4, ge=1, le=20)
+    paper_margin_exposure_pct: int = Field(default=2, ge=1, le=10)
+    paper_margin_short_option_minimum_pct: int = Field(default=3, ge=1, le=10)
     paper_worker_interval_seconds: int = Field(default=15, ge=1, le=60)
     paper_worker_lease_seconds: int = Field(default=120, ge=30, le=600)
     access_token_minutes: int = Field(default=30, gt=0, le=1440)
@@ -54,6 +61,15 @@ class Settings(BaseSettings):
                     "32 characters outside development"
                 )
         return self
+
+    @property
+    def paper_margin_parameters(self) -> MarginParameters:
+        return MarginParameters(
+            price_scan_pct=Decimal(self.paper_margin_price_scan_pct),
+            volatility_scan_points=Decimal(self.paper_margin_volatility_scan_points),
+            exposure_pct=Decimal(self.paper_margin_exposure_pct),
+            short_option_minimum_pct=Decimal(self.paper_margin_short_option_minimum_pct),
+        )
 
     @property
     def effective_live_trading_enabled(self) -> bool:

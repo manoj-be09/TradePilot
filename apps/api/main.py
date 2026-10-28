@@ -97,6 +97,7 @@ from packages.backtesting.replay import (
     run_scheduled_expiry_replay,
     run_single_expiry_replay,
 )
+from packages.core.risk import AccountRiskState, RiskLimits
 from packages.database.models import (
     AuditEvent,
     AuthSession,
@@ -204,6 +205,7 @@ from packages.paper_trading.transactions import (
     lock_account,
 )
 from packages.paper_trading.worker_lease import WORKER_NAME, LeaseToken, assert_owned
+from packages.ranking.selector import RankingInputs, RankingResult, rank_nifty_strategies
 from packages.regime.candidate_registry import fingerprint
 from packages.regime.classifier import MarketRegimeResult, classify_market_regime
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
@@ -1235,6 +1237,54 @@ def analytics_options_summary(user: CurrentUser, body: OptionChain) -> OptionCha
     return calculate_option_features(body)
 
 
+async def _completed_nifty_regime(
+    chain: OptionChain, *, accept_timestamp_warnings: bool = False,
+) -> tuple[MarketRegimeResult | None, str | None, str | None, datetime | None]:
+    """Classify the latest complete 250-bar 5-minute NIFTY window for a current chain.
+
+    Returns (regime, bar digest, provider id, bars received at); all None when the
+    chain is not current, fails quality, or the bars are unavailable or incomplete.
+    """
+    now = datetime.now(timezone.utc)
+    quality = chain.quality
+    quality_ok = quality is not None and (
+        quality.status == "PASS"
+        or (
+            accept_timestamp_warnings and quality.status == "WARN"
+            and all(
+                issue.code in {"SOURCE_TIMESTAMP_UNVERIFIED", "BOOK_TIMESTAMP_UNVERIFIED"}
+                for issue in quality.issues
+            )
+        )
+    )
+    if not (
+        chain.underlying == "NIFTY"
+        and chain.as_of.tzinfo is not None
+        and timedelta(0) <= now - chain.as_of <= timedelta(minutes=5)
+        and quality_ok
+    ):
+        return None, None, None, None
+    provider = get_market_data_provider()
+    try:
+        bars = await provider.get_historical(
+            "NSE_INDEX|Nifty 50", chain.as_of - timedelta(days=14), chain.as_of, "5m"
+        )
+        received_at = datetime.now(timezone.utc)
+        selected_bars = select_completed_regime_bars(bars, chain.as_of)
+        if selected_bars is None:
+            return None, None, None, None
+        digest = fingerprint({
+            "instrument": "NSE_INDEX|Nifty 50", "interval": "5m",
+            "bars": [bar.model_dump(mode="json") for bar in selected_bars],
+        })
+        return (
+            classify_market_regime(selected_bars, "5m"), digest, provider.provider_id,
+            received_at,
+        )
+    except (MarketDataUnavailable, MarketDataProviderError, ValueError):
+        return None, None, None, None
+
+
 @app.post("/analytics/options/market-fit", response_model=MarketFitAssessment, tags=["analytics"])
 async def analytics_options_market_fit(
     user: CurrentUser, body: MarketFitRequest,
@@ -1242,35 +1292,7 @@ async def analytics_options_market_fit(
     """Research-only comparison; a submitted chain never authorizes a paper entry."""
     del user
     chain = body.chain.model_copy(update={"quality": assess_option_chain(body.chain)})
-    regime: MarketRegimeResult | None = None
-    bar_digest: str | None = None
-    bar_provider_id: str | None = None
-    bar_received_at: datetime | None = None
-    now = datetime.now(timezone.utc)
-    if (
-        chain.underlying == "NIFTY"
-        and chain.as_of.tzinfo is not None
-        and timedelta(0) <= now - chain.as_of <= timedelta(minutes=5)
-        and chain.quality is not None
-        and chain.quality.status == "PASS"
-    ):
-        provider = get_market_data_provider()
-        try:
-            bars = await provider.get_historical(
-                "NSE_INDEX|Nifty 50", chain.as_of - timedelta(days=14), chain.as_of, "5m"
-            )
-            received_at = datetime.now(timezone.utc)
-            selected_bars = select_completed_regime_bars(bars, chain.as_of)
-            if selected_bars is not None:
-                regime = classify_market_regime(selected_bars, "5m")
-                bar_digest = fingerprint({
-                    "instrument": "NSE_INDEX|Nifty 50", "interval": "5m",
-                    "bars": [bar.model_dump(mode="json") for bar in selected_bars],
-                })
-                bar_provider_id = provider.provider_id
-                bar_received_at = received_at
-        except (MarketDataUnavailable, MarketDataProviderError, ValueError):
-            pass
+    regime, bar_digest, bar_provider_id, bar_received_at = await _completed_nifty_regime(chain)
     assessment = assess_nifty_market_fit(chain, body.reference_strike, regime)
     assessment.chain_digest = fingerprint(body.chain.model_dump(mode="json"))
     if bar_digest is not None and assessment.regime_as_of is not None:
@@ -1280,6 +1302,57 @@ async def analytics_options_market_fit(
         assessment.bar_count = 250
         assessment.bar_received_at = bar_received_at
     return assessment
+
+
+@app.post("/analytics/options/ranking", response_model=RankingResult, tags=["analytics"])
+async def analytics_options_ranking(
+    user: CurrentUser, body: MarketFitRequest, session: SessionDep,
+) -> RankingResult:
+    """Rank NIFTY paper templates by specialist view, quotes, costs and account risk.
+
+    Read-only: the result never opens a position. Entries still pass every check in
+    the paper entry handler.
+    """
+    settings = get_settings()
+    allow_unverified = settings.paper_allow_unverified_quotes
+    chain = body.chain.model_copy(update={"quality": assess_option_chain(body.chain)})
+    regime, _, _, _ = await _completed_nifty_regime(
+        chain, accept_timestamp_warnings=allow_unverified,
+    )
+    lot_size: int | None = None
+    provider = get_market_data_provider()
+    if chain.underlying == "NIFTY" and callable(getattr(provider, "get_option_contracts", None)):
+        try:
+            contracts = await provider.get_option_contracts("NIFTY", chain.expiry)
+            lot_sizes = {item.lot_size for item in contracts if item.expiry == chain.expiry}
+            lot_size = next(iter(lot_sizes)) if len(lot_sizes) == 1 else None
+        except (MarketDataUnavailable, MarketDataProviderError):
+            lot_size = None
+    account = _get_paper_account(session, user)
+    open_trades = session.scalars(
+        select(PaperTrade).where(PaperTrade.account_id == account.id, PaperTrade.status == "OPEN")
+    ).all()
+    return rank_nifty_strategies(RankingInputs(
+        chain=chain,
+        reference_strike=body.reference_strike,
+        regime=regime,
+        evaluated_at=datetime.now(timezone.utc),
+        lot_size=lot_size,
+        account=AccountRiskState(
+            initial_cash=account.initial_cash,
+            cash_balance=account.cash_balance,
+            kill_switch_enabled=account.kill_switch_enabled,
+            open_trade_max_losses=tuple(trade.max_loss for trade in open_trades),
+            realized_pnl_today=daily_realized_pnl(session, account.id, exchange_today()),
+        ),
+        limits=RiskLimits(
+            max_open_trades=settings.paper_max_open_trades,
+            max_trade_risk_pct=settings.paper_max_trade_risk_pct,
+            max_portfolio_risk_pct=settings.paper_max_portfolio_risk_pct,
+            daily_loss_limit_pct=settings.paper_daily_loss_limit_pct,
+        ),
+        allow_unverified_book_time=allow_unverified,
+    ))
 
 
 @app.post("/research/studies/{study_id}/opportunities/market-fit", tags=["research registry"])

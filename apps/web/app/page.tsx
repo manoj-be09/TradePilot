@@ -9,6 +9,7 @@ import { EquityStrategies } from "./EquityStrategies";
 import { OptionDeploymentDecisions } from "./OptionDeploymentDecisions";
 import { OptionTradeObservations } from "./OptionTradeObservations";
 import { MarketOutlook } from "./MarketOutlook";
+import { StrategyRanking } from "./StrategyRanking";
 import { BuildUpdateNotice } from "./BuildUpdateNotice";
 import { TradingDashboard } from "./TradingDashboard";
 import { ChartWorkspace } from "./ChartWorkspace";
@@ -2937,6 +2938,15 @@ export default function Home() {
                   <input disabled={paperBusy} max={10} min={1} onChange={(event) => { setPaperLots(Math.max(1, Math.min(10, Math.trunc(Number(event.target.value) || 1)))); setDeploymentPreparedKey(""); setPaperTicketMessage(""); }} type="number" value={paperLots} />
                 </label>
               </div>
+              {token && selectedOptionIndex === "NIFTY" ? (
+                <StrategyRanking
+                  apiUrl={API_URL}
+                  chain={chain}
+                  onUse={(key) => { setSelectedStrategy(key); setDeploymentPreparedKey(""); setPaperTicketMessage(""); }}
+                  referenceStrike={selectedPaperStrike}
+                  token={token}
+                />
+              ) : null}
               <div className="strategy-ranking-heading">
                 <div><strong>NIFTY market-fit research preview</strong><small>Frozen vertical/range exposure recipes · no automatic entry</small></div>
                 <span>{marketFit?.regime || "UNKNOWN"} · NO TRADE</span>

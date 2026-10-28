@@ -5,6 +5,7 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 from apps.api.settings import get_settings
 from packages.database import (
+    history_models,  # noqa: F401 - register historical import metadata
     models,  # noqa: F401 - register model metadata
     recorder_models,  # noqa: F401 - register recorder metadata
 )

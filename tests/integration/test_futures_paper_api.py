@@ -180,3 +180,27 @@ def test_worker_monitor_marks_without_closing_inside_limits(client, monkeypatch)
         account = session.query(PaperAccount).one()
         assert trade.status == "OPEN" and trade.last_mark_price == Decimal("25000")
         assert account.cash_balance == Decimal("774982.00")
+
+
+def test_racing_duplicate_key_replays_instead_of_failing(client, monkeypatch):
+    from apps.api.services import futures_paper
+
+    _, headers = _setup(client, monkeypatch)
+    first = _open(client, headers).json()
+    real_replay = futures_paper._replay
+    calls = {"count": 0}
+
+    def replay_misses_twice(*args):
+        # Simulate both pre-insert checks racing ahead of the first commit.
+        calls["count"] += 1
+        return None if calls["count"] <= 2 else real_replay(*args)
+
+    monkeypatch.setattr(futures_paper, "_replay", replay_misses_twice)
+    again = _open(client, headers)
+    assert again.status_code == 201
+    assert again.json()["id"] == first["id"]
+    assert calls["count"] == 3
+    trades = client.get("/paper/futures/trades", headers=headers).json()
+    assert len(trades) == 1
+    ledger = client.get("/paper/account/ledger-reconciliation", headers=headers).json()
+    assert ledger["status"] == "MATCHED"

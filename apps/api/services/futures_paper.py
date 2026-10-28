@@ -422,6 +422,14 @@ async def open_trade(
     except FuturesError:
         session.rollback()
         raise
+    except IntegrityError:
+        # The account lock already serializes entries; this covers a racing
+        # duplicate key that still reaches the unique constraint.
+        session.rollback()
+        replay = _replay(session, user_id, idempotency_key, request_hash)
+        if replay is None:
+            raise
+        return replay
     session.refresh(trade)
     response = FuturesTradeResponse.from_model(trade)
     if quote.timestamp_basis != "exchange" or quote.book_timestamp_basis != "exchange":

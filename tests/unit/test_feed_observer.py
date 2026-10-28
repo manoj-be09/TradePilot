@@ -55,3 +55,16 @@ def test_observer_logs_status_failures_without_exception_text(tmp_path, caplog):
         journal.close()
     assert "RuntimeError" in caplog.text
     assert "private-token-url" not in caplog.text
+
+
+
+def test_alembic_logging_config_keeps_existing_app_loggers():
+    # Migrations run in-process (CI PostgreSQL tests); they must not silence app loggers.
+    import logging
+    from logging.config import fileConfig
+    from pathlib import Path
+
+    assert "disable_existing_loggers=False" in Path("alembic/env.py").read_text(encoding="utf-8")
+    logger = logging.getLogger("feed_observer")
+    fileConfig("alembic.ini", disable_existing_loggers=False)
+    assert not logger.disabled

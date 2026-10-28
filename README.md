@@ -57,6 +57,16 @@ Start the independent paper exit worker in a second PowerShell window:
 
 The worker checks open positions every 15 seconds by default and continues when the dashboard is closed or the app JWT expires. `GET /ready/paper-worker` is a separate, non-cacheable readiness probe for worker supervision: it returns 200 for a recent healthy cycle or a valid active lease, and 503 for missing, stale, expired, degraded, or failed worker state. It does not return account or provider details. For a single diagnostic cycle, use `-Once`; that process then exits. The worker shares the local SQLite database with the API. PostgreSQL is the deployment and concurrency-test path. The signed-in `GET /paper/worker` response reports its last heartbeat, last successful check, and status (`HEALTHY`, `DEGRADED`, `ERROR`, or `STALE`, among others). Review warnings and open positions whenever it is not healthy. An outage or unusable quote skips an exit check; it never fabricates a fill.
 
+### Market data recorder
+
+`docker compose up -d recorder` records every NSE F&O session through Upstox Market Data Feed V3 (one of the two Feed V3 connections Upstox allows). Each day it subscribes to NIFTY 50, India VIX, the three NIFTY futures and NIFTY options for the nearest three weekly expiries plus the monthly expiries, ATM ±20 strikes (about 415 instruments), and widens the strike window if NIFTY moves.
+
+- Raw frames are stored losslessly in `data/feed_v3/<date>/<HH>.frames.gz`, with subscribed contract metadata in `universe.jsonl`.
+- One row per instrument per minute goes to `market_snapshots_1m` (LTP OHLC, last bid/ask, 5-level depth, volume, OI, IV, Greeks), plus `recorded_instruments`, `recorder_events` and `recorder_day_summaries`.
+- If the database is unavailable or not migrated, raw capture continues. Afterwards, rebuild a day's rows with `python -m apps.recorder.main --data-dir data --rebuild YYYY-MM-DD`.
+- Timestamps are local receipt time and Upstox message time; neither is an exchange book time, so recordings do not unblock strict paper fills.
+- Upstox allows this private retention for replay and backtesting but **not redistribution**: keep `data/` private and out of Git, shared drives and friend-testing environments.
+
 ### Connect Upstox market data
 
 If the dashboard shows **Unavailable**, use **Check connection** after confirming the API is running. A response with `configured: true` and `Could not connect to Upstox` means the API host could not complete an outbound HTTPS request; it is distinct from an HTTP 401/403 token rejection. In restricted development environments, grant outbound access and restart the API process, then refresh the chain. Keep the token in the server environment.

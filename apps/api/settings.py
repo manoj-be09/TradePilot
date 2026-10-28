@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     paper_quote_max_age_seconds: int = Field(default=60, ge=1, le=300)
     paper_expiry_square_off_minutes_before_close: int = Field(default=20, ge=5, le=60)
     paper_allow_unverified_quotes: bool = False
+    # Illustrative flat margin for NIFTY futures paper trades (percent of notional).
+    paper_futures_margin_pct: int = Field(default=12, ge=5, le=50)
     paper_worker_interval_seconds: int = Field(default=15, ge=1, le=60)
     paper_worker_lease_seconds: int = Field(default=120, ge=30, le=600)
     access_token_minutes: int = Field(default=30, gt=0, le=1440)

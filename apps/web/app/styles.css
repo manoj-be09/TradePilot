@@ -1155,3 +1155,17 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px
   .specialist-ranking-heading { flex-direction: column; }
 }
 .specialist-empty { margin: 0; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; color: var(--ink-muted); font-size: 13px; }
+
+.futures-paper .futures-controls { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.futures-quote { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 4px; font-variant-numeric: tabular-nums; }
+.futures-ack { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0; font-size: 0.9rem; }
+.futures-ack input { margin-top: 3px; }
+.futures-positions { display: grid; gap: 8px; margin-top: 16px; }
+.futures-position { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line, rgba(127, 127, 127, 0.25)); border-radius: 10px; }
+.futures-position div { display: grid; gap: 2px; min-width: 0; }
+.futures-position small { opacity: 0.75; overflow-wrap: anywhere; }
+.futures-pnl--up { color: var(--positive, #1a7f4b); font-weight: 600; font-variant-numeric: tabular-nums; }
+.futures-pnl--down { color: var(--negative, #b42318); font-weight: 600; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .futures-position { grid-template-columns: 1fr; }
+}

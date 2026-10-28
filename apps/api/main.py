@@ -43,6 +43,8 @@ from apps.api.paper_schemas import (
     NotificationListResponse,
     OptionMarketConditionEvidenceResponse,
     PaperAccountResponse,
+    PaperCapitalAdjustmentRequest,
+    PaperCapitalAdjustmentResponse,
     PaperDeploymentResponse,
     PaperEntryReconciliationResponse,
     PaperExitReconciliationResponse,
@@ -101,6 +103,7 @@ from packages.database.models import (
     BacktestRun,
     Instrument,
     PaperAccount,
+    PaperCapitalAdjustment,
     PaperDeployment,
     PaperEntryCommand,
     PaperOrder,
@@ -1958,8 +1961,96 @@ def paper_account_ledger_reconciliation(
     orders = list(session.scalars(select(PaperOrder).where(
         PaperOrder.account_id == account.id, PaperOrder.user_id == user.id,
     )))
-    result = reconcile_paper_ledger(account, trades, orders)
+    adjustments = list(session.scalars(select(PaperCapitalAdjustment).where(
+        PaperCapitalAdjustment.account_id == account.id,
+        PaperCapitalAdjustment.user_id == user.id,
+    )))
+    result = reconcile_paper_ledger(account, trades, orders, adjustments)
     return PaperLedgerReconciliationResponse(**vars(result))
+
+
+@app.post(
+    "/paper/account/capital-adjustments",
+    response_model=PaperCapitalAdjustmentResponse,
+    tags=["paper trading"],
+)
+def fund_nifty_paper_wallet(
+    body: PaperCapitalAdjustmentRequest,
+    user: CurrentUser,
+    session: SessionDep,
+    idempotency_key: Annotated[
+        str, Header(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    ],
+) -> PaperCapitalAdjustmentResponse:
+    """Record the approved target as a simulated, positive-only paper cash event."""
+    target = Decimal("5000000.00")
+    if body.target_balance != target:
+        raise HTTPException(
+            status_code=422,
+            detail="Only the approved ₹50 lakh NIFTY F&O paper target is supported",
+        )
+    _get_paper_account(session, user)
+    account = lock_account(session, user.id)
+    if account is None:
+        raise HTTPException(status_code=409, detail="Paper account unavailable")
+    _require_consistent_paper_ledger(session, account)
+
+    existing = session.scalar(select(PaperCapitalAdjustment).where(
+        PaperCapitalAdjustment.account_id == account.id,
+        PaperCapitalAdjustment.idempotency_key == idempotency_key,
+    ))
+    if existing is not None:
+        if existing.cash_after != target:
+            raise HTTPException(
+                status_code=409,
+                detail="Idempotency key was used for a different capital adjustment",
+            )
+        return PaperCapitalAdjustmentResponse(
+            adjustment_id=existing.id,
+            cash_before=existing.cash_before,
+            cash_delta=existing.cash_delta,
+            cash_after=existing.cash_after,
+            initial_cash=account.initial_cash,
+            idempotent_replay=True,
+        )
+    if account.cash_balance >= target:
+        raise HTTPException(
+            status_code=409,
+            detail="Paper wallet is already at or above the ₹50 lakh target",
+        )
+
+    before = account.cash_balance
+    adjustment = PaperCapitalAdjustment(
+        account_id=account.id,
+        user_id=user.id,
+        idempotency_key=idempotency_key,
+        cash_before=before,
+        cash_delta=target - before,
+        cash_after=target,
+    )
+    account.cash_balance = target
+    account.updated_at = datetime.now(timezone.utc)
+    session.add(adjustment)
+    session.add(AuditEvent(
+        actor_user_id=user.id,
+        event_type="paper.account.capital_adjusted",
+        correlation_id=idempotency_key,
+        details={
+            "paper_only": True,
+            "cash_before": str(before),
+            "cash_delta": str(target - before),
+            "cash_after": str(target),
+        },
+    ))
+    session.commit()
+    session.refresh(adjustment)
+    return PaperCapitalAdjustmentResponse(
+        adjustment_id=adjustment.id,
+        cash_before=adjustment.cash_before,
+        cash_delta=adjustment.cash_delta,
+        cash_after=adjustment.cash_after,
+        initial_cash=account.initial_cash,
+    )
 
 
 @app.put(

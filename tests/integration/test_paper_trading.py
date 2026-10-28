@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from sqlalchemy import select
 
-from packages.database.models import PaperAccount, PaperTrade
+from packages.database.models import PaperAccount, PaperOrder, PaperTrade
 from packages.market_data.contracts import ExchangeSession, OptionChain, OptionContractQuote, Quote
 from packages.market_data.upstox import UpstoxMarketDataProvider, UpstoxOptionContract
 
@@ -848,3 +848,97 @@ def test_daily_realized_pnl_uses_india_trading_day(client, monkeypatch):
     assert client.get(
         "/paper/account", headers=headers
     ).json()["daily_realized_pnl"] == "0.00"
+
+
+def test_nifty_paper_wallet_funding_is_audited_idempotent_and_preserves_starting_capital(client):
+    headers = _token(client)
+    account_before = client.get("/paper/account", headers=headers).json()
+    assert Decimal(account_before["cash_balance"]) == Decimal("1000000.00")
+    assert Decimal(account_before["initial_cash"]) == Decimal("1000000.00")
+    with client.app.state.test_session_factory() as session:
+        account = session.scalar(select(PaperAccount))
+        trade = PaperTrade(
+            account_id=account.id,
+            user_id=account.user_id,
+            strategy_key="long_call",
+            strategy_name="Preservation fixture",
+            underlying="NIFTY",
+            expiry=date.today() + timedelta(days=30),
+            reference_strike=Decimal("25000"),
+            lots=1,
+            lot_size=25,
+            max_loss=Decimal("100"),
+            entry_cash_flow=Decimal("-100"),
+            entry_rule_snapshot={},
+            realized_pnl=None,
+            stop_loss_amount=None,
+            target_profit_amount=None,
+            trailing_stop_amount=None,
+            peak_unrealized_pnl=Decimal(0),
+            status="OPEN",
+            legs={"items": []},
+        )
+        session.add(trade)
+        session.flush()
+        order = PaperOrder(
+            account_id=account.id,
+            trade_id=trade.id,
+            user_id=account.user_id,
+            action="OPEN",
+            status="EXECUTED",
+            net_cash_flow=Decimal("-100"),
+            fill_snapshot={"paper_only": True, "fills": []},
+        )
+        account.cash_balance = Decimal("999900")
+        session.add(order)
+        session.commit()
+        saved_trade_id, saved_order_id = trade.id, order.id
+
+    response = client.post(
+        "/paper/account/capital-adjustments",
+        json={"target_balance": "5000000.00"},
+        headers={**headers, "Idempotency-Key": "nifty-wallet-50l-test-01"},
+    )
+    assert response.status_code == 200, response.text
+    receipt = response.json()
+    assert Decimal(receipt["cash_before"]) == Decimal("999900.00")
+    assert Decimal(receipt["cash_delta"]) == Decimal("4000100.00")
+    assert Decimal(receipt["cash_after"]) == Decimal("5000000.00")
+    assert Decimal(receipt["initial_cash"]) == Decimal("1000000.00")
+    assert receipt["paper_only"] is True
+    assert receipt["idempotent_replay"] is False
+
+    replay = client.post(
+        "/paper/account/capital-adjustments",
+        json={"target_balance": "5000000.00"},
+        headers={**headers, "Idempotency-Key": "nifty-wallet-50l-test-01"},
+    )
+    assert replay.status_code == 200
+    assert replay.json()["idempotent_replay"] is True
+    account_after = client.get("/paper/account", headers=headers).json()
+    assert Decimal(account_after["cash_balance"]) == Decimal("5000000.00")
+    assert Decimal(account_after["initial_cash"]) == Decimal("1000000.00")
+    ledger = client.get("/paper/account/ledger-reconciliation", headers=headers)
+    assert ledger.status_code == 200
+    assert ledger.json()["status"] == "MATCHED"
+    assert ledger.json()["order_count"] == 1
+    assert ledger.json()["open_trade_count"] == 1
+    assert Decimal(ledger.json()["expected_cash_balance"]) == Decimal("5000000.00")
+    with client.app.state.test_session_factory() as session:
+        assert session.scalar(select(PaperTrade.id)) == saved_trade_id
+        assert session.scalar(select(PaperOrder.id)) == saved_order_id
+        assert session.scalar(select(PaperTrade.status)) == "OPEN"
+
+    duplicate = client.post(
+        "/paper/account/capital-adjustments",
+        json={"target_balance": "5000000.00"},
+        headers={**headers, "Idempotency-Key": "nifty-wallet-50l-test-02"},
+    )
+    assert duplicate.status_code == 409
+    unsupported = client.post(
+        "/paper/account/capital-adjustments",
+        json={"target_balance": "7000000.00"},
+        headers={**headers, "Idempotency-Key": "nifty-wallet-50l-test-03"},
+    )
+    assert unsupported.status_code == 422
+    assert client.get("/paper/account").status_code == 401

@@ -227,3 +227,39 @@ def test_audit_observation_index_migration_preserves_existing_events(tmp_path):
         finally:
             migration.op = original_op
     engine.dispose()
+
+
+def test_paper_capital_adjustment_migration_preserves_existing_wallet_cash(tmp_path):
+    spec = importlib.util.spec_from_file_location(
+        "paper_capital_adjustment_migration",
+        Path("alembic/versions/0033_paper_capital_adjustment.py"),
+    )
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    engine = create_engine(f"sqlite:///{(tmp_path / 'paper-capital-migration.db').as_posix()}")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE users (id CHAR(32) PRIMARY KEY)"))
+        connection.execute(text(
+            "CREATE TABLE paper_accounts (id CHAR(32) PRIMARY KEY, user_id CHAR(32), "
+            "initial_cash NUMERIC(14, 2), cash_balance NUMERIC(14, 2))"
+        ))
+        connection.execute(text("INSERT INTO users (id) VALUES ('owner')"))
+        connection.execute(text(
+            "INSERT INTO paper_accounts (id, user_id, initial_cash, cash_balance) "
+            "VALUES ('account', 'owner', 1000000, 875000)"
+        ))
+        original_op = migration.op
+        migration.op = Operations(MigrationContext.configure(connection))
+        try:
+            migration.upgrade()
+            assert inspect(connection).has_table("paper_capital_adjustments")
+            saved = connection.execute(text(
+                "SELECT initial_cash, cash_balance FROM paper_accounts WHERE id = 'account'"
+            )).one()
+            assert tuple(map(str, saved)) == ("1000000", "875000")
+            unique = inspect(connection).get_unique_constraints("paper_capital_adjustments")
+            assert "uq_paper_capital_adjustment_key" in {item["name"] for item in unique}
+        finally:
+            migration.op = original_op
+    engine.dispose()

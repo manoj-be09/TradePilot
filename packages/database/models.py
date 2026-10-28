@@ -232,6 +232,37 @@ class PaperOrder(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class PaperCapitalAdjustment(Base):
+    """Auditable positive-only simulated cash funding for an F&O paper account."""
+
+    __tablename__ = "paper_capital_adjustments"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id", "idempotency_key", name="uq_paper_capital_adjustment_key"
+        ),
+        CheckConstraint("cash_delta > 0", name="ck_paper_capital_adjustment_positive"),
+        CheckConstraint(
+            "cash_after = cash_before + cash_delta",
+            name="ck_paper_capital_adjustment_balance",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("paper_accounts.id"), index=True
+    )
+    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    cash_before: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    cash_delta: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    cash_after: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+    )
+
+
 class UserNotification(Base):
     __tablename__ = "user_notifications"
     __table_args__ = (Index("ix_user_notifications_user_created", "user_id", "created_at"),)

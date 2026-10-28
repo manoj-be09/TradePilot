@@ -750,6 +750,9 @@ export default function Home() {
   const [paperLedgerCheckedAt, setPaperLedgerCheckedAt] = useState("");
   const [paperLedgerBusy, setPaperLedgerBusy] = useState(false);
   const [paperLedgerError, setPaperLedgerError] = useState("");
+  const [walletFundingBusy, setWalletFundingBusy] = useState(false);
+  const [walletFundingMessage, setWalletFundingMessage] = useState("");
+  const [walletFundingError, setWalletFundingError] = useState("");
   const [paperWarnings, setPaperWarnings] = useState<string[]>([]);
   const [paperError, setPaperError] = useState("");
   const [pendingEntryError, setPendingEntryError] = useState("");
@@ -811,7 +814,6 @@ export default function Home() {
     snapshot: string; asOf: string; expiry: string; strike: string; lots: number; quality: string;
     rows: { key: string; name: string; version: string; policy: ReturnType<typeof paperTemplatePolicy>; status: string; maximumLoss: string | null; costScenario: string | null }[];
   } | null>(null);
-  const [batchPolicyAcknowledged, setBatchPolicyAcknowledged] = useState(false);
   const [batchPolicyBusy, setBatchPolicyBusy] = useState(false);
   const [batchPolicyResults, setBatchPolicyResults] = useState<{ name: string; result: string }[]>([]);
   const batchPolicySaveController = useRef<AbortController | null>(null);
@@ -838,7 +840,6 @@ export default function Home() {
     if (batchPolicyReview && (selectedOptionIndex !== "NIFTY" || selectedExpiry !== batchPolicyReview.expiry
       || batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}`)) {
       batchPolicySaveController.current?.abort();
-      setBatchPolicyAcknowledged(false);
     }
   }, [batchPolicyReview, chain?.as_of, chain?.expiry, selectedExpiry, selectedOptionIndex, selectedPaperStrike, paperLots]);
 
@@ -1509,13 +1510,12 @@ export default function Home() {
         };
       }),
     });
-    setBatchPolicyAcknowledged(false);
     setBatchPolicyResults([]);
     setPaperError("");
   }
 
   async function saveReviewedBatchPolicies() {
-    if (!token || !batchPolicyReview || !batchPolicyAcknowledged || batchPolicyBusy || paperBusy
+    if (!token || !batchPolicyReview || batchPolicyBusy || paperBusy
       || selectedOptionIndex !== "NIFTY" || selectedExpiry !== batchPolicyReview.expiry
       || selectedExpiry < indiaCalendarDate()
       || batchPolicyReview.snapshot !== strategyPayoffKey
@@ -1527,6 +1527,8 @@ export default function Home() {
     setBatchPolicyBusy(true);
     setBatchPolicyResults([]);
     const results: { name: string; result: string }[] = [];
+    const approvedVersions: StrategyVersion[] = [];
+    let saveComplete = true;
     try {
       const existing = await readJson<StrategyVersion[]>(await fetch(`${API_URL}/strategies/versions?limit=100`, {
         headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: controller.signal,
@@ -1548,7 +1550,8 @@ export default function Home() {
             ? "Identical version already saved; no duplicate created"
             : "Stopped: a version with this name differs; review it individually before retrying" });
           setBatchPolicyResults([...results]);
-          if (!unchanged) break;
+          if (!unchanged) { saveComplete = false; break; }
+          approvedVersions.push(prior);
           continue;
         }
         try {
@@ -1564,22 +1567,29 @@ export default function Home() {
           }));
           if (controller.signal.aborted) break;
           existing.unshift(version);
+          approvedVersions.push(version);
           setStrategyVersions((current) => [version, ...current.filter((item) => item.id !== version.id)]);
-          results.push({ name: row.name, result: `Saved immutable version ${version.version_number}; not armed` });
+          results.push({ name: row.name, result: `Saved immutable version ${version.version_number}` });
           setBatchPolicyResults([...results]);
         } catch (error) {
           if (!controller.signal.aborted) {
+            saveComplete = false;
             results.push({ name: row.name, result: `Stopped: save status may be uncertain. Refresh versions before retrying. ${userFacingError(error, "Policy save failed")}` });
             setBatchPolicyResults([...results]);
           }
           break;
         }
       }
+      if (!controller.signal.aborted && saveComplete && approvedVersions.length === proposals.length) {
+        setBatchPolicyResults((current) => [...current, {
+          name: "Batch", result: "All reviewed policies saved; applying eligible strategies in one batch action",
+        }]);
+        await armAllPaperTemplates(approvedVersions);
+      }
     } catch (error) {
       if (!controller.signal.aborted) setPaperError(userFacingError(error, "Could not verify existing policy versions"));
     } finally {
       if (batchPolicySaveController.current === controller) batchPolicySaveController.current = null;
-      setBatchPolicyAcknowledged(false);
       setBatchPolicyBusy(false);
     }
   }
@@ -1605,8 +1615,15 @@ export default function Home() {
     });
   }
 
-  async function armAllPaperTemplates() {
-    if (!batchArmReady || !token || !chain || !selectedExpiry || !selectedPaperStrike) return;
+  async function armAllPaperTemplates(approvedVersions?: StrategyVersion[]) {
+    const proposalBatchReady = !!token && selectedOptionIndex === "NIFTY" && paperEntry.ready
+      && !paperEntry.pending && !!paperAccount && !paperAccount.kill_switch_enabled
+      && !paperBusy && !!chain && chain.quality?.status !== "FAIL"
+      && !!selectedExpiry && chain.expiry === selectedExpiry
+      && selectedExpiry >= indiaCalendarDate() && !!selectedPaperStrike
+      && strategyPayoffKey === `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`;
+    if ((!approvedVersions && !batchArmReady) || (approvedVersions && !proposalBatchReady)
+      || !token || !chain || !selectedExpiry || !selectedPaperStrike) return;
     setPaperBusy(true);
     setPaperError("");
     setBatchArmResults([]);
@@ -1619,6 +1636,7 @@ export default function Home() {
       window.sessionStorage.setItem("paper-batch-arm", JSON.stringify(batchArmCommand.current));
     }
     const results: { name: string; result: string }[] = [];
+    const approvedByKey = new Map((approvedVersions || []).map((version) => [version.definition.template_key, version]));
     const quoted = new Set(strategyTilePreviews.map(({ strategy }) => strategy.key));
     const waiting = new Set(paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY" && item.expiry === selectedExpiry && item.reference_strike === selectedPaperStrike).map(item => item.strategy_key));
     let slots = Math.max(0, MAX_WAITING_PAPER_STRATEGIES - paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").length);
@@ -1626,7 +1644,7 @@ export default function Home() {
       for (const strategy of paperStrategies) {
         const payoff = strategyPayoffs[strategy.key];
         const hasFiniteLoss = payoff && Number(payoff.maximum_loss) > 0 && Number.isFinite(Number(payoff.maximum_loss)) && !payoff.maximum_loss_unbounded;
-        const saved = matchingBatchVersion(strategy);
+        const saved = approvedByKey.get(strategy.key) || matchingBatchVersion(strategy);
         let result: string;
         if (waiting.has(strategy.key)) result = "Already waiting for entry";
         else if (!quoted.has(strategy.key)) result = "Skipped: required listed leg or quote unavailable";
@@ -1839,7 +1857,6 @@ export default function Home() {
     batchPolicySaveController.current = null;
     setBatchPolicyReview(null);
     setBatchPolicyResults([]);
-    setBatchPolicyAcknowledged(false);
     setAuthError("");
     setCurrentPassword("");
     setNewPassword("");
@@ -2433,6 +2450,25 @@ export default function Home() {
     }
   }
 
+  async function fundPaperWalletToFiftyLakh() {
+    if (!token || walletFundingBusy || !paperAccount || Number(paperAccount.cash_balance) >= 5_000_000) return;
+    setWalletFundingBusy(true); setWalletFundingMessage(""); setWalletFundingError("");
+    try {
+      const receipt = await readJson<{ cash_before: string; cash_delta: string; cash_after: string; paper_only: true }>(await fetch(
+        `${API_URL}/paper/account/capital-adjustments`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+          body: JSON.stringify({ target_balance: "5000000.00" }),
+        },
+      ));
+      setWalletFundingMessage(`Paper-only cash adjustment recorded: ₹${formatPrice(receipt.cash_before)} + ₹${formatPrice(receipt.cash_delta)} = ₹${formatPrice(receipt.cash_after)}. Starting capital and saved positions were preserved.`);
+      await refreshPaperWorkspace();
+      void checkPaperLedger();
+    } catch (error) {
+      setWalletFundingError(userFacingError(error, "Could not adjust the NIFTY F&O paper wallet"));
+    } finally { setWalletFundingBusy(false); }
+  }
+
   async function checkPaperLedger() {
     if (!token || paperLedgerBusy) return;
     setPaperLedgerBusy(true); setPaperLedgerError(""); setPaperLedger(null);
@@ -2823,9 +2859,8 @@ export default function Home() {
               <div className="paper-table-scroll"><table className="paper-table"><thead><tr><th>Strategy</th><th>Review status</th><th>Entry and exit proposal</th><th>Gross max loss</th><th>Round-trip cost scenario</th></tr></thead><tbody>
                 {batchPolicyReview.rows.map((row) => <tr key={row.key}><td>{row.name} · {row.version}</td><td>{row.status}</td><td>{row.policy ? <>{row.policy.conditions.map((condition) => `${ENTRY_RULE_METRICS.find((metric) => metric.key === condition.metric)?.label || condition.metric} ${operatorLabel(condition.operator)} ${condition.threshold}`).join(" · ")}<br />Stop ₹{formatPrice(String(row.policy.stopLoss))} · target ₹{formatPrice(String(row.policy.targetProfit))} · trail ₹{formatPrice(String(row.policy.trailingStop))}</> : "—"}</td><td>{row.maximumLoss === null ? "Unavailable" : `₹${formatPrice(row.maximumLoss)}`}</td><td>{row.costScenario === null ? "Unavailable" : `₹${formatPrice(row.costScenario)}`}</td></tr>)}
               </tbody></table></div>
-              <p>Existing saved policies are kept. Strategies without a finite quote-backed loss or with failed quote quality are excluded. Saving these proposals creates immutable, account-scoped versions only; it opens no positions, arms no waiting entries and changes no ranking. Inspect individual rules in the editor if adjustments are needed.</p>
-              <label><input checked={batchPolicyAcknowledged} disabled={batchPolicyBusy || !batchPolicyReview.rows.some((row) => row.policy)} onChange={(event) => setBatchPolicyAcknowledged(event.target.checked)} type="checkbox" /> I reviewed these exploratory entry and exit proposals and want to save the reviewable versions.</label>
-              <div><button className="refresh-button" disabled={!token || !batchPolicyAcknowledged || batchPolicyBusy || paperBusy || selectedOptionIndex !== "NIFTY" || selectedExpiry !== batchPolicyReview.expiry || selectedExpiry < indiaCalendarDate() || !batchPolicyReview.rows.some((row) => row.policy) || batchPolicyReview.snapshot !== strategyPayoffKey || batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={() => void saveReviewedBatchPolicies()} type="button">{batchPolicyBusy ? "Saving reviewed versions…" : `Save ${batchPolicyReview.rows.filter((row) => row.policy).length} reviewed versions`}</button></div>
+              <p>Review these exploratory entry/exit rules before applying. The button saves immutable account-scoped versions and queues every eligible strategy in one action. It opens no position immediately; later entries still require a qualifying paper snapshot and pass the cash, daily-loss, per-trade, portfolio-risk and open-position checks. Strategies without a finite quote-backed loss or with failed quote quality are excluded. These rules are not validated trading rules or profit predictions.</p>
+              <div><button className="refresh-button" disabled={!token || batchPolicyBusy || paperBusy || selectedOptionIndex !== "NIFTY" || selectedExpiry !== batchPolicyReview.expiry || selectedExpiry < indiaCalendarDate() || !batchPolicyReview.rows.some((row) => row.policy) || batchPolicyReview.snapshot !== strategyPayoffKey || batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={() => void saveReviewedBatchPolicies()} type="button">{batchPolicyBusy ? "Saving and applying reviewed strategies…" : `Save and apply ${batchPolicyReview.rows.filter((row) => row.policy).length} reviewed strategies`}</button></div>
               {batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}` && <p role="status">The selected snapshot changed. Review the policies again before saving.</p>}
               {batchPolicyResults.length > 0 && <ul role="status">{batchPolicyResults.map((item) => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul>}
             </details>}
@@ -2842,12 +2877,20 @@ export default function Home() {
             </section>
 
             {paperAccount ? (
+              <>
               <div className="paper-stats" aria-label="Paper account summary">
                 <div><span>Cash balance</span><strong>₹{formatPrice(paperAccount.cash_balance)}</strong></div>
                 <div><span>Open positions</span><strong>{formatCount(paperAccount.open_trade_count)}</strong></div>
                 <div><span>Today’s realized P&amp;L</span><strong className={changeClass(paperAccount.daily_realized_pnl)}>{formatSignedPrice(paperAccount.daily_realized_pnl)}</strong></div>
                 <div><span>Remaining new-trade risk</span><strong>₹{formatPrice(paperAccount.daily_risk_remaining)}</strong></div>
               </div>
+              {Number(paperAccount.cash_balance) < 5_000_000 ? <div className="paper-cash-adjustment">
+                <p className="features-note">NIFTY F&amp;O simulated wallet only. This does not add broker funds or change the original starting-capital risk base.</p>
+                <button className="refresh-button" disabled={!token || walletFundingBusy || paperLedger?.status === "MISMATCH"} onClick={() => void fundPaperWalletToFiftyLakh()} type="button">{walletFundingBusy ? "Recording paper cash…" : "Increase NIFTY F&O paper wallet to ₹50 lakh"}</button>
+                {walletFundingMessage ? <p role="status">{walletFundingMessage}</p> : null}
+                {walletFundingError ? <p className="error-banner" role="alert">{walletFundingError}</p> : null}
+              </div> : null}
+              </>
             ) : <p className="features-note">Loading paper account…</p>}
             <details className="workspace-disclosure paper-risk-details"><summary>Allocation &amp; risk details</summary>
               {paperAccount ? <div className="paper-stats">

@@ -4,7 +4,10 @@ from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 from apps.api.settings import get_settings
-from packages.database import models  # noqa: F401 - register model metadata
+from packages.database import (
+    models,  # noqa: F401 - register model metadata
+    recorder_models,  # noqa: F401 - register recorder metadata
+)
 from packages.database.base import Base
 
 config = context.config

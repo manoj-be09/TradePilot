@@ -6,7 +6,10 @@ from runpy import run_path
 from sqlalchemy import Engine, insert, inspect, select, text
 
 from apps.api.settings import get_settings
-from packages.database import models  # noqa: F401 - register models in metadata
+from packages.database import (
+    models,  # noqa: F401 - register models in metadata
+    recorder_models,  # noqa: F401 - register recorder tables
+)
 from packages.database.base import Base
 from packages.database.models import StrategyCatalogEntry
 from packages.database.session import build_session_factory

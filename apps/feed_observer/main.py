@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -9,22 +10,28 @@ from packages.market_data.feed_journal import FeedJournal
 from packages.market_data.provider import get_market_data_provider
 from packages.market_data.shared_feed import SharedQuoteFeed
 
+logger = logging.getLogger("feed_observer")
+
 
 async def observe(
     provider: Any, instruments: list[str], journal: FeedJournal,
     *, once: bool = False, interval: float = 30,
 ) -> None:
     feed = SharedQuoteFeed(provider, instruments, journal=journal)
+    failures = 0
     try:
         while True:
             try:
-                market = await provider._get("/v2/market/status/NSE")
-                if market.get("status") == "NORMAL_OPEN":
+                if await provider.get_market_status("NSE") == "NORMAL_OPEN":
                     feed.start()
                 elif feed.status().running:
                     await feed.stop()
-            except Exception:
-                # Never log private provider exceptions or authorization URLs.
+                failures = 0
+            except Exception as error:
+                # Never log private provider exception text or authorization URLs.
+                failures += 1
+                logger.warning("Market status check failed (%s); consecutive failures: %s",
+                               type(error).__name__, failures)
                 if feed.status().running:
                     await feed.stop()
             await asyncio.sleep(interval)

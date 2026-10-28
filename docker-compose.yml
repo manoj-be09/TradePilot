@@ -83,6 +83,22 @@ services:
     depends_on:
       api: { condition: service_healthy }
       postgres: { condition: service_healthy }
+  recorder:
+    # Private Feed V3 recording (Upstox allows internal retention, never redistribution).
+    # Uses 1 of the 2 Feed V3 connections Upstox allows per user.
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+      args:
+        SOURCE_REVISION: ${TRADEPILOT_SOURCE_REVISION:-unknown}
+    env_file: .env
+    command: python -m apps.recorder.main --data-dir /data
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    depends_on:
+      api: { condition: service_healthy }
+      postgres: { condition: service_healthy }
   feed-observer:
     profiles: ["observations"]
     build:

@@ -120,7 +120,7 @@ export function StrategyRanking({
       <div className="specialist-ranking-heading">
         <div>
           <strong>Strategy ranking</strong>
-          <small>Four market specialists propose · the selector ranks after costs and risk limits · simulated paper only</small>
+          <small>Simulated paper only · not advice</small>
         </div>
         <span className={`specialist-action specialist-action--${result?.action === "PAPER_CANDIDATE" ? "go" : "wait"}`}>
           {result ? (result.action === "PAPER_CANDIDATE" ? "Paper candidate" : "No trade") : error ? "Unavailable" : "Ranking…"}
@@ -132,6 +132,9 @@ export function StrategyRanking({
           <p className="specialist-context">
             Regime {result.regime.replaceAll("_", " ")} · ATM IV {result.atm_iv_pct ? `${Number(result.atm_iv_pct).toFixed(1)}%` : "unavailable"} · realized volatility {result.realized_vol_pct ? `${Number(result.realized_vol_pct).toFixed(1)}%` : "unavailable"} · as of {new Date(result.chain_as_of).toLocaleTimeString("en-IN")}
           </p>
+          {/* With no specialist view the four cards say nothing new, so they fold away. */}
+          <details className="specialist-views" open={result.specialists.some((view) => Number(view.conviction) > 0)}>
+          <summary>Specialist views</summary>
           <div className="specialist-grid">
             {result.specialists.map((view) => (
               <article className={`specialist-card specialist-card--${view.stance.toLowerCase()}`} key={view.stance}>
@@ -144,8 +147,9 @@ export function StrategyRanking({
               </article>
             ))}
           </div>
+          </details>
           <p className="strategy-library-note" role="status">{result.reasons.join(" ")}</p>
-          {ranked.length === 0 ? <p className="specialist-empty">No specialist has a view right now, so no strategy is ranked. Ranking resumes when the market regime supports one of the four views.</p> : null}
+          {ranked.length === 0 ? <p className="specialist-empty">No specialist has a view right now, so nothing is ranked.</p> : null}
           <div className="specialist-candidates">
             {shown.map((item, index) => (
               <article className={`specialist-candidate specialist-candidate--${item.status.toLowerCase()} ${item.strategy_key === selected ? "selected" : ""}`} key={item.strategy_key}>
@@ -167,7 +171,9 @@ export function StrategyRanking({
             ))}
           </div>
           {ranked.length > 4 ? <button className="inline-button" onClick={() => setShowAll(!showAll)} type="button">{showAll ? "Show top 4" : `Show all ${ranked.length} ranked templates`}</button> : null}
-          <p className="strategy-library-note">Scores order templates by specialist conviction and after-cost reward/risk; they are heuristics, not probabilities of profit. * Some charge rates are not verified against an official source. Using a candidate only fills the paper ticket; every entry still passes the paper risk and quote checks.</p>
+          <details className="specialist-views"><summary>How ranking works</summary>
+            <p className="strategy-library-note">Four market specialists (bull, bear, range, volatility) propose templates; the selector orders them by conviction and after-cost reward/risk. Scores are heuristics, not probabilities of profit. * Some charge rates are not verified against an official source. Using a candidate only fills the paper ticket; every entry still passes the paper risk and quote checks.</p>
+          </details>
         </>
       ) : null}
     </section>

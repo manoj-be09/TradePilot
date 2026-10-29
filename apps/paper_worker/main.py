@@ -8,7 +8,6 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from apps.api.services.equity_runtime import process_equities
 from apps.api.services.option_deployments import process_option_deployments
 from apps.api.services.paper_monitor import monitor_exits
 from apps.api.settings import Settings, get_settings
@@ -60,15 +59,7 @@ async def run_cycle(
         )
         evaluated += option_checked
         warnings.extend(option_warnings)
-        equity_evaluated, equity_closed, equity_warnings = await process_equities(
-            factory, provider, token
-        )
-        return (
-            evaluated + equity_evaluated,
-            closed + equity_closed,
-            option_filled,
-            warnings + equity_warnings,
-        )
+        return evaluated, closed, option_filled, warnings
 
     try:
         evaluated, closed, opened, warnings = await asyncio.wait_for(

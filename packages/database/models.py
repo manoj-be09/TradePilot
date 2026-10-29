@@ -24,6 +24,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON, TypeDecorator
 
 from packages.database.base import Base
+from packages.database.clock import monotonic_utc_now
 
 
 class PortableJSON(TypeDecorator[dict[str, Any]]):
@@ -153,7 +154,7 @@ class AuditEvent(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=monotonic_utc_now,
         server_default=func.now(),
     )
 

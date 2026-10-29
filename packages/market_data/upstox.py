@@ -15,6 +15,8 @@ from websockets.exceptions import WebSocketException
 
 from packages.market_data import upstox_v3_pb2
 from packages.market_data.contracts import (
+    BrokerMargin,
+    BrokerMarginLeg,
     DiscoveredInstrument,
     ExchangeSession,
     ExpiredOptionContract,
@@ -32,6 +34,10 @@ from packages.market_data.index_catalog import resolve_option_index
 
 UPSTOX_API_BASE = "https://api.upstox.com"
 NIFTY_INDEX_KEY = "NSE_INDEX|Nifty 50"
+MARGIN_PATH = "/v2/charges/margin"
+# The only non-GET calls this adapter may make: calculations that place nothing.
+_CALCULATION_POSTS = frozenset({MARGIN_PATH})
+_MARGIN_MAX_LEGS = 20
 
 
 UpstoxOptionContract = OptionContract
@@ -54,6 +60,15 @@ class UpstoxMarketDataProvider:
         self._base_url = base_url.rstrip("/")
 
     async def _get(self, path: str, params: dict[str, str] | None = None) -> Any:
+        return await self._send("GET", path, params=params)
+
+    async def _send(
+        self, method: str, path: str, *, params: dict[str, str] | None = None,
+        body: dict[str, Any] | None = None,
+    ) -> Any:
+        # POST is allowed only for calculation endpoints listed in _CALCULATION_POSTS.
+        if method != "GET" and path not in _CALCULATION_POSTS:
+            raise MarketDataProviderError(f"{method} {path} is not a permitted Upstox call")
         try:
             async with httpx.AsyncClient(
                 base_url=self._base_url,
@@ -64,7 +79,7 @@ class UpstoxMarketDataProvider:
                 timeout=15.0,
                 transport=self._transport,
             ) as client:
-                response = await client.get(path, params=params)
+                response = await client.request(method, path, params=params, json=body)
         except httpx.TimeoutException as error:
             raise MarketDataProviderError("Upstox request timed out") from error
         except httpx.HTTPError as error:
@@ -93,6 +108,29 @@ class UpstoxMarketDataProvider:
         if not isinstance(data, (dict, list)):
             raise MarketDataProviderError("Upstox response did not contain expected data")
         return data
+
+    async def get_order_margin(self, legs: list[BrokerMarginLeg]) -> BrokerMargin:
+        """Upstox's margin for a hypothetical NRML basket; calculates only, places nothing."""
+        if not 1 <= len(legs) <= _MARGIN_MAX_LEGS:
+            raise MarketDataProviderError(f"Margin needs 1 to {_MARGIN_MAX_LEGS} legs")
+        if len({leg.instrument_key for leg in legs}) != len(legs):
+            raise MarketDataProviderError("Margin legs must not repeat an instrument")
+        data = await self._send("POST", MARGIN_PATH, body={"instruments": [
+            {"instrument_key": leg.instrument_key, "quantity": leg.quantity,
+             "transaction_type": leg.transaction_type, "product": "D"}
+            for leg in legs
+        ]})
+        if not isinstance(data, dict):
+            raise MarketDataProviderError("Upstox margin response did not contain expected data")
+        try:
+            margin = BrokerMargin.model_validate(data)
+        except ValidationError as error:
+            raise MarketDataProviderError(
+                "Upstox margin response contained invalid values"
+            ) from error
+        if len(margin.margins) != len(legs):
+            raise MarketDataProviderError("Upstox margin response does not match the legs sent")
+        return margin
 
     @staticmethod
     def _ensure_nifty(underlying: str) -> str:

@@ -991,3 +991,50 @@ def test_estimated_margin_must_fit_in_cash_even_when_maximum_loss_does(client, m
     rejected = open_spread()
     assert rejected.status_code == 409
     assert "estimated" in rejected.json()["detail"]
+
+
+def test_strategy_is_paused_after_five_losses_until_reinstated(client, monkeypatch):
+    provider = FakeUpstoxProvider()
+    monkeypatch.setattr("apps.api.main.get_market_data_provider", lambda: provider)
+    headers = _token(client)
+
+    def open_spread():
+        return client.post(
+            "/paper/trades",
+            headers={**headers, "Idempotency-Key": str(uuid4())},
+            json={"strategy_key": "bull_put_spread", "expiry": provider.expiry.isoformat(),
+                  "reference_strike": "25000", "lots": 1},
+        )
+
+    # Each round trip at unchanged quotes loses the bid/ask spread.
+    for _ in range(5):
+        opened = open_spread()
+        assert opened.status_code == 201, opened.text
+        closed = client.post(f"/paper/trades/{opened.json()['id']}/close", headers=headers)
+        assert closed.status_code == 200, closed.text
+        assert Decimal(closed.json()["realized_pnl"]) < 0
+
+    paused = open_spread()
+    assert paused.status_code == 423
+    assert "5 consecutive losing paper trades" in paused.json()["detail"]
+    status = client.get("/paper/strategies/demotions", headers=headers).json()
+    entry = next(item for item in status if item["strategy_key"] == "bull_put_spread")
+    assert entry["paused"] is True and entry["reason"] == "LOSS_STREAK"
+    assert entry["check"]["limit_source"] == "FALLBACK"
+    # The pause persists across requests and is recorded once.
+    assert open_spread().status_code == 423
+    with client.app.state.test_session_factory() as session:
+        from packages.database.models import AuditEvent, StrategyDemotion
+
+        assert len(session.scalars(select(StrategyDemotion)).all()) == 1
+        assert session.scalars(select(AuditEvent).where(
+            AuditEvent.event_type == "paper.strategy.demoted"
+        )).all()
+
+    reinstated = client.post("/paper/strategies/bull_put_spread/reinstate", headers=headers)
+    assert reinstated.status_code == 200, reinstated.text
+    assert reinstated.json()["paused"] is False
+    assert reinstated.json()["check"]["trades_counted"] == 0
+    assert open_spread().status_code == 201
+    again = client.post("/paper/strategies/bull_put_spread/reinstate", headers=headers)
+    assert again.status_code == 404

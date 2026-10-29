@@ -2,8 +2,10 @@
 
 This follows the shape of NSE's SPAN method (16 price/volatility scenarios, a short
 option minimum charge, plus exposure margin) using configurable parameters and our own
-Black-Scholes repricing. It does not read exchange SPAN files or a broker margin API, so
-it is an estimate to size simulated cash, never a broker requirement.
+Black-Scholes repricing. Short options expiring today also carry SEBI's additional
+expiry-day exposure margin (2% of notional since 20 November 2024). It does not read
+exchange SPAN files or a broker margin API, so it is an estimate to size simulated
+cash, never a broker requirement.
 """
 
 from dataclasses import dataclass
@@ -14,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from packages.options.pricing import _black_scholes_price
 
-MARGIN_MODEL_ID = "nifty-span-style-scenarios-v1"
+MARGIN_MODEL_ID = "nifty-span-style-scenarios-v2"
 MARGIN_DISCLAIMER = (
     "Estimated margin: SPAN-style price and volatility scenarios plus exposure margin, "
     "using configured parameters rather than NSE's daily SPAN file. Not a broker "
@@ -40,6 +42,7 @@ class MarginParameters:
     short_option_minimum_pct: Decimal
     extreme_move_multiple: Decimal = Decimal(2)
     extreme_move_weight: Decimal = Decimal("0.35")
+    expiry_day_short_option_pct: Decimal = Decimal(2)
 
     def snapshot(self) -> dict[str, str]:
         return {
@@ -49,6 +52,7 @@ class MarginParameters:
             "short_option_minimum_pct": str(self.short_option_minimum_pct),
             "extreme_move_multiple": str(self.extreme_move_multiple),
             "extreme_move_weight": str(self.extreme_move_weight),
+            "expiry_day_short_option_pct": str(self.expiry_day_short_option_pct),
         }
 
 
@@ -62,6 +66,7 @@ class MarginLeg:
     strike: Decimal | None = None
     years_to_expiry: float = 0.0
     volatility_pct: Decimal | None = None
+    expires_today: bool = False
 
 
 @dataclass(frozen=True)
@@ -70,6 +75,7 @@ class MarginEstimate:
     short_option_minimum: Decimal
     net_option_value: Decimal
     exposure: Decimal
+    expiry_day_exposure: Decimal
     total: Decimal
     worst_scenario: str
     parameters: MarginParameters
@@ -89,6 +95,7 @@ class MarginEstimate:
             "net_option_value": str(self.net_option_value),
             "span": str(self.span),
             "exposure": str(self.exposure),
+            "expiry_day_exposure": str(self.expiry_day_exposure),
             "total": str(self.total),
             "worst_scenario": self.worst_scenario,
             "parameters": self.parameters.snapshot(),
@@ -105,6 +112,12 @@ def years_to_expiry(expiry: date, now: datetime | None = None) -> float:
     moment = now or datetime.now(timezone.utc)
     close = datetime.combine(expiry, _EXPIRY_CLOSE)
     return max(0.0, (close - moment).total_seconds() / _YEAR_SECONDS)
+
+
+def is_expiry_day(expiry: date, now: datetime | None = None) -> bool:
+    """True when the contract expires on the current India trading date."""
+    moment = now or datetime.now(timezone.utc)
+    return moment.astimezone(_EXPIRY_CLOSE.tzinfo).date() == expiry
 
 
 def _leg_value(leg: MarginLeg, move: float, volatility_shift: float) -> float:
@@ -172,6 +185,17 @@ def estimate_position_margin(
         Decimal(0),
     )
     exposure = money(exposed_notional * parameters.exposure_pct / Decimal(100))
+    expiring_short_notional = sum(
+        (
+            leg.underlying_price * -leg.quantity_units
+            for leg in options
+            if leg.expires_today and leg.quantity_units < 0
+        ),
+        Decimal(0),
+    )
+    expiry_day_exposure = money(
+        expiring_short_notional * parameters.expiry_day_short_option_pct / Decimal(100)
+    )
     scan_risk = money(Decimal(str(max(0.0, worst_loss))))
     net_option_value = money(Decimal(str(sum(_leg_value(leg, 0.0, 0.0) for leg in options))))
     span = max(Decimal(0), max(scan_risk, short_minimum) - net_option_value)
@@ -180,7 +204,8 @@ def estimate_position_margin(
         short_option_minimum=short_minimum,
         net_option_value=net_option_value,
         exposure=exposure,
-        total=money(span + exposure),
+        expiry_day_exposure=expiry_day_exposure,
+        total=money(span + exposure + expiry_day_exposure),
         worst_scenario=worst_label if worst_loss > 0 else "no scenario loss",
         parameters=parameters,
     )

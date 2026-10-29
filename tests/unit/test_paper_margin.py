@@ -8,6 +8,7 @@ from packages.paper_trading.margin import (
     MarginParameters,
     estimate_position_margin,
     futures_margin,
+    is_expiry_day,
     years_to_expiry,
 )
 
@@ -91,3 +92,30 @@ def test_years_to_expiry_counts_to_the_nse_close():
     before_close = datetime(2026, 11, 24, 9, 0, tzinfo=timezone.utc)  # 14:30 IST
     assert years_to_expiry(date(2026, 11, 24), before_close) == pytest.approx(3600 / 31_536_000)
     assert years_to_expiry(date(2026, 11, 23), before_close) == 0
+
+
+def test_short_options_expiring_today_add_sebi_expiry_day_exposure():
+    def short_put(expires_today):
+        return MarginLeg(instrument="PE", quantity_units=-75, underlying_price=SPOT,
+                         strike=Decimal(24800), years_to_expiry=0.0005,
+                         volatility_pct=Decimal(14), expires_today=expires_today)
+
+    normal = estimate_position_margin([short_put(False)], PARAMS)
+    expiring = estimate_position_margin([short_put(True)], PARAMS)
+    assert normal.expiry_day_exposure == 0
+    assert expiring.expiry_day_exposure == Decimal("37500.00")  # 2% of 25000 x 75
+    assert expiring.total == normal.total + Decimal("37500.00")
+    assert expiring.snapshot()["expiry_day_exposure"] == "37500.00"
+
+
+def test_long_options_expiring_today_carry_no_expiry_day_exposure():
+    long_call = MarginLeg(instrument="CE", quantity_units=75, underlying_price=SPOT,
+                          strike=Decimal(25000), years_to_expiry=0.0005,
+                          volatility_pct=Decimal(14), expires_today=True)
+    assert estimate_position_margin([long_call], PARAMS).expiry_day_exposure == 0
+
+
+def test_expiry_day_uses_the_india_trading_date():
+    late_utc = datetime(2026, 11, 23, 20, 0, tzinfo=timezone.utc)  # 01:30 IST on 24 Nov
+    assert is_expiry_day(date(2026, 11, 24), late_utc)
+    assert not is_expiry_day(date(2026, 11, 23), late_utc)

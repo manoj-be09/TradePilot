@@ -167,3 +167,28 @@ def test_entry_before_the_first_charge_schedule_is_skipped_not_guessed():
     skipped = run_expiry(history, BacktestConfig(strategy=BULL_PUT))
     assert isinstance(skipped, SkippedExpiry)
     assert "charge schedule" in skipped.reason
+
+
+def test_capital_used_is_the_larger_of_margin_and_maximum_loss():
+    spread = run_expiry(_history(lambda _: Decimal(25010)), BacktestConfig(strategy=BULL_PUT))
+    assert not isinstance(spread, SkippedExpiry)
+    # A short put spread carries exposure margin on its short leg well above its width.
+    assert spread.entry_margin > spread.max_loss
+    assert spread.capital_used == spread.entry_margin
+
+    long_call = get_strategy("long_call")
+    assert long_call is not None
+    bought = run_expiry(_history(lambda _: Decimal(25010)), BacktestConfig(strategy=long_call))
+    assert not isinstance(bought, SkippedExpiry)
+    assert bought.entry_margin == 0
+    assert bought.capital_used == bought.max_loss
+
+    report = run_backtest([_history(lambda _: Decimal(25010))], BacktestConfig(strategy=BULL_PUT))
+    overall = report.summary()["overall"]
+    trade = report.trades[0]
+    assert overall["average_capital_used"] == float(trade.capital_used)
+    assert overall["average_return_on_capital_pct"] == float(
+        (trade.net_pnl / trade.capital_used * 100).quantize(Decimal("0.01"))
+    )
+    assert overall["payoff_ratio"] is None  # no winning trade to compare
+    assert report.summary()["config"]["margin_parameters"]["price_scan_pct"] == "9"

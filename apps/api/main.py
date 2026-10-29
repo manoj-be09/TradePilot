@@ -32,6 +32,7 @@ from apps.api.backtest_schemas import (
 )
 from apps.api.capabilities import CapabilityMatrix, current_capabilities
 from apps.api.equity_routes import router as equity_router
+from apps.api.futures_routes import router as futures_router
 from apps.api.login_throttle import (
     LoginThrottleUnavailable,
     get_login_throttle,
@@ -78,6 +79,7 @@ from apps.api.schemas import (
     TokenResponse,
     UserResponse,
 )
+from apps.api.services.futures_paper import monitor_futures_exits
 from apps.api.services.paper_monitor import monitor_exits
 from apps.api.settings import get_settings
 from apps.api.strategy_schemas import (
@@ -172,7 +174,6 @@ from packages.paper_trading.expiry_settlement import (
     calculate_expiry_settlement,
 )
 from packages.paper_trading.index_scope import saved_option_index
-from packages.paper_trading.ledger_reconciliation import reconcile_paper_ledger
 from packages.paper_trading.observed_entries import replay_observed_entries
 from packages.paper_trading.observed_exits import replay_observed_exits
 from packages.paper_trading.official_index_close import (
@@ -203,6 +204,8 @@ from packages.paper_trading.transactions import (
     PaperLedgerMismatchError,
     assert_consistent_ledger,
     lock_account,
+    open_futures_trades,
+    reconcile_account,
 )
 from packages.paper_trading.worker_lease import WORKER_NAME, LeaseToken, assert_owned
 from packages.ranking.selector import RankingInputs, RankingResult, rank_nifty_strategies
@@ -218,6 +221,7 @@ from packages.regime.research_recommendations import (
 
 app = FastAPI(title="Trading Platform API", version="0.8.0")
 app.include_router(equity_router)
+app.include_router(futures_router)
 app.include_router(research_router)
 app.include_router(market_outlook_router)
 app.add_middleware(
@@ -2035,17 +2039,7 @@ def paper_account_ledger_reconciliation(
     """Recompute saved F&O paper cash and trade P&L without changing the ledger."""
     response.headers["Cache-Control"] = "no-store"
     account = _get_paper_account(session, user)
-    trades = list(session.scalars(select(PaperTrade).where(
-        PaperTrade.account_id == account.id, PaperTrade.user_id == user.id,
-    )))
-    orders = list(session.scalars(select(PaperOrder).where(
-        PaperOrder.account_id == account.id, PaperOrder.user_id == user.id,
-    )))
-    adjustments = list(session.scalars(select(PaperCapitalAdjustment).where(
-        PaperCapitalAdjustment.account_id == account.id,
-        PaperCapitalAdjustment.user_id == user.id,
-    )))
-    result = reconcile_paper_ledger(account, trades, orders, adjustments)
+    result = reconcile_account(session, account)
     return PaperLedgerReconciliationResponse(**vars(result))
 
 
@@ -3076,7 +3070,8 @@ async def _open_paper_trade_with_provider(
     open_trades = session.scalars(
         select(PaperTrade).where(PaperTrade.account_id == account.id, PaperTrade.status == "OPEN")
     ).all()
-    if len(open_trades) >= settings.paper_max_open_trades:
+    open_futures = open_futures_trades(session, account.id)
+    if len(open_trades) + len(open_futures) >= settings.paper_max_open_trades:
         raise HTTPException(
             status_code=409, detail="Maximum number of simultaneous paper trades reached"
         )
@@ -3086,7 +3081,9 @@ async def _open_paper_trade_with_provider(
     portfolio_limit = (
         account.initial_cash * Decimal(settings.paper_max_portfolio_risk_pct) / Decimal(100)
     ).quantize(_CENT)
-    current_risk = sum((trade.max_loss for trade in open_trades), Decimal(0))
+    current_risk = sum(
+        (trade.max_loss for trade in open_trades), Decimal(0)
+    ) + sum((trade.max_loss for trade in open_futures), Decimal(0))
     if max_loss > per_trade_limit:
         raise HTTPException(
             status_code=409,
@@ -3462,7 +3459,16 @@ def paper_trade_exit_reconciliation(
 
 @app.post("/paper/monitor", response_model=PaperMonitorResponse, tags=["paper trading"])
 async def monitor_paper_exits(user: CurrentUser, session: SessionDep) -> PaperMonitorResponse:
-    return await monitor_exits(user.id, session, get_market_data_provider(), get_settings())
+    provider, settings = get_market_data_provider(), get_settings()
+    result = await monitor_exits(user.id, session, provider, settings)
+    evaluated, closed, warnings = await monitor_futures_exits(
+        user.id, session, provider, settings
+    )
+    return result.model_copy(update={
+        "evaluated_count": result.evaluated_count + evaluated,
+        "closed_trade_ids": [*result.closed_trade_ids, *closed],
+        "warnings": [*result.warnings, *warnings],
+    })
 
 
 @app.get("/paper/worker", tags=["paper trading"])

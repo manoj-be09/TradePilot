@@ -10,6 +10,7 @@ import { OptionDeploymentDecisions } from "./OptionDeploymentDecisions";
 import { OptionTradeObservations } from "./OptionTradeObservations";
 import { MarketOutlook } from "./MarketOutlook";
 import { StrategyRanking } from "./StrategyRanking";
+import { FuturesPaper } from "./FuturesPaper";
 import { BuildUpdateNotice } from "./BuildUpdateNotice";
 import { TradingDashboard } from "./TradingDashboard";
 import { ChartWorkspace } from "./ChartWorkspace";
@@ -2914,6 +2915,8 @@ export default function Home() {
                 {paperLedger.issues.length > 0 ? <ul>{paperLedger.issues.map((issue, index) => <li key={`${index}-${issue}`}>{issue}</li>)}</ul> : null}
               </div> : null}
             </details>
+
+            {token && selectedOptionIndex === "NIFTY" ? <FuturesPaper apiUrl={API_URL} token={token} /> : null}
 
             {token && selectedOptionIndex === "NIFTY" ? (
               <StrategyRanking

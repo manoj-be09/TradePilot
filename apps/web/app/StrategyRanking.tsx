@@ -57,13 +57,15 @@ const money = (value: string | null) =>
   value === null ? "Unavailable" : `₹${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 export function StrategyRanking({
-  token, apiUrl, chain, referenceStrike, onUse,
+  token, apiUrl, chain, referenceStrike, onUse, compact = false,
 }: {
   token: string;
   apiUrl: string;
   chain: { as_of: string; expiry: string } | null;
   referenceStrike: string;
   onUse: (strategyKey: string) => void;
+  /** One-line summary for Home: the selected strategy or "No trade" and why. */
+  compact?: boolean;
 }) {
   const [result, setResult] = useState<RankingResult | null>(null);
   const [error, setError] = useState("");
@@ -91,6 +93,23 @@ export function StrategyRanking({
     return () => controller.abort();
   }, [apiUrl, token, chain, referenceStrike]);
 
+  if (compact) {
+    const pick = result?.candidates.find((item) => item.strategy_key === result.selected_strategy_key);
+    const headline = !chain || (!result && !error) ? "Checking the market…"
+      : error || !result ? "Unavailable" : pick ? pick.name : "No trade";
+    const reason = !chain ? "Waiting for the NIFTY option chain."
+      : error ? error : result?.reasons[0] ?? "";
+    return (
+      <section className="home-suggestion" aria-label="Today's suggestion" aria-live="polite">
+        <div>
+          <span>Today&apos;s suggestion · simulated, not advice</span>
+          <strong>{headline}</strong>
+          {reason ? <small>{reason}</small> : null}
+        </div>
+        <button className="refresh-button" onClick={() => onUse(pick?.strategy_key ?? "")} type="button">{pick ? "Review in Trade" : "Open Trade"}</button>
+      </section>
+    );
+  }
   if (!chain) return null;
   const ranked = result?.candidates.filter((item) => item.status !== "NO_VIEW") || [];
   const shown = showAll ? ranked : ranked.slice(0, 4);

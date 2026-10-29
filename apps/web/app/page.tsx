@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { WorkerStatus } from "./WorkerStatus";
+import { PaperStrategyResults } from "./ObservedStrategyPerformance";
 import { StrategyPauses } from "./StrategyPauses";
 import { ExpiryTestControl } from "./ExpiryTestControl";
 import { OptionDeploymentDecisions } from "./OptionDeploymentDecisions";
@@ -2574,11 +2575,18 @@ export default function Home() {
         <h1>{token && workspace === "equities" ? <>Research stocks<br /><em>before you trade.</em></> : <>See the market<br /><em>as it moves.</em></>}</h1>
         <p>{token && workspace === "equities" ? "Search equities and ETFs, build a watchlist, inspect live snapshots, and study price history from your starting workspace." : "Build a defined-risk NIFTY options position, simulate it from current quotes, and track it in a paper portfolio. Live broker orders remain disabled."}</p>
       </section>}
-      {token && activeSection === "dashboard" ? <TradingDashboard token={token} apiUrl={API_URL} workspace={workspace} onOpenStrategies={() => { setActiveSection("algo"); window.scrollTo({ top: 0, behavior: "smooth" }); }} onExploreSymbols={() => {
-        if (workspace === "derivatives") { setActiveSection("charts"); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
-        const explorer = document.querySelector<HTMLDetailsElement>("#equity-instruments > details");
-        if (explorer) { explorer.open = true; explorer.scrollIntoView({ behavior: "smooth", block: "start" }); }
-      }} /> : null}
+      {token && activeSection === "dashboard" ? <TradingDashboard token={token} apiUrl={API_URL} account={paperAccount}
+        onOpenTrade={() => { setActiveSection("algo"); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+        suggestion={<StrategyRanking apiUrl={API_URL} chain={chain} compact referenceStrike={selectedPaperStrike} token={token}
+          onUse={(key) => {
+            setActiveSection("algo");
+            if (!key) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+            setSelectedStrategy(key); setDeploymentPreparedKey(""); setPaperTicketMessage("");
+            window.setTimeout(() => {
+              const builder = document.getElementById("paper-strategy-builder");
+              if (builder instanceof HTMLDetailsElement) { builder.open = true; builder.scrollIntoView({ behavior: "smooth", block: "start" }); }
+            }, 0);
+          }} />} /> : null}
 
       {!authReady ? (
         <section className="panel loading-panel" aria-live="polite">Restoring your session…</section>
@@ -2743,7 +2751,7 @@ export default function Home() {
               {securityActivity.length ? <ul>{securityActivity.map((event) => <li key={event.id}><span>{SECURITY_ACTIVITY_LABELS[event.event_type]}</span><time dateTime={event.created_at}>{formatTime(event.created_at)}</time></li>)}</ul> : !securityActivityBusy && !securityActivityError ? <p className="muted">No activity available yet.</p> : null}
             </div>
           </section> : null}
-          {activeSection === "research" ? <ResearchWorkspace key={token} token={token} apiUrl={API_URL} /> : <>
+          {activeSection === "research" ? <><PaperStrategyResults token={token} apiUrl={API_URL} /><ResearchWorkspace key={token} token={token} apiUrl={API_URL} /></> : <>
           {indexCatalogError ? <p role="alert">{indexCatalogError}</p> : null}
           {activeSection === "charts" ? <ChartWorkspace token={token} apiUrl={API_URL} /> : null}
           {activeSection === "charts" ? <>

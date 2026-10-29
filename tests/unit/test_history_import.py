@@ -210,3 +210,27 @@ def test_rate_limits_back_off_and_retry_before_failing(factory):
     assert statuses[gives_up] == "FAILED"
     assert [wait for wait in waits if wait] == [10, 20, 10, 20, 40]
     assert provider.calls.count(gives_up) == 4
+
+
+def test_ist_stamped_candles_read_back_at_the_same_moment_from_sqlite(factory):
+    from zoneinfo import ZoneInfo
+
+    from packages.history.loader import load_histories
+
+    ist = ZoneInfo("Asia/Kolkata")
+    opening = datetime(2025, 4, 17, 9, 15, tzinfo=ist)
+
+    class IstProvider(Provider):
+        async def get_expired_historical(self, instrument_key, start, end, interval):
+            value = Decimal(100)
+            return [HistoricalBar(timestamp=opening, open=value, high=value, low=value,
+                                  close=value, volume=10)]
+
+    asyncio.run(import_expiry(IstProvider(), factory, EXPIRY, SETTINGS))
+    with factory() as session:
+        histories, _ = load_histories(session, interval="5m", start=EXPIRY, end=EXPIRY)
+    starts = {candle.start for candles in histories[0].bars.values() for candle in candles}
+    # SQLite keeps no offset; the loader's readers treat a naive time as UTC.
+    assert {
+        (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)) for moment in starts
+    } == {opening}

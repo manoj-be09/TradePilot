@@ -77,6 +77,12 @@ class ExpirySummary:
     detail: str = ""
 
 
+def _utc(moment: datetime) -> datetime:
+    """SQLite drops the offset of a stored datetime and readers treat it as UTC, so
+    candles (which Upstox stamps +05:30) are stored in UTC to read back correctly."""
+    return moment.astimezone(timezone.utc)
+
+
 def _session_day(moment: datetime) -> date:
     return moment.astimezone(_IST).date()
 
@@ -137,7 +143,7 @@ def _record(
         session.add_all([
             HistoricalOptionBar(
                 instrument_key=contract.instrument_key, interval=settings.interval,
-                bar_start=bar.timestamp, expiry=contract.expiry, strike=contract.strike,
+                bar_start=_utc(bar.timestamp), expiry=contract.expiry, strike=contract.strike,
                 option_type=contract.option_type, open=bar.open, high=bar.high, low=bar.low,
                 close=bar.close, volume=bar.volume, open_interest=bar.open_interest,
             )
@@ -149,8 +155,8 @@ def _record(
         strike=contract.strike, option_type=contract.option_type,
         lot_size=contract.lot_size, requested_from=start, requested_to=end, status=status,
         bar_count=len(bars) if status == "COMPLETE" else 0,
-        first_bar=bars[0].timestamp if status == "COMPLETE" and bars else None,
-        last_bar=bars[-1].timestamp if status == "COMPLETE" and bars else None,
+        first_bar=_utc(bars[0].timestamp) if status == "COMPLETE" and bars else None,
+        last_bar=_utc(bars[-1].timestamp) if status == "COMPLETE" and bars else None,
         detail=detail[:300], imported_at=now,
     ))
 

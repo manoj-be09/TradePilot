@@ -807,6 +807,7 @@ export default function Home() {
   const [scheduledError, setScheduledError] = useState("");
   const [scheduledHistoryError, setScheduledHistoryError] = useState("");
   const [scheduledBusy, setScheduledBusy] = useState(false);
+  const [backtestMode, setBacktestMode] = useState<"range" | "single">("range");
   const [payoffEstimate, setPayoffEstimate] = useState<PayoffEstimate | null>(null);
   const [payoffEstimateError, setPayoffEstimateError] = useState("");
   const [payoffEstimateBusy, setPayoffEstimateBusy] = useState(false);
@@ -3380,36 +3381,13 @@ export default function Home() {
 
           </> : null}
           {activeSection === "backtest" ? <>
-          <section aria-label="Historical options backtest" className="historical-backtest">
+          <section aria-label="Backtest" className="historical-backtest">
             <div className="features-heading backtest-heading">
-              <div>
-                <div className="panel-kicker">HISTORICAL TESTING</div>
-                <h3>Replay one NIFTY options position</h3>
-              </div>
-              <span>Expired-contract OHLC data</span>
+              <h2 className="backtest-title">Backtest</h2>
+              <span>Simulated · expired NIFTY option candles</span>
             </div>
-            <p className="muted backtest-intro">
-              Select a strategy and expired contract period. The replay anchors the strike to the prior
-              NIFTY close, enters at the option candle open, and exits at its close on your chosen date.
-              This is a historical position replay, not repeated signal testing. Fee and slippage inputs below are illustrative estimates.
-            </p>
-            <div className="preset-controls">
-              <label htmlFor="historical-version">Saved version</label>
-              <select id="historical-version" disabled={historicalBacktestBusy || scheduledBusy} onChange={(event) => {
-                const version = strategyVersions.find((item) => item.id === event.target.value);
-                setHistoricalVersionId(event.target.value);
-                if (version) { setHistoricalStrategyKey(version.definition.template_key); setHistoricalLots(version.definition.lots); }
-                setHistoricalBacktest(null); setScheduledBacktest(null);
-              }} value={historicalVersionId}>
-                <option value="">Use loose template inputs</option>
-                {strategyVersions.map((version) => <option key={version.id} value={version.id}>{version.name} · v{version.version_number}</option>)}
-              </select>
-            </div>
-            {historicalVersionUnsupported ? <p className="paper-warning">This saved version has entry filters or automatic exits that daily-candle replay cannot evaluate. Choose a simple version or unpin it.</p> : null}
-            {historicalExpiriesBusy ? <p className="features-note" aria-live="polite">Loading expired NIFTY option history…</p> : null}
-            {historicalDataError ? <p className="error-banner backtest-error" role="alert">{historicalDataError}</p> : null}
-            <form className="backtest-form" onSubmit={(event) => void runHistoricalBacktest(event)}>
-              <div className="backtest-controls">
+            <p className="muted backtest-intro">Replay a strategy on past expiries. Results are estimates from daily candles, not predictions or executable fills.</p>
+            <div className="backtest-controls">
                 <label>
                   Strategy
                   <select
@@ -3424,6 +3402,132 @@ export default function Home() {
                     {paperStrategies.map((strategy) => <option key={strategy.key} value={strategy.key}>{strategy.name}</option>)}
                   </select>
                 </label>
+                <label>
+                  Lots
+                  <input
+                    disabled={historicalBacktestBusy}
+                    max={100}
+                    min={1}
+                    onChange={(event) => { setHistoricalLots(Math.max(1, Math.min(100, Math.trunc(Number(event.target.value) || 1)))); setHistoricalVersionId(""); }}
+                    type="number"
+                    value={historicalLots}
+                  />
+                </label>
+            </div>
+            <div className="backtest-mode" role="group" aria-label="Backtest type">
+              <button aria-pressed={backtestMode === "range"} onClick={() => setBacktestMode("range")} type="button">Across expiries</button>
+              <button aria-pressed={backtestMode === "single"} onClick={() => setBacktestMode("single")} type="button">One position</button>
+            </div>
+            <details className="workspace-disclosure backtest-assumption-panel"><summary>Saved version and cost assumptions</summary>
+            <div className="preset-controls">
+              <label htmlFor="historical-version">Saved version</label>
+              <select id="historical-version" disabled={historicalBacktestBusy || scheduledBusy} onChange={(event) => {
+                const version = strategyVersions.find((item) => item.id === event.target.value);
+                setHistoricalVersionId(event.target.value);
+                if (version) { setHistoricalStrategyKey(version.definition.template_key); setHistoricalLots(version.definition.lots); }
+                setHistoricalBacktest(null); setScheduledBacktest(null);
+              }} value={historicalVersionId}>
+                <option value="">Use loose template inputs</option>
+                {strategyVersions.map((version) => <option key={version.id} value={version.id}>{version.name} · v{version.version_number}</option>)}
+              </select>
+            </div>
+              <div className="backtest-controls">
+                <label>
+                  Estimated fee per leg order (₹)
+                  <input disabled={historicalBacktestBusy || scheduledBusy} max={1000} min={0} onChange={(event) => setScheduleFee(event.target.value)} step="0.01" type="number" value={scheduleFee} />
+                </label>
+                <label>
+                  Estimated slippage per unit per side (₹)
+                  <input disabled={historicalBacktestBusy || scheduledBusy} max={100} min={0} onChange={(event) => setScheduleSlippage(event.target.value)} step="0.01" type="number" value={scheduleSlippage} />
+                </label>
+              </div>
+            </details>
+            {historicalVersionUnsupported ? <p className="paper-warning">This saved version has entry filters or automatic exits that daily-candle replay cannot evaluate. Choose a simple version or unpin it.</p> : null}
+            {historicalExpiriesBusy ? <p className="features-note" aria-live="polite">Loading expired NIFTY option history…</p> : null}
+            {historicalDataError ? <p className="error-banner backtest-error" role="alert">{historicalDataError}</p> : null}
+            {backtestMode === "range" ? <>
+            <form className="backtest-form" onSubmit={(event) => void runScheduledBacktest(event)}>
+              <div className="backtest-controls">
+                <label>
+                  From expiry
+                  <select disabled={historicalExpiriesBusy || scheduledBusy || !historicalExpiries.length} onChange={(event) => setScheduleStartExpiry(event.target.value)} value={scheduleStartExpiry}>
+                    {historicalExpiries.map((expiry) => <option key={expiry} value={expiry}>{expiry}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Through expiry
+                  <select disabled={historicalExpiriesBusy || scheduledBusy || !historicalExpiries.length} onChange={(event) => setScheduleEndExpiry(event.target.value)} value={scheduleEndExpiry}>
+                    {historicalExpiries.map((expiry) => <option key={expiry} value={expiry}>{expiry}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Entry sessions before expiry
+                  <input disabled={scheduledBusy} max={5} min={1} onChange={(event) => setScheduleEntrySessions(Math.max(1, Math.min(5, Math.trunc(Number(event.target.value) || 1))))} type="number" value={scheduleEntrySessions} />
+                </label>
+              </div>
+              <button className="primary-button backtest-submit" disabled={scheduledBusy || historicalVersionUnsupported || !scheduleStartExpiry || !scheduleEndExpiry || scheduleStartExpiry > scheduleEndExpiry || !historicalStrategyKey} type="submit">
+                {scheduledBusy ? "Loading multiple expiries…" : "Run scheduled replay"}
+              </button>
+            </form>
+            {scheduledError ? <p className="error-banner backtest-error" role="alert">{scheduledError}</p> : null}
+            {scheduledBacktest ? (
+              <div className="backtest-result" aria-live="polite">
+                <div className="backtest-summary">
+                  <div><span>NET P&amp;L ESTIMATE</span><strong className={changeClass(scheduledBacktest.net_pnl)}>{formatSignedPrice(scheduledBacktest.net_pnl)}</strong></div>
+                  <div><span>GROSS P&amp;L</span><strong className={changeClass(scheduledBacktest.gross_pnl)}>{formatSignedPrice(scheduledBacktest.gross_pnl)}</strong></div>
+                  <div><span>ESTIMATED COSTS</span><strong>₹{formatPrice(scheduledBacktest.estimated_cost)}</strong></div>
+                  <div><span>CLOSED-TRADE DRAWDOWN</span><strong>₹{formatPrice(scheduledBacktest.max_closed_trade_drawdown)}</strong></div>
+                </div>
+                <div className="backtest-result-title">
+                  <strong>{scheduledBacktest.strategy_name} · {scheduledBacktest.trade_count} expiries</strong>
+                  {scheduledBacktest.strategy_version_id ? <span>Saved version {strategyVersions.find((version) => version.id === scheduledBacktest.strategy_version_id)?.name || scheduledBacktest.strategy_version_id} · hash {scheduledBacktest.strategy_definition_hash?.slice(0, 12)}…</span> : null}
+                  <span>{scheduledBacktest.winning_trades} positive net trades · version {scheduledBacktest.strategy_version} · input fingerprint {scheduledBacktest.observed_input_digest.slice(0, 12)}…</span>
+                </div>
+                <div className="paper-table-scroll">
+                  <table className="paper-table backtest-table">
+                    <thead><tr><th>Expiry</th><th>Entry → Exit</th><th>Gross</th><th>Estimated costs</th><th>Net</th><th>Cumulative net</th></tr></thead>
+                    <tbody>{scheduledBacktest.trades.map((trade) => (
+                      <tr key={trade.expiry}>
+                        <td>{trade.expiry}</td>
+                        <td>{trade.entry_date} → {trade.exit_date}</td>
+                        <td className={changeClass(trade.gross_pnl)}>{formatSignedPrice(trade.gross_pnl)}</td>
+                        <td>₹{formatPrice(trade.estimated_cost)}</td>
+                        <td className={changeClass(trade.net_pnl)}>{formatSignedPrice(trade.net_pnl)}</td>
+                        <td className={changeClass(trade.cumulative_net_pnl)}>{formatSignedPrice(trade.cumulative_net_pnl)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+                <ul className="backtest-assumptions">
+                  {scheduledBacktest.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}
+                  {scheduledBacktest.warnings.map((warning) => <li className="backtest-warning" key={warning}>{warning}</li>)}
+                </ul>
+              </div>
+            ) : null}
+            {scheduledHistoryError ? <p className="features-note error-banner" role="alert">{scheduledHistoryError}</p> : null}
+            {scheduledRuns.length ? (
+              <div className="backtest-history">
+                <h4>Saved scheduled replays <span>Most recent 20</span></h4>
+                <div className="paper-table-scroll">
+                  <table className="paper-table backtest-history-table">
+                    <thead><tr><th>Saved</th><th>Strategy</th><th>Range</th><th>Trades</th><th>Estimated net</th><th /></tr></thead>
+                    <tbody>{scheduledRuns.map((run) => (
+                      <tr key={run.result.run_id}>
+                        <td>{new Date(run.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</td>
+                        <td>{run.result.strategy_name}</td>
+                        <td>{run.result.start_date} → {run.result.end_date}</td>
+                        <td>{run.result.trade_count}</td>
+                        <td className={changeClass(run.result.net_pnl)}>{formatSignedPrice(run.result.net_pnl)}</td>
+                        <td><button aria-label={"View scheduled replay for " + run.result.strategy_name} className="table-action" onClick={() => setScheduledBacktest(run.result)} type="button">View</button> <button aria-label={"Export scheduled replay for " + run.result.strategy_name} className="table-action" onClick={() => exportReplayRun(run)} type="button">Export JSON</button></td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+            </> : <>
+            <form className="backtest-form" onSubmit={(event) => void runHistoricalBacktest(event)}>
+              <div className="backtest-controls">
                 <label>
                   Expired expiry
                   <select
@@ -3467,27 +3571,6 @@ export default function Home() {
                     type="date"
                     value={historicalExitDate}
                   />
-                </label>
-                <label>
-                  Lots
-                  <input
-                    disabled={historicalBacktestBusy}
-                    max={100}
-                    min={1}
-                    onChange={(event) => { setHistoricalLots(Math.max(1, Math.min(100, Math.trunc(Number(event.target.value) || 1)))); setHistoricalVersionId(""); }}
-                    type="number"
-                    value={historicalLots}
-                  />
-                </label>
-              </div>
-              <div className="backtest-controls">
-                <label>
-                  Estimated fee per leg order (₹)
-                  <input disabled={historicalBacktestBusy} max={1000} min={0} onChange={(event) => setScheduleFee(event.target.value)} step="0.01" type="number" value={scheduleFee} />
-                </label>
-                <label>
-                  Estimated slippage per unit per side (₹)
-                  <input disabled={historicalBacktestBusy} max={100} min={0} onChange={(event) => setScheduleSlippage(event.target.value)} step="0.01" type="number" value={scheduleSlippage} />
                 </label>
               </div>
               <button
@@ -3566,108 +3649,7 @@ export default function Home() {
                 </div>
               </div>
             ) : null}
-          </section>
-
-          <section aria-label="Scheduled historical replay" className="historical-backtest">
-            <div className="features-heading backtest-heading">
-              <div>
-                <div className="panel-kicker">REPEATED HISTORICAL TEST</div>
-                <h3>Replay a template across expiries</h3>
-              </div>
-              <span>Up to four past expiries</span>
-            </div>
-            <p className="muted backtest-intro">
-              Uses the strategy and lots selected above. Enter a fixed number of NIFTY trading sessions
-              before each expiry, then exit on expiry. Estimated costs are illustrative; daily candles
-              cannot prove executable fills or capture intraday risk.
-            </p>
-            <form className="backtest-form" onSubmit={(event) => void runScheduledBacktest(event)}>
-              <div className="backtest-controls">
-                <label>
-                  From expiry
-                  <select disabled={historicalExpiriesBusy || scheduledBusy || !historicalExpiries.length} onChange={(event) => setScheduleStartExpiry(event.target.value)} value={scheduleStartExpiry}>
-                    {historicalExpiries.map((expiry) => <option key={expiry} value={expiry}>{expiry}</option>)}
-                  </select>
-                </label>
-                <label>
-                  Through expiry
-                  <select disabled={historicalExpiriesBusy || scheduledBusy || !historicalExpiries.length} onChange={(event) => setScheduleEndExpiry(event.target.value)} value={scheduleEndExpiry}>
-                    {historicalExpiries.map((expiry) => <option key={expiry} value={expiry}>{expiry}</option>)}
-                  </select>
-                </label>
-                <label>
-                  Entry sessions before expiry
-                  <input disabled={scheduledBusy} max={5} min={1} onChange={(event) => setScheduleEntrySessions(Math.max(1, Math.min(5, Math.trunc(Number(event.target.value) || 1))))} type="number" value={scheduleEntrySessions} />
-                </label>
-                <label>
-                  Estimated fee per leg order (₹)
-                  <input disabled={scheduledBusy} max={1000} min={0} onChange={(event) => setScheduleFee(event.target.value)} step="0.01" type="number" value={scheduleFee} />
-                </label>
-                <label>
-                  Estimated slippage per unit per side (₹)
-                  <input disabled={scheduledBusy} max={100} min={0} onChange={(event) => setScheduleSlippage(event.target.value)} step="0.01" type="number" value={scheduleSlippage} />
-                </label>
-              </div>
-              <button className="primary-button backtest-submit" disabled={scheduledBusy || historicalVersionUnsupported || !scheduleStartExpiry || !scheduleEndExpiry || scheduleStartExpiry > scheduleEndExpiry || !historicalStrategyKey} type="submit">
-                {scheduledBusy ? "Loading multiple expiries…" : "Run scheduled replay"}
-              </button>
-            </form>
-            {scheduledError ? <p className="error-banner backtest-error" role="alert">{scheduledError}</p> : null}
-            {scheduledBacktest ? (
-              <div className="backtest-result" aria-live="polite">
-                <div className="backtest-summary">
-                  <div><span>NET P&amp;L ESTIMATE</span><strong className={changeClass(scheduledBacktest.net_pnl)}>{formatSignedPrice(scheduledBacktest.net_pnl)}</strong></div>
-                  <div><span>GROSS P&amp;L</span><strong className={changeClass(scheduledBacktest.gross_pnl)}>{formatSignedPrice(scheduledBacktest.gross_pnl)}</strong></div>
-                  <div><span>ESTIMATED COSTS</span><strong>₹{formatPrice(scheduledBacktest.estimated_cost)}</strong></div>
-                  <div><span>CLOSED-TRADE DRAWDOWN</span><strong>₹{formatPrice(scheduledBacktest.max_closed_trade_drawdown)}</strong></div>
-                </div>
-                <div className="backtest-result-title">
-                  <strong>{scheduledBacktest.strategy_name} · {scheduledBacktest.trade_count} expiries</strong>
-                  {scheduledBacktest.strategy_version_id ? <span>Saved version {strategyVersions.find((version) => version.id === scheduledBacktest.strategy_version_id)?.name || scheduledBacktest.strategy_version_id} · hash {scheduledBacktest.strategy_definition_hash?.slice(0, 12)}…</span> : null}
-                  <span>{scheduledBacktest.winning_trades} positive net trades · version {scheduledBacktest.strategy_version} · input fingerprint {scheduledBacktest.observed_input_digest.slice(0, 12)}…</span>
-                </div>
-                <div className="paper-table-scroll">
-                  <table className="paper-table backtest-table">
-                    <thead><tr><th>Expiry</th><th>Entry → Exit</th><th>Gross</th><th>Estimated costs</th><th>Net</th><th>Cumulative net</th></tr></thead>
-                    <tbody>{scheduledBacktest.trades.map((trade) => (
-                      <tr key={trade.expiry}>
-                        <td>{trade.expiry}</td>
-                        <td>{trade.entry_date} → {trade.exit_date}</td>
-                        <td className={changeClass(trade.gross_pnl)}>{formatSignedPrice(trade.gross_pnl)}</td>
-                        <td>₹{formatPrice(trade.estimated_cost)}</td>
-                        <td className={changeClass(trade.net_pnl)}>{formatSignedPrice(trade.net_pnl)}</td>
-                        <td className={changeClass(trade.cumulative_net_pnl)}>{formatSignedPrice(trade.cumulative_net_pnl)}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-                <ul className="backtest-assumptions">
-                  {scheduledBacktest.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}
-                  {scheduledBacktest.warnings.map((warning) => <li className="backtest-warning" key={warning}>{warning}</li>)}
-                </ul>
-              </div>
-            ) : null}
-            {scheduledHistoryError ? <p className="features-note error-banner" role="alert">{scheduledHistoryError}</p> : null}
-            {scheduledRuns.length ? (
-              <div className="backtest-history">
-                <h4>Saved scheduled replays <span>Most recent 20</span></h4>
-                <div className="paper-table-scroll">
-                  <table className="paper-table backtest-history-table">
-                    <thead><tr><th>Saved</th><th>Strategy</th><th>Range</th><th>Trades</th><th>Estimated net</th><th /></tr></thead>
-                    <tbody>{scheduledRuns.map((run) => (
-                      <tr key={run.result.run_id}>
-                        <td>{new Date(run.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</td>
-                        <td>{run.result.strategy_name}</td>
-                        <td>{run.result.start_date} → {run.result.end_date}</td>
-                        <td>{run.result.trade_count}</td>
-                        <td className={changeClass(run.result.net_pnl)}>{formatSignedPrice(run.result.net_pnl)}</td>
-                        <td><button aria-label={"View scheduled replay for " + run.result.strategy_name} className="table-action" onClick={() => setScheduledBacktest(run.result)} type="button">View</button> <button aria-label={"Export scheduled replay for " + run.result.strategy_name} className="table-action" onClick={() => exportReplayRun(run)} type="button">Export JSON</button></td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              </div>
-            ) : null}
+            </>}
           </section>
 
           </> : null}

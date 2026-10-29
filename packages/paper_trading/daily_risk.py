@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from packages.core.risk import DailyRiskBudget, daily_risk_budget
+from packages.database.futures_models import PaperFuturesTrade
 from packages.database.models import PaperTrade
 
 __all__ = ["DailyRiskBudget", "daily_realized_pnl", "daily_risk_budget"]
@@ -22,12 +23,15 @@ def daily_realized_pnl(session: Session, account_id: UUID, trading_day: date) ->
     end = (datetime.combine(trading_day, time.min, tzinfo=_INDIA) + timedelta(days=1)).astimezone(
         timezone.utc
     )
-    value = session.scalar(
-        select(func.coalesce(func.sum(PaperTrade.realized_pnl), 0)).where(
-            PaperTrade.account_id == account_id,
-            PaperTrade.status == "CLOSED",
-            PaperTrade.closed_at >= start,
-            PaperTrade.closed_at < end,
+    total = Decimal(0)
+    for model in (PaperTrade, PaperFuturesTrade):
+        value = session.scalar(
+            select(func.coalesce(func.sum(model.realized_pnl), 0)).where(
+                model.account_id == account_id,
+                model.status == "CLOSED",
+                model.closed_at >= start,
+                model.closed_at < end,
+            )
         )
-    )
-    return Decimal(value or 0).quantize(_CENT, rounding=ROUND_HALF_UP)
+        total += Decimal(value or 0)
+    return total.quantize(_CENT, rounding=ROUND_HALF_UP)

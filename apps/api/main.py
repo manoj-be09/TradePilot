@@ -32,6 +32,7 @@ from apps.api.backtest_schemas import (
 )
 from apps.api.capabilities import CapabilityMatrix, current_capabilities
 from apps.api.equity_routes import router as equity_router
+from apps.api.futures_routes import router as futures_router
 from apps.api.login_throttle import (
     LoginThrottleUnavailable,
     get_login_throttle,
@@ -64,6 +65,7 @@ from apps.api.paper_schemas import (
     PaperTradeListResponse,
     PaperTradeResponse,
     StrategyDefinitionResponse,
+    StrategyDemotionResponse,
     StrategyLegDefinitionResponse,
     UserNotificationResponse,
 )
@@ -78,6 +80,7 @@ from apps.api.schemas import (
     TokenResponse,
     UserResponse,
 )
+from apps.api.services.futures_paper import monitor_futures_exits
 from apps.api.services.paper_monitor import monitor_exits
 from apps.api.settings import get_settings
 from apps.api.strategy_schemas import (
@@ -112,6 +115,7 @@ from packages.database.models import (
     PaperTrade,
     ResearchPolicySet,
     ResearchStudy,
+    StrategyDemotion,
     StrategyVersion,
     User,
     UserNotification,
@@ -167,12 +171,24 @@ from packages.options.pricing import calculate_greeks
 from packages.options.upstox_cost_benchmark import upstox_option_cost_scenario
 from packages.paper_trading.costs import cost_snapshot, summarize_costs
 from packages.paper_trading.daily_risk import daily_realized_pnl, daily_risk_budget
+from packages.paper_trading.demotion import (
+    active_demotion,
+    check_strategy,
+    enforce_strategy_demotion,
+    reinstate_strategy,
+)
 from packages.paper_trading.expiry_settlement import (
     ExpirySettlement,
     calculate_expiry_settlement,
 )
 from packages.paper_trading.index_scope import saved_option_index
-from packages.paper_trading.ledger_reconciliation import reconcile_paper_ledger
+from packages.paper_trading.margin import (
+    FALLBACK_VOLATILITY_PCT,
+    MarginLeg,
+    estimate_position_margin,
+    is_expiry_day,
+    years_to_expiry,
+)
 from packages.paper_trading.observed_entries import replay_observed_entries
 from packages.paper_trading.observed_exits import replay_observed_exits
 from packages.paper_trading.official_index_close import (
@@ -203,6 +219,9 @@ from packages.paper_trading.transactions import (
     PaperLedgerMismatchError,
     assert_consistent_ledger,
     lock_account,
+    open_futures_trades,
+    option_cash_reserve,
+    reconcile_account,
 )
 from packages.paper_trading.worker_lease import WORKER_NAME, LeaseToken, assert_owned
 from packages.ranking.selector import RankingInputs, RankingResult, rank_nifty_strategies
@@ -218,6 +237,7 @@ from packages.regime.research_recommendations import (
 
 app = FastAPI(title="Trading Platform API", version="0.8.0")
 app.include_router(equity_router)
+app.include_router(futures_router)
 app.include_router(research_router)
 app.include_router(market_outlook_router)
 app.add_middleware(
@@ -298,6 +318,43 @@ def _require_consistent_paper_ledger(session: SessionDep, account: PaperAccount)
     except PaperLedgerMismatchError as error:
         session.rollback()
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+def _require_strategy_not_demoted(
+    session: SessionDep, user_id: UUID, strategy_key: str, initial_cash: Decimal
+) -> None:
+    """Refuse new entries for a paused strategy; call while holding the account lock."""
+    limits = get_settings().paper_demotion_limits(initial_cash)
+    demotion = enforce_strategy_demotion(session, user_id, strategy_key, limits)
+    if demotion is None:
+        return
+    summary = str(demotion.details.get("summary") or demotion.reason)
+    # Keep a newly staged pause and its audit event even though this entry is refused.
+    session.commit()
+    raise HTTPException(
+        status_code=423,
+        detail=(
+            f"Strategy {strategy_key} is paused after {summary}; existing positions keep "
+            "their exits. Reinstate it to allow new paper entries."
+        ),
+    )
+
+
+def _demotion_response(
+    session: SessionDep, user: User, strategy_key: str, initial_cash: Decimal
+) -> StrategyDemotionResponse:
+    demotion = active_demotion(session, user.id, strategy_key)
+    check = check_strategy(
+        session, user.id, strategy_key, get_settings().paper_demotion_limits(initial_cash)
+    )
+    return StrategyDemotionResponse(
+        strategy_key=strategy_key,
+        paused=demotion is not None,
+        reason=demotion.reason if demotion else None,
+        summary=str(demotion.details.get("summary")) if demotion else None,
+        demoted_at=demotion.demoted_at if demotion else None,
+        check=check.snapshot(),
+    )
 
 
 def _paper_trade_response(trade: PaperTrade) -> PaperTradeResponse:
@@ -2035,17 +2092,7 @@ def paper_account_ledger_reconciliation(
     """Recompute saved F&O paper cash and trade P&L without changing the ledger."""
     response.headers["Cache-Control"] = "no-store"
     account = _get_paper_account(session, user)
-    trades = list(session.scalars(select(PaperTrade).where(
-        PaperTrade.account_id == account.id, PaperTrade.user_id == user.id,
-    )))
-    orders = list(session.scalars(select(PaperOrder).where(
-        PaperOrder.account_id == account.id, PaperOrder.user_id == user.id,
-    )))
-    adjustments = list(session.scalars(select(PaperCapitalAdjustment).where(
-        PaperCapitalAdjustment.account_id == account.id,
-        PaperCapitalAdjustment.user_id == user.id,
-    )))
-    result = reconcile_paper_ledger(account, trades, orders, adjustments)
+    result = reconcile_account(session, account)
     return PaperLedgerReconciliationResponse(**vars(result))
 
 
@@ -2131,6 +2178,50 @@ def fund_nifty_paper_wallet(
         cash_after=adjustment.cash_after,
         initial_cash=account.initial_cash,
     )
+
+
+@app.get(
+    "/paper/strategies/demotions",
+    response_model=list[StrategyDemotionResponse],
+    tags=["paper trading"],
+)
+def list_paper_strategy_demotions(
+    user: CurrentUser, session: SessionDep
+) -> list[StrategyDemotionResponse]:
+    """Pause state and current rule check for every strategy this account has traded."""
+    account = _get_paper_account(session, user)
+    keys = sorted(set(session.scalars(
+        select(PaperTrade.strategy_key).where(PaperTrade.user_id == user.id)
+    )) | set(session.scalars(
+        select(StrategyDemotion.strategy_key).where(StrategyDemotion.user_id == user.id)
+    )))
+    return [_demotion_response(session, user, key, account.initial_cash) for key in keys]
+
+
+@app.post(
+    "/paper/strategies/{strategy_key}/reinstate",
+    response_model=StrategyDemotionResponse,
+    tags=["paper trading"],
+)
+def reinstate_paper_strategy(
+    strategy_key: str, user: CurrentUser, session: SessionDep
+) -> StrategyDemotionResponse:
+    """Owner action: lift an automatic pause. Only later closed trades count from here."""
+    _get_paper_account(session, user)
+    account = lock_account(session, user.id)
+    if account is None:
+        raise HTTPException(status_code=409, detail="Paper account unavailable")
+    demotion = reinstate_strategy(session, user.id, strategy_key)
+    if demotion is None:
+        session.rollback()
+        raise HTTPException(status_code=404, detail="Strategy is not paused")
+    _add_user_notification(
+        session, user.id, "paper.strategy.reinstated", "Strategy reinstated",
+        f"New paper entries for {strategy_key} are allowed again.",
+        {"strategy_key": strategy_key},
+    )
+    session.commit()
+    return _demotion_response(session, user, strategy_key, account.initial_cash)
 
 
 @app.put(
@@ -2302,6 +2393,7 @@ async def arm_paper_deployment(
     if account is None or account.kill_switch_enabled:
         raise HTTPException(423, "Paper kill switch is active")
     _require_consistent_paper_ledger(session, account)
+    _require_strategy_not_demoted(session, user.id, body.strategy_key, account.initial_cash)
     previous = session.scalar(select(PaperDeployment).where(
         PaperDeployment.user_id == user.id,
         PaperDeployment.command_key == idempotency_key,
@@ -2926,10 +3018,33 @@ async def _open_paper_trade_with_provider(
     fills: list[dict[str, object]] = []
     saved_legs: list[dict[str, object]] = []
     payoff_legs: list[PayoffLeg] = []
+    margin_legs: list[MarginLeg] = []
+    underlying_spot = chain.underlying_spot
+    if underlying_spot is None or underlying_spot <= 0:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Underlying price is unavailable, so margin cannot be estimated; "
+                "no fill recorded"
+            ),
+        )
+    margin_years = years_to_expiry(body.expiry)
+    margin_expires_today = is_expiry_day(body.expiry)
     for option_contract, side, leg_lots in selected:
         quantity_units = leg_lots * lot_size
         fill_price, market_contract = _require_quote(
             chain, option_contract.instrument_key, side, quantity_units
+        )
+        margin_legs.append(
+            MarginLeg(
+                instrument="CE" if option_contract.option_type == "CE" else "PE",
+                quantity_units=quantity_units if side == "BUY" else -quantity_units,
+                underlying_price=underlying_spot,
+                strike=option_contract.strike,
+                years_to_expiry=margin_years,
+                volatility_pct=market_contract.implied_volatility or FALLBACK_VOLATILITY_PCT,
+                expires_today=margin_expires_today,
+            )
         )
         amount = (fill_price * quantity_units).quantize(_CENT, rounding=ROUND_HALF_UP)
         leg_cash_flow = -amount if side == "BUY" else amount
@@ -3006,6 +3121,7 @@ async def _open_paper_trade_with_provider(
         raise HTTPException(
             status_code=409, detail="Calculated maximum loss is invalid; trade rejected"
         )
+    option_margin = estimate_position_margin(margin_legs, settings.paper_margin_parameters)
 
     locked_account = lock_account(session, user.id)
     if lease is not None and not assert_owned(session, lease):
@@ -3073,10 +3189,12 @@ async def _open_paper_trade_with_provider(
         raise HTTPException(
             status_code=423, detail="Paper kill switch is active; new trades are paused"
         )
+    _require_strategy_not_demoted(session, user.id, strategy_key, account.initial_cash)
     open_trades = session.scalars(
         select(PaperTrade).where(PaperTrade.account_id == account.id, PaperTrade.status == "OPEN")
     ).all()
-    if len(open_trades) >= settings.paper_max_open_trades:
+    open_futures = open_futures_trades(session, account.id)
+    if len(open_trades) + len(open_futures) >= settings.paper_max_open_trades:
         raise HTTPException(
             status_code=409, detail="Maximum number of simultaneous paper trades reached"
         )
@@ -3086,7 +3204,9 @@ async def _open_paper_trade_with_provider(
     portfolio_limit = (
         account.initial_cash * Decimal(settings.paper_max_portfolio_risk_pct) / Decimal(100)
     ).quantize(_CENT)
-    current_risk = sum((trade.max_loss for trade in open_trades), Decimal(0))
+    current_risk = sum(
+        (trade.max_loss for trade in open_trades), Decimal(0)
+    ) + sum((trade.max_loss for trade in open_futures), Decimal(0))
     if max_loss > per_trade_limit:
         raise HTTPException(
             status_code=409,
@@ -3116,6 +3236,19 @@ async def _open_paper_trade_with_provider(
         raise HTTPException(
             status_code=409,
             detail="Available paper cash cannot cover maximum loss across open positions",
+        )
+    # Defined-risk structures reserve their maximum loss; short legs can still need more
+    # exchange margin than that, so open and new margin estimates must fit in free cash.
+    held = option_cash_reserve(session, list(open_trades)) + sum(
+        (trade.max_loss for trade in open_futures), Decimal(0)
+    )
+    if held + max(max_loss, option_margin.total) > projected_cash:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Available paper cash cannot cover the estimated ₹{option_margin.total} "
+                "margin alongside open-position risk"
+            ),
         )
 
     trade = PaperTrade(
@@ -3160,6 +3293,7 @@ async def _open_paper_trade_with_provider(
                 "quality_status": quality.status,
                 "entry_rule_snapshot": entry_rule_snapshot,
                 "modeled_costs": cost_snapshot(fills),
+                "estimated_margin": option_margin.snapshot(),
                 "fills": fills,
                 "method": (
                     "Immediate simulated fills: buys at ask and sells at bid; "
@@ -3462,7 +3596,16 @@ def paper_trade_exit_reconciliation(
 
 @app.post("/paper/monitor", response_model=PaperMonitorResponse, tags=["paper trading"])
 async def monitor_paper_exits(user: CurrentUser, session: SessionDep) -> PaperMonitorResponse:
-    return await monitor_exits(user.id, session, get_market_data_provider(), get_settings())
+    provider, settings = get_market_data_provider(), get_settings()
+    result = await monitor_exits(user.id, session, provider, settings)
+    evaluated, closed, warnings = await monitor_futures_exits(
+        user.id, session, provider, settings
+    )
+    return result.model_copy(update={
+        "evaluated_count": result.evaluated_count + evaluated,
+        "closed_trade_ids": [*result.closed_trade_ids, *closed],
+        "warnings": [*result.warnings, *warnings],
+    })
 
 
 @app.get("/paper/worker", tags=["paper trading"])

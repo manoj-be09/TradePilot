@@ -48,6 +48,7 @@ def main(args: argparse.Namespace) -> None:
         target_profit_amount=Decimal(args.target) if args.target else None,
         half_spread_pct=Decimal(args.half_spread_pct),
         spread_model=spread_model,
+        margin_parameters=get_settings().paper_margin_parameters,
     )
     with factory() as session:
         histories, rejected = load_histories(

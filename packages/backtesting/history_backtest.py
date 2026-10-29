@@ -6,6 +6,11 @@ realize more than the stop (gap risk). An expiry whose legs lack a common bar at
 or that has no bar before the expiry-day square-off, is skipped and reported, never
 filled in. Spot comes from put-call parity at the strike where call and put trade
 closest, because the import stores option candles only.
+
+Each entry is also priced with the paper SPAN-style margin estimate, using volatility
+implied from the entry bar closes. Capital used is the larger of that margin and the
+maximum loss, the same amount a paper entry must fit in free cash, so returns can be
+compared across strategies on the capital they tie up.
 """
 
 from collections.abc import Sequence
@@ -20,6 +25,15 @@ from packages.backtesting.spread_model import SpreadModel
 from packages.core.charges import order_charges, schedule_for
 from packages.options.models import PayoffLeg, PayoffRequest
 from packages.options.payoff import calculate_expiry_payoff
+from packages.options.pricing import _implied_volatility
+from packages.paper_trading.margin import (
+    FALLBACK_VOLATILITY_PCT,
+    MARGIN_MODEL_ID,
+    MarginLeg,
+    MarginParameters,
+    estimate_position_margin,
+    years_to_expiry,
+)
 from packages.paper_trading.strategies import StrategyDefinition
 
 MODEL_ID = "nifty-history-candle-replay-v1"
@@ -62,6 +76,11 @@ class BacktestConfig:
     square_off_minutes_before_close: int = 20
     # When set, replaces the flat half-spread with recorded per-premium-band spreads.
     spread_model: SpreadModel | None = None
+    # The paper account's default PAPER_MARGIN_* settings.
+    margin_parameters: MarginParameters = field(default_factory=lambda: MarginParameters(
+        price_scan_pct=Decimal(9), volatility_scan_points=Decimal(4),
+        exposure_pct=Decimal(2), short_option_minimum_pct=Decimal(3),
+    ))
 
     def half_spread_for(self, price: Decimal) -> Decimal:
         if self.spread_model is None:
@@ -82,6 +101,7 @@ class BacktestConfig:
             "half_spread_pct": str(self.half_spread_pct),
             "spread_model": self.spread_model.snapshot() if self.spread_model else None,
             "square_off_minutes_before_close": self.square_off_minutes_before_close,
+            "margin_parameters": self.margin_parameters.snapshot(),
         }
 
 
@@ -107,10 +127,15 @@ class BacktestTrade:
     gross_pnl: Decimal
     charges: Decimal
     legs: list[BacktestLeg]
+    entry_margin: Decimal
 
     @property
     def net_pnl(self) -> Decimal:
         return self.gross_pnl - self.charges
+
+    @property
+    def capital_used(self) -> Decimal:
+        return max(self.max_loss, self.entry_margin)
 
 
 @dataclass(frozen=True)
@@ -135,6 +160,7 @@ class BacktestReport:
         return {
             "model_id": MODEL_ID,
             "fill_model": FILL_MODEL,
+            "margin_model": MARGIN_MODEL_ID,
             "config": self.config.snapshot(),
             "expiries_traded": len(ordered),
             "expiries_skipped": len(self.skipped),
@@ -181,6 +207,28 @@ def synthetic_spot(
     return strike + calls[strike] - puts[strike]
 
 
+def _entry_margin(
+    history: ExpiryHistory, config: BacktestConfig, entry_at: datetime, spot: Decimal,
+    legs: list[tuple[Decimal, OptionKind, Literal["BUY", "SELL"], int, Decimal]],
+) -> Decimal:
+    """Margin estimate at entry; each leg's volatility is implied from its bar close."""
+    years = years_to_expiry(history.expiry, entry_at)
+    margin_legs = []
+    for strike, kind, side, units, close in legs:
+        implied = _implied_volatility(
+            kind, float(close), float(spot), float(strike), years, 0.0, 0.0
+        )
+        margin_legs.append(MarginLeg(
+            instrument=kind, quantity_units=units if side == "BUY" else -units,
+            underlying_price=spot, strike=strike, years_to_expiry=years,
+            volatility_pct=(
+                Decimal(str(round(implied * 100, 4))) if implied else FALLBACK_VOLATILITY_PCT
+            ),
+            expires_today=entry_at.date() == history.expiry,
+        ))
+    return estimate_position_margin(margin_legs, config.margin_parameters).total
+
+
 def _cvar(values: list[Decimal], tail: Decimal = Decimal("0.05")) -> Decimal | None:
     if not values:
         return None
@@ -196,6 +244,17 @@ def _stats(trades: Sequence[BacktestTrade]) -> dict[str, Any]:
         for trade in trades
     ])
     result["charges"] = float(sum((trade.charges for trade in trades), Decimal(0)))
+    capital = [trade.capital_used for trade in trades]
+    result["average_capital_used"] = (
+        float(_money(sum(capital, Decimal(0)) / len(capital))) if capital else None
+    )
+    result["average_return_on_capital_pct"] = (
+        float(_money(sum(
+            (trade.net_pnl / trade.capital_used * 100 for trade in trades), Decimal(0)
+        ) / len(trades))) if trades else None
+    )
+    win, loss = result["average_win"], result["average_loss"]
+    result["payoff_ratio"] = win / -loss if win is not None and loss else None
     result["cvar_5pct"] = (
         float(value) if (value := _cvar([trade.net_pnl for trade in trades])) is not None
         else None
@@ -289,6 +348,7 @@ def _simulate(
     reference: Decimal,
 ) -> BacktestTrade | SkippedExpiry:
     entries = []
+    margin_inputs = []
     entry_cash = Decimal(0)
     payoff_legs = []
     for strike, kind, side, ratio in legs:
@@ -297,6 +357,7 @@ def _simulate(
         price = fill_price(close, side, config.half_spread_for(close))
         entry_cash += -price * units if side == "BUY" else price * units
         entries.append((strike, kind, side, units, price))
+        margin_inputs.append((strike, kind, side, units, close))
         payoff_legs.append(PayoffLeg(
             option_type=kind, strike=strike,
             quantity=ratio * config.lots if side == "BUY" else -ratio * config.lots,
@@ -365,6 +426,7 @@ def _simulate(
             for (strike, kind, side, units, price), exit_price
             in zip(entries, exit_prices, strict=True)
         ],
+        entry_margin=_entry_margin(history, config, entry_at, spot, margin_inputs),
     )
 
 

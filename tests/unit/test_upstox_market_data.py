@@ -568,3 +568,65 @@ def test_nfo_session_fails_closed_when_missing_or_malformed():
     assert asyncio.run(provider.get_nfo_session(date(2026, 9, 28))) is None
     with pytest.raises(MarketDataProviderError, match="market timings are invalid"):
         asyncio.run(provider.get_nfo_session(date(2026, 9, 28)))
+
+
+def _margin_leg(key: str, side: str = "SELL"):
+    from packages.market_data.contracts import BrokerMarginLeg
+
+    return BrokerMarginLeg(instrument_key=key, quantity=65, transaction_type=side)
+
+
+def test_order_margin_posts_an_nrml_basket_and_parses_the_hedged_total():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"], seen["path"] = request.method, request.url.path
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"status": "success", "data": {
+            "margins": [
+                {"span_margin": 120000.5, "exposure_margin": 30000, "equity_margin": 0,
+                 "net_buy_premium": 0, "additional_margin": 0, "total_margin": 150000.5,
+                 "tender_margin": 0},
+                {"span_margin": 0, "exposure_margin": 0, "equity_margin": 0,
+                 "net_buy_premium": 5000, "additional_margin": 0, "total_margin": 5000,
+                 "tender_margin": 0},
+            ],
+            "required_margin": 155000.5, "final_margin": 34000,
+        }})
+
+    provider = UpstoxMarketDataProvider("test-token", transport=httpx.MockTransport(handler))
+    margin = asyncio.run(provider.get_order_margin(
+        [_margin_leg("NSE_FO|1"), _margin_leg("NSE_FO|2", "BUY")]
+    ))
+    assert seen["method"] == "POST" and seen["path"] == "/v2/charges/margin"
+    assert seen["body"] == {"instruments": [
+        {"instrument_key": "NSE_FO|1", "quantity": 65, "transaction_type": "SELL",
+         "product": "D"},
+        {"instrument_key": "NSE_FO|2", "quantity": 65, "transaction_type": "BUY",
+         "product": "D"},
+    ]}
+    assert str(margin.final_margin) == "34000" and str(margin.margins[1].net_buy_premium) == "5000"
+
+
+def test_order_margin_rejects_bad_baskets_and_mismatched_responses():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "success", "data": {
+            "margins": [], "required_margin": 0, "final_margin": 0,
+        }})
+
+    provider = UpstoxMarketDataProvider("test-token", transport=httpx.MockTransport(handler))
+    with pytest.raises(MarketDataProviderError, match="1 to 20"):
+        asyncio.run(provider.get_order_margin([]))
+    with pytest.raises(MarketDataProviderError, match="repeat"):
+        asyncio.run(provider.get_order_margin([_margin_leg("NSE_FO|1"), _margin_leg("NSE_FO|1")]))
+    with pytest.raises(MarketDataProviderError, match="does not match"):
+        asyncio.run(provider.get_order_margin([_margin_leg("NSE_FO|1")]))
+
+
+def test_only_listed_calculation_endpoints_may_be_posted():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no request may be sent")
+
+    provider = UpstoxMarketDataProvider("test-token", transport=httpx.MockTransport(handler))
+    with pytest.raises(MarketDataProviderError, match="not a permitted"):
+        asyncio.run(provider._send("POST", "/v2/order/place", body={}))

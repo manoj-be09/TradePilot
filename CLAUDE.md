@@ -3,7 +3,7 @@
 NIFTY options research and **paper-trading** platform: FastAPI API (`apps/api`), independent paper exit worker (`apps/paper_worker`), feed observer (`apps/feed_observer`), Next.js dashboard (`apps/web`), domain packages in `packages/`, Alembic migrations in `alembic/`. Read `ARCHITECTURE.md` for the data flow and `TRADING_SAFETY.md` for the gates.
 
 ## Rules that must never break
-- Live trading stays off. Never enable `LIVE_TRADING_ENABLED`, never set `PAPER_ALLOW_UNVERIFIED_QUOTES=true` in committed config, never add broker order/execution calls. Only read-only market-data GET endpoints.
+- Live trading stays off. Never enable `LIVE_TRADING_ENABLED`, never set `PAPER_ALLOW_UNVERIFIED_QUOTES=true` in committed config, never add broker order/execution calls. Only read-only market-data GET endpoints, plus the owner-approved (2026-10-29) margin calculation POST `/v2/charges/margin`, which places nothing; `UpstoxMarketDataProvider._send` refuses any other non-GET path. `LIVE_TRADING.md` describes how live trading would be added; nothing in it is built yet.
 - Never read, print or commit `.env` or any credential. No broker credentials in this workspace.
 - Fail closed: missing, stale, unverified or failed-quality data rejects or skips — never default, forward-fill or fabricate a price, fill, exit or metric.
 - Strategies and AI components never call a broker or the paper ledger directly; deterministic code owns calculations, gates, fills, costs and P&L.

@@ -8,7 +8,6 @@ from packages.database.futures_models import PaperFuturesOrder, PaperFuturesTrad
 from packages.database.models import PaperAccount
 from packages.market_data.contracts import Quote
 from packages.paper_trading.futures import (
-    estimate_margin,
     futures_pnl,
     mark_position,
     require_futures_quote,
@@ -64,7 +63,6 @@ def test_unverified_override_still_checks_freshness_and_depth():
 
 
 def test_margin_and_pnl_follow_position_direction():
-    assert estimate_margin(Decimal("25000"), 75, Decimal(12)) == Decimal("225000.00")
     assert futures_pnl("LONG", Decimal("25000"), Decimal("25040"), 75) == Decimal("3000.00")
     assert futures_pnl("SHORT", Decimal("25000"), Decimal("25040"), 75) == Decimal("-3000.00")
     mark = mark_position(side="SHORT", entry_price=Decimal("25000"),

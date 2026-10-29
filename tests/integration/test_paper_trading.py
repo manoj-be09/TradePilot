@@ -942,3 +942,52 @@ def test_nifty_paper_wallet_funding_is_audited_idempotent_and_preserves_starting
     )
     assert unsupported.status_code == 422
     assert client.get("/paper/account").status_code == 401
+
+
+def test_estimated_margin_must_fit_in_cash_even_when_maximum_loss_does(client, monkeypatch):
+    provider = FakeUpstoxProvider()
+    monkeypatch.setattr("apps.api.main.get_market_data_provider", lambda: provider)
+    headers = _token(client)
+
+    def open_spread():
+        return client.post(
+            "/paper/trades",
+            headers={**headers, "Idempotency-Key": str(uuid4())},
+            json={"strategy_key": "bull_put_spread", "expiry": provider.expiry.isoformat(),
+                  "reference_strike": "25000", "lots": 1},
+        )
+
+    opened = open_spread()
+    assert opened.status_code == 201, opened.text
+    orders = client.get("/paper/orders", headers=headers).json()
+    margin = orders[0]["fill_snapshot"]["estimated_margin"]
+    assert margin["model_id"] == "nifty-span-style-scenarios-v1"
+    assert Decimal("1025") < Decimal(margin["total"]) < Decimal("20000")
+
+    # Leave enough free cash for the new spread's own margin and every maximum loss, but
+    # not for the margin the first spread already holds.
+    free_cash = Decimal(margin["total"]) + Decimal("5000")
+    with client.app.state.test_session_factory() as session:
+        account = session.scalar(select(PaperAccount))
+        spent = account.cash_balance - free_cash
+        trade = PaperTrade(
+            account_id=account.id, user_id=account.user_id, strategy_key="long_call",
+            strategy_name="Cash fixture", underlying="NIFTY",
+            expiry=date.today() + timedelta(days=30), reference_strike=Decimal("25000"),
+            lots=1, lot_size=25, max_loss=Decimal("100"), entry_cash_flow=-spent,
+            entry_rule_snapshot={}, realized_pnl=None, stop_loss_amount=None,
+            target_profit_amount=None, trailing_stop_amount=None,
+            peak_unrealized_pnl=Decimal(0), status="OPEN", legs={"items": []},
+        )
+        session.add(trade)
+        session.flush()
+        session.add(PaperOrder(
+            account_id=account.id, trade_id=trade.id, user_id=account.user_id,
+            action="OPEN", status="EXECUTED", net_cash_flow=-spent,
+            fill_snapshot={"paper_only": True, "fills": []},
+        ))
+        account.cash_balance = free_cash
+        session.commit()
+    rejected = open_spread()
+    assert rejected.status_code == 409
+    assert "estimated" in rejected.json()["detail"]

@@ -1,7 +1,7 @@
-"""Pure NIFTY futures paper rules: quote eligibility, margin, P&L and reporting charges.
+"""Pure NIFTY futures paper rules: quote eligibility, P&L and reporting charges.
 
-Margin here is a flat illustrative fraction of notional, not an exchange SPAN figure.
-It only decides how much simulated cash is blocked; it never reaches a broker.
+Margin comes from packages.paper_trading.margin and only decides how much simulated
+cash is blocked; it never reaches a broker.
 """
 
 from dataclasses import dataclass
@@ -16,12 +16,6 @@ from packages.paper_trading.quotes import PaperQuoteError, require_fresh
 FuturesSide = Literal["LONG", "SHORT"]
 OrderSide = Literal["BUY", "SELL"]
 
-MARGIN_MODEL_ID = "nifty-futures-flat-notional-pct-v1"
-MARGIN_DISCLAIMER = (
-    "Illustrative margin: a flat percentage of entry notional. Not NSE SPAN plus exposure "
-    "margin and not a broker requirement; real margin can be higher, especially near expiry "
-    "or in volatile sessions."
-)
 GAP_RISK_NOTE = (
     "The stop-loss amount is the risk budget used for account caps. A price gap through "
     "the stop can realize a larger loss."
@@ -40,12 +34,6 @@ def entry_order_side(side: FuturesSide) -> OrderSide:
 
 def exit_order_side(side: FuturesSide) -> OrderSide:
     return "SELL" if side == "LONG" else "BUY"
-
-
-def estimate_margin(price: Decimal, quantity_units: int, margin_pct: Decimal) -> Decimal:
-    if price <= 0 or quantity_units <= 0 or margin_pct <= 0:
-        raise ValueError("Margin needs a positive price, quantity and percentage")
-    return money(price * quantity_units * margin_pct / Decimal(100))
 
 
 def futures_pnl(

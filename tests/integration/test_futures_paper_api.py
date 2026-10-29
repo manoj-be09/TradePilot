@@ -77,7 +77,7 @@ def test_contracts_list_only_nifty_futures(client, monkeypatch):
     assert [row["instrument_key"] for row in response.json()] == [KEY]
     quote = client.get("/paper/futures/quote", headers=headers, params={"instrument_key": KEY})
     assert quote.status_code == 200
-    assert Decimal(quote.json()["margin_per_lot"]) == Decimal("225018.00")
+    assert Decimal(quote.json()["margin_per_lot"]) == Decimal("206266.50")
 
 
 def test_open_blocks_margin_replays_and_reconciles(client, monkeypatch):
@@ -86,9 +86,9 @@ def test_open_blocks_margin_replays_and_reconciles(client, monkeypatch):
     assert opened.status_code == 201, opened.text
     trade = opened.json()
     assert Decimal(trade["entry_price"]) == Decimal("25002")
-    assert Decimal(trade["margin_blocked"]) == Decimal("225018.00")
+    assert Decimal(trade["margin_blocked"]) == Decimal("206266.50")
     account = client.get("/paper/account", headers=headers).json()
-    assert Decimal(account["cash_balance"]) == Decimal("774982.00")
+    assert Decimal(account["cash_balance"]) == Decimal("793733.50")
 
     assert _open(client, headers).json()["id"] == trade["id"]
     assert _open(client, headers, lots=2).status_code == 409
@@ -179,7 +179,7 @@ def test_worker_monitor_marks_without_closing_inside_limits(client, monkeypatch)
         trade = session.query(PaperFuturesTrade).one()
         account = session.query(PaperAccount).one()
         assert trade.status == "OPEN" and trade.last_mark_price == Decimal("25000")
-        assert account.cash_balance == Decimal("774982.00")
+        assert account.cash_balance == Decimal("793733.50")
 
 
 def test_racing_duplicate_key_replays_instead_of_failing(client, monkeypatch):

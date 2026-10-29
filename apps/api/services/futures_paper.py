@@ -30,18 +30,16 @@ from packages.paper_trading.daily_risk import daily_realized_pnl, daily_risk_bud
 from packages.paper_trading.exits import ExitDecision, evaluate_exit
 from packages.paper_trading.futures import (
     GAP_RISK_NOTE,
-    MARGIN_DISCLAIMER,
-    MARGIN_MODEL_ID,
     FuturesSide,
     charge_snapshot,
     entry_order_side,
-    estimate_margin,
     exit_order_side,
     mark_position,
     money,
     quote_evidence,
     require_futures_quote,
 )
+from packages.paper_trading.margin import MARGIN_DISCLAIMER, MARGIN_MODEL_ID, futures_margin
 from packages.paper_trading.quotes import PaperQuoteError
 from packages.paper_trading.session import (
     PaperSessionError,
@@ -55,6 +53,7 @@ from packages.paper_trading.transactions import (
     assert_consistent_ledger,
     lock_account,
     open_futures_trades,
+    option_cash_reserve,
 )
 from packages.paper_trading.worker_lease import LeaseToken, assert_owned
 from packages.recorder.universe import nifty_futures
@@ -81,8 +80,8 @@ class FuturesContractResponse(BaseModel):
 class FuturesQuoteResponse(BaseModel):
     contract: FuturesContractResponse
     quote: dict[str, object]
-    margin_pct: int
     margin_per_lot: Decimal | None
+    margin_breakdown: dict[str, object] | None
     margin_model: str = MARGIN_MODEL_ID
     margin_disclaimer: str = MARGIN_DISCLAIMER
 
@@ -226,12 +225,13 @@ async def quote_contract(
     quote = await _quote(provider, instrument_key)
     reference = quote.ask or quote.last_price
     margin = (
-        estimate_margin(reference, contract.lot_size, Decimal(settings.paper_futures_margin_pct))
+        futures_margin(reference, contract.lot_size, settings.paper_margin_parameters)
         if reference > 0 else None
     )
     return FuturesQuoteResponse(
         contract=contract, quote=quote_evidence(quote),
-        margin_pct=settings.paper_futures_margin_pct, margin_per_lot=margin,
+        margin_per_lot=margin.total if margin else None,
+        margin_breakdown=margin.snapshot() if margin else None,
     )
 
 
@@ -303,7 +303,8 @@ async def open_trade(
         )
     except PaperQuoteError as error:
         raise FuturesError(409, str(error)) from error
-    margin = estimate_margin(price, units, Decimal(settings.paper_futures_margin_pct))
+    margin_estimate = futures_margin(price, units, settings.paper_margin_parameters)
+    margin = margin_estimate.total
     max_loss = money(body.stop_loss_amount)
 
     account = lock_account(session, user_id)
@@ -358,8 +359,12 @@ async def open_trade(
         projected_cash = money(account.cash_balance - margin)
         if projected_cash < 0:
             raise FuturesError(409, f"Paper cash cannot cover the ₹{margin} futures margin")
-        # Losses come out of the blocked margin first, then free cash.
-        if current_risk + max_loss > projected_cash + margin:
+        # Losses come out of the blocked margin first, then free cash. Open option trades
+        # hold the larger of their maximum loss and their recorded margin estimate.
+        held = option_cash_reserve(session, open_options) + sum(
+            (trade.max_loss for trade in open_futures), Decimal(0)
+        )
+        if held + max_loss > projected_cash + margin:
             raise FuturesError(
                 409, "Available paper cash cannot cover maximum loss across open positions"
             )
@@ -370,10 +375,7 @@ async def open_trade(
             "session": {"start": nfo.start.isoformat(), "end": nfo.end.isoformat()},
             "contract": contract.model_dump(mode="json"),
             "quote": quote_evidence(quote),
-            "margin": {
-                "model_id": MARGIN_MODEL_ID, "pct": settings.paper_futures_margin_pct,
-                "amount": str(margin), "disclaimer": MARGIN_DISCLAIMER,
-            },
+            "margin": {**margin_estimate.snapshot(), "amount": str(margin)},
             "risk": {"basis": "STOP_LOSS_AMOUNT", "note": GAP_RISK_NOTE},
             "exit_policy": {
                 "square_off_minutes_before_close":

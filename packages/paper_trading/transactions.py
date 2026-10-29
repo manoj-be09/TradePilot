@@ -1,5 +1,7 @@
 """Short, fresh account mutations; never hold these locks during provider I/O."""
 
+from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, text
@@ -60,6 +62,24 @@ def open_futures_trades(session: Session, account_id: UUID) -> list[PaperFutures
     return list(session.scalars(select(PaperFuturesTrade).where(
         PaperFuturesTrade.account_id == account_id, PaperFuturesTrade.status == "OPEN",
     )))
+
+
+def option_cash_reserve(session: Session, open_trades: list[PaperTrade]) -> Decimal:
+    """Free cash held by open option trades: the larger of maximum loss and the margin
+    estimate recorded on the opening order (older trades without one reserve max loss)."""
+    if not open_trades:
+        return Decimal(0)
+    rows = session.execute(select(PaperOrder.trade_id, PaperOrder.fill_snapshot).where(
+        PaperOrder.trade_id.in_([trade.id for trade in open_trades]),
+        PaperOrder.action == "OPEN",
+    )).tuples().all()
+    snapshots: dict[UUID, dict[str, Any]] = dict(rows)
+    reserve = Decimal(0)
+    for trade in open_trades:
+        margin = (snapshots.get(trade.id) or {}).get("estimated_margin") or {}
+        recorded = Decimal(str(margin["total"])) if "total" in margin else Decimal(0)
+        reserve += max(trade.max_loss, recorded)
+    return reserve
 
 
 def lock_account(session: Session, user_id: UUID) -> PaperAccount | None:

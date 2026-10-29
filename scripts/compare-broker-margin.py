@@ -3,9 +3,16 @@
 Usage:
   PYTHONPATH=. python scripts/compare-broker-margin.py --expiry 2026-11-03 [--step 50]
 
-Builds five 1-lot NIFTY positions around the at-the-money strike (short call, short
-straddle, bull put spread, iron condor, long front-month future), prices our estimate
-from the current option chain, and asks Upstox's margin calculator for the same basket.
+Builds 1-lot NIFTY positions around the at-the-money strike (short call, short put,
+short straddle, short strangle, bull put spread, iron condor, long front-month future),
+prices our estimate from the current option chain, and asks Upstox's margin calculator
+for the same basket.
+
+Upstox's ``final_margin`` is the hedged SPAN plus exposure, plus premium paid on long
+legs, less premium received on short legs at the last traded price. The paper account
+settles premium in cash itself and then checks the margin estimate against that cash,
+so the comparable broker figure is ``final_margin`` less long premium plus short
+premium. (``required_margin`` matches that for single legs but omits hedge benefit.)
 Upstox's call only calculates; nothing is ordered. Prints a JSON report with the gap per
 position against the roadmap's ±5% calibration gate.
 """
@@ -36,7 +43,9 @@ Side = Literal["BUY", "SELL"]
 # (label, [(strike offset in steps, option type, side)])
 POSITIONS: list[tuple[str, list[tuple[int, Literal["CE", "PE"], Side]]]] = [
     ("A short call", [(0, "CE", "SELL")]),
+    ("A2 short put", [(0, "PE", "SELL")]),
     ("B short straddle", [(0, "CE", "SELL"), (0, "PE", "SELL")]),
+    ("B2 short strangle", [(4, "CE", "SELL"), (-4, "PE", "SELL")]),
     ("C bull put spread", [(0, "PE", "SELL"), (-2, "PE", "BUY")]),
     ("D iron condor", [(-4, "PE", "SELL"), (-6, "PE", "BUY"),
                        (4, "CE", "SELL"), (6, "CE", "BUY")]),
@@ -81,8 +90,11 @@ async def main(args: argparse.Namespace) -> None:
     rows: list[dict[str, object]] = []
     for label, spec in POSITIONS:
         legs, broker_legs = [], []
+        short_premium = Decimal(0)
         for offset, kind, side in spec:
             item = _contract(chain, atm + offset * step, kind)
+            if side == "SELL":
+                short_premium += item.quote.last_price * lot
             legs.append(MarginLeg(
                 instrument=kind, quantity_units=lot if side == "BUY" else -lot,
                 underlying_price=spot, strike=item.strike, years_to_expiry=years,
@@ -94,12 +106,14 @@ async def main(args: argparse.Namespace) -> None:
             ))
         ours = estimate_position_margin(legs, parameters)
         broker = await provider.get_order_margin(broker_legs)
-        # Upstox's total includes premium paid on long legs; ours keeps premium separate.
+        # Premium flows are settled in paper cash, not in the margin estimate.
         premium = sum((leg.net_buy_premium for leg in broker.margins), Decimal(0))
         rows.append({
             "position": label,
             "legs": [f"{side} {atm + offset * step:.0f} {kind}" for offset, kind, side in spec],
-            **_gap(ours.total, money(broker.final_margin - premium)),
+            **_gap(ours.total, money(broker.final_margin - premium + short_premium)),
+            "upstox_final_margin": str(broker.final_margin),
+            "short_premium": str(short_premium),
             "upstox_span": str(sum((leg.span_margin for leg in broker.margins), Decimal(0))),
             "upstox_exposure": str(
                 sum((leg.exposure_margin for leg in broker.margins), Decimal(0))
@@ -125,7 +139,7 @@ async def main(args: argparse.Namespace) -> None:
         )])
         rows.append({
             "position": "E long future", "legs": [f"BUY {front.trading_symbol}"],
-            **_gap(ours.total, broker.final_margin),
+            **_gap(ours.total, money(broker.required_margin)),
             "upstox_span": str(broker.margins[0].span_margin),
             "upstox_exposure": str(broker.margins[0].exposure_margin),
             "our_breakdown": ours.snapshot(),

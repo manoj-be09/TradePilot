@@ -44,7 +44,7 @@ export function ObservedStrategyPerformance({trades, stale, apiUrl, token}: {tra
   const pnlTone = (value: number | null) => value === null ? "unknown" : value > 0 ? "profit" : value < 0 ? "loss" : "flat";
   return <section className="observed-performance" aria-label="Observed strategy performance">
     <div className="trading-dashboard-activity-heading"><div><h3>Strategy performance</h3><p>Recorded F&amp;O paper outcomes · primary metrics before charges</p></div><span className="dashboard-status">Descriptive · not a forecast</span></div>
-    <p className="observed-performance-scope">{excludedTests} test-only position(s) excluded. Open marks are excluded from returns. {stale ? "Refresh failed: showing previously loaded records." : "Uses all loaded F&O records; the dashboard strategy filter above does not restrict this table."}</p>
+    <p className="observed-performance-scope">{excludedTests} test-only position(s) excluded. Open marks are excluded from returns. {stale ? "Refresh failed: showing previously loaded records." : "Uses all loaded F&O records."}</p>
     <details className="workspace-disclosure"><summary>Account accounting evidence</summary>
       <p>Cross-check the complete F&amp;O account, including test trades. This is a separate read-only snapshot, not a per-cohort or quote-quality certification.</p>
       <button type="button" className="inline-button" disabled={checking} onClick={() => setCheck(value => value + 1)}>{checking ? "Checking ledger…" : "Check account ledger"}</button>
@@ -67,4 +67,23 @@ export function ObservedStrategyPerformance({trades, stale, apiUrl, token}: {tra
     </table></div>}
     <details className="workspace-disclosure"><summary>Method &amp; evidence limitations</summary><p>P&amp;L is the saved simulated cash-flow result, not a verified after-cost return. New premium fills may carry versioned illustrative charges: 0.10% of absolute premium turnover per leg, rounded per leg to ₹0.01. The adjusted total is shown only with matching opening and closing records for every closed trade in the group. This excludes taxes, statutory/exchange charges, fixed brokerage, market impact and extra slippage; it is not an all-in broker-cost return. Historical missing charges are not reconstructed. Settlement charges are unsupported. Cash balances and risk-rule decisions remain based on existing recorded cash flows. Win rate, average wins/losses and drawdown use original before-charge P&amp;L. Win rate includes breakeven trades in its denominator; it is historical frequency, not a probability forecast. Missing or invalid P&amp;L is excluded and counted.</p><p>Closed-trade drawdown starts at zero and measures declines from the running realized peak, combining closes with the same timestamp. It excludes open-position losses, intraday fluctuations, funding and withdrawals; full account-equity drawdown is unavailable. Missing or inconsistent close timestamps withhold this metric.</p><p>These rows include manual and automatic paper trades and may include indicative quotes. Per-order quote provenance is not verified here. The optional account ledger check is separate from the loaded trade snapshot and does not certify individual cohorts. Small samples and mixed entry dates do not establish an edge, comparable exposure, or future performance. No group is validated by these observations.</p></details>
   </section>;
+}
+
+/** Loads the account's paper trades and shows per-strategy results (Research page). */
+export function PaperStrategyResults({apiUrl, token}: {apiUrl: string; token: string}) {
+  const [trades, setTrades] = useState<PerformanceTrade[] | null>(null);
+  const [stale, setStale] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`${apiUrl}/paper/trades`, {headers: {Authorization: `Bearer ${token}`}, cache: "no-store", signal: controller.signal})
+      .then(async response => {
+        if (!response.ok) throw new Error(String(response.status));
+        return (await response.json() as {trades: PerformanceTrade[]}).trades;
+      })
+      .then(rows => { if (!controller.signal.aborted) { setTrades(rows); setStale(false); } })
+      .catch(() => { if (!controller.signal.aborted) setStale(true); });
+    return () => controller.abort();
+  }, [apiUrl, token]);
+  if (trades === null) return stale ? <p className="muted" role="alert">Paper strategy results are unavailable.</p> : null;
+  return <ObservedStrategyPerformance trades={trades} stale={stale} apiUrl={apiUrl} token={token} />;
 }

@@ -125,6 +125,11 @@ class BacktestReport:
     trades: list[BacktestTrade] = field(default_factory=list)
     skipped: list[SkippedExpiry] = field(default_factory=list)
 
+    def pnl_per_lot(self) -> list[Decimal]:
+        """Net P&L per lot in closing order; the series a drawdown baseline is built from."""
+        ordered = sorted(self.trades, key=lambda trade: trade.exit_at)
+        return [trade.net_pnl / self.config.lots for trade in ordered]
+
     def summary(self, folds: int = 4) -> dict[str, Any]:
         ordered = sorted(self.trades, key=lambda trade: trade.exit_at)
         return {

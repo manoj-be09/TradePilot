@@ -1,8 +1,19 @@
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from packages.paper_trading.demotion import DemotionLimits, evaluate_demotion
+from packages.database import models  # noqa: F401
+from packages.database.base import Base
+from packages.paper_trading.demotion import (
+    DemotionLimits,
+    drawdown_baseline,
+    evaluate_demotion,
+    max_drawdown,
+    record_drawdown_baseline,
+)
 
 LIMITS = DemotionLimits(loss_streak=5, drawdown_multiple=Decimal(2),
                         fallback_drawdown_per_lot=Decimal(60000))
@@ -48,3 +59,31 @@ def test_no_trades_is_not_a_breach_and_limits_are_validated():
     with pytest.raises(ValueError):
         DemotionLimits(loss_streak=1, drawdown_multiple=Decimal(2),
                        fallback_drawdown_per_lot=Decimal(1))
+
+
+def test_max_drawdown_starts_from_a_zero_peak():
+    assert max_drawdown(_pnl(-100, 50, -200)) == Decimal(250)
+    assert max_drawdown(_pnl(100, 200)) == Decimal(0)
+
+
+def test_backtest_baseline_is_saved_and_used_by_the_drawdown_rule():
+    engine = create_engine("sqlite://", poolclass=StaticPool,
+                           connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    with sessionmaker(engine)() as session:
+        with pytest.raises(ValueError):
+            record_drawdown_baseline(session, "bull_put_spread", _pnl(*[-1] * 9),
+                                     source="test", details={})
+        record_drawdown_baseline(
+            session, "bull_put_spread", _pnl(500, -1200, 300, -900, 400, 200, -100, 50, 60, 70),
+            source="test", details={"from": "2024-10-01"},
+        )
+        session.commit()
+        baseline = drawdown_baseline(session, "bull_put_spread")
+        assert baseline is not None
+        assert baseline.max_drawdown_per_lot == Decimal("1800.00")
+        assert baseline.trades == 10
+    check = evaluate_demotion(_pnl(-3700), LIMITS, baseline.max_drawdown_per_lot)
+    assert check.limit_source == "BACKTEST"
+    assert check.drawdown_limit_per_lot == Decimal("3600.00")
+    assert check.reason == "DRAWDOWN"

@@ -1,12 +1,12 @@
-# Market Systems Trading Platform
+# TradePilot
 
-An evolving multi-asset trading platform, currently proven through a NIFTY options research and paper-trading vertical slice. It provides authenticated market-data access, options analytics, nine selectable defined-risk strategy templates, a persistent simulated portfolio, risk checks, a kill switch, a server-side paper exit worker, and a Next.js dashboard. Manual entries, single-position historical replay, and bounded scheduled replay across past expiries are implemented, with JSON export for saved replay reports; unattended strategy entries, a repeated-signal backtester, and non-options trading workflows are still planned.
+NIFTY 50 futures and options research and **paper-trading** platform: authenticated Upstox market data, 26 defined-risk option strategy templates plus NIFTY futures, a simulated account with risk limits and a kill switch, a server-side paper worker for entries and exits, a SPAN-style margin estimate, versioned charges, a history backtester over imported option candles, and a Next.js dashboard.
 
 ## Safety status
 
-Live broker execution remains disabled. Paper trades use current option-chain quotes to simulate immediate fills (buys at ask and sells at bid); they do not model queue priority, partial fills, fees, taxes, margin, or slippage. Paper execution requires exchange-verified quote time by default. The present Upstox option-chain adapter supplies API receipt time instead, so its paper entries and exits are blocked unless an operator explicitly enables the educational simulation override described below. The dashboard does not provide investment advice or trading signals.
+Live broker execution is forced off. Paper trades fill at the current quote (buys at ask, sells at bid) and apply modelled charges and margin; they do not model queue priority or partial fills. Paper execution requires exchange-verified quote time by default; the Upstox chain supplies API receipt time, so local paper fills rely on the explicit educational override described below. Nothing in the dashboard is investment advice, and all results are simulated.
 
-See [PROJECT_PLAN.md](PROJECT_PLAN.md) for the M0–M7 roadmap and live-execution release gates, and [BUILD_PROGRESS.md](BUILD_PROGRESS.md) for this build slice's verified status and remaining work.
+See [STATUS.md](STATUS.md) for what works now and what's next, [PLATFORM_ROADMAP.md](PLATFORM_ROADMAP.md) for the forward plan, and [BUILD_PROGRESS.md](BUILD_PROGRESS.md) for dated history.
 
 ## Mobile web shell
 

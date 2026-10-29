@@ -216,6 +216,10 @@ class MarketDataProviderError(RuntimeError):
     """Raised when a configured provider rejects or cannot fulfill a request."""
 
 
+class MarketDataRateLimited(MarketDataProviderError):
+    """Raised when the provider throttles requests; the same request may succeed later."""
+
+
 class MarketDataPlanRequired(MarketDataProviderError):
     """Raised when the provider requires a paid plan for a data capability."""
 

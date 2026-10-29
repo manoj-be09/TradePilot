@@ -24,6 +24,7 @@ from packages.market_data.contracts import (
     ExpiredOptionContract,
     HistoricalBar,
     MarketDataProviderError,
+    MarketDataRateLimited,
     MarketDataUnavailable,
 )
 
@@ -58,8 +59,11 @@ class ImportSettings:
     interval: str = "5m"
     strike_window_pct: Decimal = Decimal(3)
     lookback_days: int = 10
-    pause_seconds: float = 0.25  # stays well under Upstox per-second request limits
+    # About 1,800 requests per 30 minutes, under Upstox's 2,000-per-30-minute cap.
+    pause_seconds: float = 1.0
     force: bool = False
+    rate_limit_retries: int = 5
+    rate_limit_wait_seconds: float = 60.0
 
 
 @dataclass
@@ -71,6 +75,12 @@ class ExpirySummary:
     counts: dict[str, int] = field(default_factory=lambda: {"COMPLETE": 0, "EMPTY": 0, "FAILED": 0})
     bars: int = 0
     detail: str = ""
+
+
+def _utc(moment: datetime) -> datetime:
+    """SQLite drops the offset of a stored datetime and readers treat it as UTC, so
+    candles (which Upstox stamps +05:30) are stored in UTC to read back correctly."""
+    return moment.astimezone(timezone.utc)
 
 
 def _session_day(moment: datetime) -> date:
@@ -133,7 +143,7 @@ def _record(
         session.add_all([
             HistoricalOptionBar(
                 instrument_key=contract.instrument_key, interval=settings.interval,
-                bar_start=bar.timestamp, expiry=contract.expiry, strike=contract.strike,
+                bar_start=_utc(bar.timestamp), expiry=contract.expiry, strike=contract.strike,
                 option_type=contract.option_type, open=bar.open, high=bar.high, low=bar.low,
                 close=bar.close, volume=bar.volume, open_interest=bar.open_interest,
             )
@@ -145,10 +155,29 @@ def _record(
         strike=contract.strike, option_type=contract.option_type,
         lot_size=contract.lot_size, requested_from=start, requested_to=end, status=status,
         bar_count=len(bars) if status == "COMPLETE" else 0,
-        first_bar=bars[0].timestamp if status == "COMPLETE" and bars else None,
-        last_bar=bars[-1].timestamp if status == "COMPLETE" and bars else None,
+        first_bar=_utc(bars[0].timestamp) if status == "COMPLETE" and bars else None,
+        last_bar=_utc(bars[-1].timestamp) if status == "COMPLETE" and bars else None,
         detail=detail[:300], imported_at=now,
     ))
+
+
+async def _fetch_with_backoff(
+    provider: HistoryProvider, contract: ExpiredOptionContract, start: date, end: date,
+    settings: ImportSettings, sleep: Callable[[float], Any],
+) -> list[HistoricalBar]:
+    """Retry throttled requests after doubling waits; other errors fail at once."""
+    wait = settings.rate_limit_wait_seconds
+    for attempt in range(settings.rate_limit_retries + 1):
+        try:
+            return await provider.get_expired_historical(
+                contract.instrument_key, start, end, settings.interval
+            )
+        except MarketDataRateLimited:
+            if attempt == settings.rate_limit_retries:
+                raise
+            await sleep(wait)
+            wait = min(wait * 2, 900.0)
+    raise AssertionError("unreachable")
 
 
 async def import_expiry(
@@ -187,9 +216,7 @@ async def import_expiry(
         bars: list[HistoricalBar] = []
         try:
             bars = sorted(
-                await provider.get_expired_historical(
-                    contract.instrument_key, start, end, settings.interval
-                ),
+                await _fetch_with_backoff(provider, contract, start, end, settings, sleep),
                 key=lambda bar: bar.timestamp,
             )
             reason = validate_bars(bars, start, end)

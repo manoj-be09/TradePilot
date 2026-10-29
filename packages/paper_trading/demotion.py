@@ -8,7 +8,7 @@ reinstatement count, and labelled expiry tests are left out. A pause blocks new 
 only; open positions keep their exits. Reinstating is an explicit, audited owner action.
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
@@ -79,6 +79,19 @@ class DemotionCheck:
         )
 
 
+def max_drawdown(pnl: Iterable[Decimal]) -> Decimal:
+    """Largest peak-to-trough fall of cumulative P&L, starting from a peak of zero.
+
+    Paper demotion and backtest baselines both use this, so the two stay comparable.
+    """
+    cumulative = peak = worst = Decimal(0)
+    for value in pnl:
+        cumulative += value
+        peak = max(peak, cumulative)
+        worst = max(worst, peak - cumulative)
+    return worst
+
+
 def evaluate_demotion(
     pnl_per_lot: Sequence[Decimal],
     limits: DemotionLimits,
@@ -90,14 +103,10 @@ def evaluate_demotion(
     values, so several trades closing between two entry checks cannot hide a breach.
     """
     longest = current = 0
-    cumulative = peak = Decimal(0)
-    max_drawdown = Decimal(0)
     for pnl in pnl_per_lot:
         current = current + 1 if pnl < 0 else 0
         longest = max(longest, current)
-        cumulative += pnl
-        peak = max(peak, cumulative)
-        max_drawdown = max(max_drawdown, peak - cumulative)
+    drawdown = max_drawdown(pnl_per_lot)
     if baseline_drawdown_per_lot is not None and baseline_drawdown_per_lot > 0:
         limit = baseline_drawdown_per_lot * limits.drawdown_multiple
         source: Literal["BACKTEST", "FALLBACK"] = "BACKTEST"
@@ -106,13 +115,13 @@ def evaluate_demotion(
     reason: DemotionReason | None = None
     if longest >= limits.loss_streak:
         reason = "LOSS_STREAK"
-    elif max_drawdown > limit:
+    elif drawdown > limit:
         reason = "DRAWDOWN"
     return DemotionCheck(
         reason=reason,
         trades_counted=len(pnl_per_lot),
         longest_loss_streak=longest,
-        max_drawdown_per_lot=max_drawdown.quantize(_CENT, rounding=ROUND_HALF_UP),
+        max_drawdown_per_lot=drawdown.quantize(_CENT, rounding=ROUND_HALF_UP),
         drawdown_limit_per_lot=limit.quantize(_CENT, rounding=ROUND_HALF_UP),
         limit_source=source,
         limits=limits,
@@ -135,6 +144,32 @@ def drawdown_baseline(session: Session, strategy_key: str) -> StrategyDrawdownBa
         StrategyDrawdownBaseline.strategy_key == strategy_key,
         StrategyDrawdownBaseline.trades >= MIN_BASELINE_TRADES,
     ).order_by(StrategyDrawdownBaseline.created_at.desc(), StrategyDrawdownBaseline.id.desc()))
+
+
+def record_drawdown_baseline(
+    session: Session,
+    strategy_key: str,
+    pnl_per_lot: Sequence[Decimal],
+    *,
+    source: str,
+    details: dict[str, Any],
+) -> StrategyDrawdownBaseline:
+    """Stage a backtest drawdown baseline; refuses samples too small to be used."""
+    if len(pnl_per_lot) < MIN_BASELINE_TRADES:
+        raise ValueError(
+            f"A drawdown baseline needs at least {MIN_BASELINE_TRADES} backtest trades; "
+            f"got {len(pnl_per_lot)}"
+        )
+    baseline = StrategyDrawdownBaseline(
+        strategy_key=strategy_key,
+        max_drawdown_per_lot=max_drawdown(pnl_per_lot).quantize(_CENT, rounding=ROUND_HALF_UP),
+        trades=len(pnl_per_lot),
+        source=source,
+        details=details,
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(baseline)
+    return baseline
 
 
 def check_strategy(

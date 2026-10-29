@@ -7,7 +7,9 @@ Usage:
 Reads the private history imported by scripts/import-history.py; makes no provider
 calls. With --spreads-from/--spreads-to, fills use half-spreads calibrated per premium
 band from option quotes the recorder saved in that window instead of the flat default.
-Prints a JSON summary with chronological folds and every skipped expiry.
+Prints a JSON summary with chronological folds and every skipped expiry. With
+--save-baseline, also stores the run's maximum drawdown per lot as the baseline that
+automatic paper demotion compares against (refused below 10 trades).
 """
 
 import argparse
@@ -16,11 +18,12 @@ from datetime import date, time
 from decimal import Decimal
 
 from apps.api.settings import get_settings
-from packages.backtesting.history_backtest import BacktestConfig, run_backtest
+from packages.backtesting.history_backtest import MODEL_ID, BacktestConfig, run_backtest
 from packages.backtesting.spread_model import SpreadModel, calibrate_spreads
 from packages.database.session import build_session_factory
 from packages.history.loader import load_histories
 from packages.history.spreads import recorded_option_quotes
+from packages.paper_trading.demotion import record_drawdown_baseline
 from packages.paper_trading.strategies import get_strategy
 
 
@@ -55,6 +58,20 @@ def main(args: argparse.Namespace) -> None:
     summary["expiries_not_loaded"] = [
         {"expiry": expiry.isoformat(), "reason": reason} for expiry, reason in rejected
     ]
+    if args.save_baseline:
+        with factory() as session:
+            baseline = record_drawdown_baseline(
+                session, strategy.key, report.pnl_per_lot(), source=MODEL_ID,
+                details={
+                    "from": args.start.isoformat(), "to": args.end.isoformat(),
+                    "interval": args.interval, "config": config.snapshot(),
+                },
+            )
+            session.commit()
+            summary["saved_baseline"] = {
+                "max_drawdown_per_lot": baseline.max_drawdown_per_lot,
+                "trades": baseline.trades,
+            }
     print(json.dumps(summary, indent=2, default=str))
 
 
@@ -73,4 +90,5 @@ if __name__ == "__main__":
     parser.add_argument("--spreads-from", type=date.fromisoformat, default=None)
     parser.add_argument("--spreads-to", type=date.fromisoformat, default=None)
     parser.add_argument("--folds", type=int, default=4)
+    parser.add_argument("--save-baseline", action="store_true")
     main(parser.parse_args())

@@ -23,6 +23,7 @@ from packages.market_data.contracts import (
     HistoricalBar,
     MarketDataPlanRequired,
     MarketDataProviderError,
+    MarketDataRateLimited,
     OptionChain,
     OptionContract,
     OptionContractQuote,
@@ -94,7 +95,7 @@ class UpstoxMarketDataProvider:
                 "check its validity and permissions"
             )
         if response.status_code == 429:
-            raise MarketDataProviderError("Upstox rate limit reached; wait before retrying")
+            raise MarketDataRateLimited("Upstox rate limit reached; wait before retrying")
         if not response.is_success:
             raise MarketDataProviderError(f"Upstox returned HTTP {response.status_code}")
         try:

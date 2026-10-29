@@ -159,3 +159,11 @@ def test_loader_uses_complete_contracts_only():
     assert len(histories) == 1
     assert histories[0].lot_size == 75
     assert [len(candles) for candles in histories[0].bars.values()] == [1]
+
+
+def test_entry_before_the_first_charge_schedule_is_skipped_not_guessed():
+    expiry = date(2024, 10, 3)
+    history = _history(lambda _: Decimal(25010), days=(date(2024, 9, 30), expiry), expiry=expiry)
+    skipped = run_expiry(history, BacktestConfig(strategy=BULL_PUT))
+    assert isinstance(skipped, SkippedExpiry)
+    assert "charge schedule" in skipped.reason

@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 from packages.backtesting.performance import PerformanceTrade, summarize
 from packages.backtesting.spread_model import SpreadModel
-from packages.core.charges import order_charges
+from packages.core.charges import order_charges, schedule_for
 from packages.options.models import PayoffLeg, PayoffRequest
 from packages.options.payoff import calculate_expiry_payoff
 from packages.paper_trading.strategies import StrategyDefinition
@@ -124,6 +124,11 @@ class BacktestReport:
     config: BacktestConfig
     trades: list[BacktestTrade] = field(default_factory=list)
     skipped: list[SkippedExpiry] = field(default_factory=list)
+
+    def pnl_per_lot(self) -> list[Decimal]:
+        """Net P&L per lot in closing order; the series a drawdown baseline is built from."""
+        ordered = sorted(self.trades, key=lambda trade: trade.exit_at)
+        return [trade.net_pnl / self.config.lots for trade in ordered]
 
     def summary(self, folds: int = 4) -> dict[str, Any]:
         ordered = sorted(self.trades, key=lambda trade: trade.exit_at)
@@ -338,6 +343,11 @@ def _simulate(
             break
     exit_cash, exit_prices = exit_at_moment(exit_moment)
 
+    try:
+        schedule_for(entry_at.date())
+    except ValueError:
+        # Costs before the first dated schedule are unknown; skip rather than guess them.
+        return SkippedExpiry(history.expiry, "no charge schedule covers the entry date")
     charges = Decimal(0)
     for (_, _, side, units, price), exit_price in zip(entries, exit_prices, strict=True):
         exit_side: Literal["BUY", "SELL"] = "SELL" if side == "BUY" else "BUY"

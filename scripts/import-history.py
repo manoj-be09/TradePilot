@@ -96,7 +96,7 @@ if __name__ == "__main__":
     parser.add_argument("--interval", default="5m", choices=["1m", "3m", "5m", "15m", "30m", "1d"])
     parser.add_argument("--strike-pct", type=float, default=3.0)
     parser.add_argument("--lookback-days", type=int, default=10)
-    parser.add_argument("--pause", type=float, default=0.25)
+    parser.add_argument("--pause", type=float, default=1.0)
     parser.add_argument("--max-expiries", type=int, default=0)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")

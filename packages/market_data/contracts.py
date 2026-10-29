@@ -124,6 +124,30 @@ class ExpiredOptionContract(BaseModel):
     tick_size: Decimal = Field(gt=0)
 
 
+class BrokerMarginLeg(BaseModel):
+    instrument_key: str = Field(min_length=3, max_length=160)
+    quantity: int = Field(gt=0)
+    transaction_type: Literal["BUY", "SELL"]
+
+
+class BrokerLegMargin(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    span_margin: Decimal = Field(ge=0)
+    exposure_margin: Decimal = Field(ge=0)
+    net_buy_premium: Decimal = Field(default=Decimal(0), ge=0)
+    additional_margin: Decimal = Field(default=Decimal(0), ge=0)
+    total_margin: Decimal = Field(ge=0)
+
+
+class BrokerMargin(BaseModel):
+    """A broker's margin for a hypothetical basket; final_margin includes hedge benefit."""
+
+    model_config = ConfigDict(extra="ignore")
+    margins: list[BrokerLegMargin]
+    required_margin: Decimal = Field(ge=0)
+    final_margin: Decimal = Field(ge=0)
+
+
 class ProviderHealth(BaseModel):
     provider: str
     configured: bool

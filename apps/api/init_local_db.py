@@ -7,6 +7,7 @@ from sqlalchemy import Engine, insert, inspect, select, text
 
 from apps.api.settings import get_settings
 from packages.database import (
+    futures_models,  # noqa: F401 - register futures paper tables
     history_models,  # noqa: F401 - register historical import tables
     models,  # noqa: F401 - register models in metadata
     recorder_models,  # noqa: F401 - register recorder tables

@@ -4,8 +4,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0035_historical_option_bars"
-down_revision = "0034_feed_v3_recorder"
+revision = "0037_historical_option_bars"
+down_revision = "0036_strategy_demotions"
 branch_labels = None
 depends_on = None
 

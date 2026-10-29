@@ -462,6 +462,17 @@ class PaperKillSwitchResponse(BaseModel):
     updated_at: datetime
 
 
+class StrategyDemotionResponse(BaseModel):
+    """Whether automatic demotion pauses new entries for one strategy (exits unaffected)."""
+
+    strategy_key: str
+    paused: bool
+    reason: str | None
+    summary: str | None
+    demoted_at: datetime | None
+    check: dict[str, Any]
+
+
 class PaperMonitorResponse(BaseModel):
     checked_at: datetime
     evaluated_count: int

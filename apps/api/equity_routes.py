@@ -4,7 +4,7 @@ import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any, Literal, cast
+from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query, Response
@@ -13,14 +13,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from apps.api.auth import CurrentUser, SessionDep
-from apps.api.market_outlook import IST, latest_completed_session, nifty_benchmark
-from apps.api.services.equity_runtime import ACTIVE, history, lock_wallet, serialize, utc
-from apps.api.settings import get_settings
+from apps.api.market_outlook import latest_completed_session, nifty_benchmark
 from packages.backtesting.performance import PerformanceTrade, summarize
 from packages.database.models import (
     AuditEvent,
-    EquityAccount,
-    EquityCashEvent,
     EquityDeployment,
     EquityPolicyTrial,
     EquityValidationStudy,
@@ -43,7 +39,6 @@ from packages.paper_trading.equity import (
     ZONE,
     average_true_range,
     completed_bars,
-    entry_threshold,
     money,
     open_position,
     proceeds,
@@ -52,12 +47,6 @@ from packages.paper_trading.equity import (
     risk_distance,
     signal,
 )
-from packages.paper_trading.equity_cash_journal import (
-    EquityCashJournalMismatch,
-    reconcile_equity_cash_journal,
-    record_equity_cash_event,
-)
-from packages.paper_trading.equity_ledger import reconcile_equity_ledger
 from packages.regime.chronological_validation import (
     ChronologicalValidation,
     review_fixed_equity_rules,
@@ -76,33 +65,6 @@ from packages.regime.strategy_fit import describe_stock_context, fit_for_strateg
 from packages.regime.strategy_ranking import RANKING_METHOD, RANKING_VERSION, profit_review
 
 router = APIRouter(prefix="/equity", tags=["equity paper trading"])
-
-
-class EquityCashJournalResponse(BaseModel):
-    status: Literal["MATCHED", "LEGACY_CHECKPOINT", "NOT_STARTED", "MISMATCH"]
-    entry_count: int = Field(ge=0)
-    checkpoint_cash: Decimal | None
-    recorded_cash: Decimal
-    journal_cash: Decimal | None
-    issue_count: int = Field(ge=0)
-    issues: list[str]
-
-
-class EquityLedgerReconciliationResponse(BaseModel):
-    status: Literal["MATCHED", "MISMATCH"]
-    initial_cash: Decimal
-    recorded_cash: Decimal
-    expected_cash: Decimal
-    cash_difference: Decimal
-    deployment_count: int = Field(ge=0)
-    reserved_count: int = Field(ge=0)
-    closed_count: int = Field(ge=0)
-    issue_count: int = Field(ge=0)
-    issues: list[str]
-    audit_coverage: Literal["COMPLETE", "INCOMPLETE"]
-    audit_issue_count: int = Field(ge=0)
-    audit_issues: list[str]
-    cash_journal: EquityCashJournalResponse
 
 
 def _canonical_hash(value: dict[str, Any]) -> str:
@@ -190,6 +152,15 @@ def _saved_policy_trial(
     return result.model_copy(update={"comparison_digest": trial.result_digest})
 
 
+async def history(provider: Any, key: str, now: datetime) -> list[HistoricalBar]:
+    bars = completed_bars(
+        await provider.get_historical(key, now - timedelta(days=365), now, "1d"), now
+    )
+    if len(bars) < 51:
+        raise ValueError("At least 51 completed daily candles are required")
+    return bars
+
+
 @router.get("/strategy-catalog")
 def strategy_catalog(
     user: CurrentUser, session: SessionDep, response: Response
@@ -228,13 +199,6 @@ class ResearchRequest(BaseModel):
         if self.risk_budget > self.budget * Decimal("0.1"):
             raise ValueError("Planned risk must not exceed 10% of the allocation")
         return self
-
-
-class DeployRequest(ResearchRequest):
-    strategy: str
-    command_key: UUID
-    indicative_quotes: bool = False
-    testing_only: bool = False
 
 
 class PolicyTrialRequest(BaseModel):
@@ -1062,401 +1026,3 @@ def exit_policy_comparison(
             raise HTTPException(409, "Policy comparison could not be frozen") from None
         return _saved_policy_trial(winner, study)
     return result.model_copy(update={"comparison_digest": result_digest})
-
-
-@router.get("/deployments")
-def deployments(user: CurrentUser, session: SessionDep, response: Response) -> dict[str, Any]:
-    response.headers["Cache-Control"] = "no-store"
-    account = session.get(EquityAccount, user.id)
-    initial = account.initial_cash if account else Decimal(
-        get_settings().initial_equity_paper_capital
-    )
-    rows = list(
-        session.scalars(
-            select(EquityDeployment)
-            .where(EquityDeployment.user_id == user.id)
-            .order_by(EquityDeployment.created_at.desc())
-            .limit(200)
-        )
-    )
-    return {
-        "initial_cash": str(initial.quantize(Decimal("0.01"))),
-        "cash": str(account.cash if account else initial),
-        "deployments": [serialize(row) for row in rows],
-    }
-
-
-@router.get(
-    "/account/ledger-reconciliation",
-    response_model=EquityLedgerReconciliationResponse,
-)
-def equity_account_ledger_reconciliation(
-    user: CurrentUser, session: SessionDep, response: Response
-) -> EquityLedgerReconciliationResponse:
-    """Check every saved equity deployment against the simulated wallet."""
-    response.headers["Cache-Control"] = "no-store"
-    account = session.get(EquityAccount, user.id)
-    initial = account.initial_cash if account else Decimal(
-        get_settings().initial_equity_paper_capital
-    )
-    rows = list(session.scalars(select(EquityDeployment).where(
-        EquityDeployment.user_id == user.id,
-    )))
-    lifecycle_events = list(session.scalars(select(AuditEvent).where(
-        AuditEvent.actor_user_id == user.id,
-        AuditEvent.event_type.in_((
-            "equity.deployment.applied", "equity.deployment.entered",
-            "equity.deployment.exit_requested", "equity.deployment.exited",
-            "equity.deployment.cancelled", "equity.deployment.expired",
-        )),
-    )))
-    cash_events = list(session.scalars(
-        select(EquityCashEvent).where(EquityCashEvent.user_id == user.id)
-        .order_by(EquityCashEvent.id)
-    ))
-    result = reconcile_equity_ledger(
-        user_id=user.id, initial_cash=initial,
-        recorded_cash=account.cash if account else initial,
-        deployments=rows, audit_events=lifecycle_events,
-    )
-    cash_journal = reconcile_equity_cash_journal(
-        user_id=user.id, initial_cash=initial,
-        recorded_cash=account.cash if account else initial, events=cash_events,
-        deployments=rows,
-    )
-    return EquityLedgerReconciliationResponse(
-        **vars(result), cash_journal=EquityCashJournalResponse(**vars(cash_journal))
-    )
-
-
-@router.get("/dashboard")
-def equity_dashboard(user: CurrentUser, session: SessionDep, response: Response) -> dict[str, Any]:
-    """All-time account-scoped paper totals, independent of the recent-deployments limit."""
-    response.headers["Cache-Control"] = "no-store"
-
-    def empty(strategy: str = "") -> dict[str, Any]:
-        return {
-            "strategy": strategy, "gross_profit": Decimal(0), "gross_loss": Decimal(0),
-            "closed_trades": 0, "winning_trades": 0, "losing_trades": 0,
-            "breakeven_trades": 0, "closed_unpriced": 0,
-            "active_strategies": 0,
-        }
-
-    total = empty()
-    by_strategy: dict[str, dict[str, Any]] = {}
-    daily: dict[tuple[str, str], dict[str, Any]] = {}
-    cohorts: dict[str, dict[str, Any]] = {}
-    recent_start = datetime.now(timezone.utc).astimezone(IST).date() - timedelta(days=13)
-    rows = session.execute(
-        select(
-            EquityDeployment.strategy, EquityDeployment.status,
-            EquityDeployment.state, EquityDeployment.updated_at, EquityDeployment.id,
-            EquityDeployment.provider, EquityDeployment.instrument_key, EquityDeployment.symbol,
-            EquityDeployment.version, EquityDeployment.budget, EquityDeployment.risk_budget,
-        )
-        .where(EquityDeployment.user_id == user.id)
-        .execution_options(yield_per=500)
-    )
-    for (strategy, status, state, updated_at, deployment_id, provider, instrument_key,
-         symbol, version, allocation, risk_budget) in rows:
-        strategy_name = str(strategy)
-        group = by_strategy.setdefault(strategy_name, empty(strategy_name))
-        saved = state if isinstance(state, dict) else {}
-        position = saved.get("position")
-        position = position if isinstance(position, dict) else {}
-        policy = position.get("exit_policy")
-        required = {"atr_multiplier", "minimum_distance_fraction", "target_r",
-                    "trail_activation_r", "trail_distance_r"}
-        complete = (isinstance(policy, dict) and required.issubset(policy)
-                    and bool(position.get("calculation_version"))
-                    and bool(position.get("exit_policy_version")) and bool(version)
-                    and saved.get("quote_mode") in {"INDICATIVE", "VERIFIED"})
-        identity = {"provider": provider, "instrument_key": instrument_key,
-                    "strategy": strategy_name, "strategy_version": version,
-                    "allocation": str(allocation), "risk_budget": str(risk_budget),
-                    "quote_mode": saved.get("quote_mode"),
-                    "calculation_version": position.get("calculation_version"),
-                    "exit_policy_version": position.get("exit_policy_version"),
-                    "exit_policy": policy if isinstance(policy, dict) else None}
-        if not complete:
-            identity["incomplete_deployment"] = str(deployment_id)
-        cohort_id = hashlib.sha256(json.dumps(
-            identity, sort_keys=True, separators=(",", ":"), default=str,
-        ).encode()).hexdigest()
-        targets: tuple[dict[str, Any], ...]
-        if strategy_name == "test_pulse" or saved.get("testing_only") is True:
-            targets = (total, group)
-        else:
-            cohort = cohorts.setdefault(cohort_id, empty(strategy_name) | {
-                **identity, "cohort_id": cohort_id, "symbol": symbol,
-                "configuration_evidence": "RECORDED" if complete else "INCOMPLETE",
-            })
-            targets = (total, group, cohort)
-        for item in targets:
-            if status in ACTIVE:
-                item["active_strategies"] += 1
-            if status != "CLOSED":
-                continue
-            raw_pnl = state.get("realized_pnl") if isinstance(state, dict) else None
-            try:
-                pnl = Decimal(str(raw_pnl)) if raw_pnl is not None else None
-            except InvalidOperation:
-                pnl = None
-            if pnl is None or not pnl.is_finite():
-                item["closed_unpriced"] += 1
-            else:
-                item["closed_trades"] += 1
-                if pnl > 0:
-                    item["winning_trades"] += 1
-                elif pnl < 0:
-                    item["losing_trades"] += 1
-                else:
-                    item["breakeven_trades"] += 1
-                item["gross_profit" if pnl >= 0 else "gross_loss"] += pnl
-        if status == "CLOSED" and pnl is not None and pnl.is_finite():
-            recorded_at = cast(datetime, updated_at)
-            close_time = (
-                recorded_at.replace(tzinfo=timezone.utc)
-                if recorded_at.tzinfo is None else recorded_at
-            )
-            local_day = close_time.astimezone(IST).date()
-            if local_day >= recent_start:
-                day = local_day.isoformat()
-                bucket = daily.setdefault((day, strategy_name), {
-                    "date": day, "strategy": strategy_name,
-                    "closed_trades": 0, "realized_net": Decimal(0),
-                })
-                bucket["closed_trades"] += 1
-                bucket["realized_net"] += pnl
-
-    def present(item: dict[str, Any]) -> dict[str, Any]:
-        profit, loss = item["gross_profit"], item["gross_loss"]
-        return {
-            "strategy": item["strategy"], "gross_profit": str(profit),
-            "gross_loss": str(loss), "realized_net": str(profit + loss),
-            "closed_trades": item["closed_trades"],
-            "winning_trades": item["winning_trades"],
-            "losing_trades": item["losing_trades"],
-            "breakeven_trades": item["breakeven_trades"],
-            "average_loss": str(loss / item["losing_trades"]) if item["losing_trades"] else None,
-            "closed_unpriced": item["closed_unpriced"],
-            "active_strategies": item["active_strategies"],
-        }
-
-    return {
-        "scope": "all_time", "recent_activity_days": 14, "totals": present(total),
-        "strategies": [present(by_strategy[key]) for key in sorted(by_strategy)],
-        "cohorts": [present(cohorts[key]) | {
-            name: cohorts[key][name] for name in (
-                "cohort_id", "symbol", "provider", "instrument_key", "strategy_version",
-                "allocation", "risk_budget", "quote_mode", "configuration_evidence",
-                "exit_policy", "exit_policy_version",
-            )
-        } for key in sorted(cohorts)],
-        "daily": [
-            {**daily[key], "realized_net": str(daily[key]["realized_net"])}
-            for key in sorted(daily)
-        ],
-    }
-
-
-@router.get("/deployments/{deployment_id}/decisions")
-def deployment_decisions(
-    deployment_id: UUID, user: CurrentUser, session: SessionDep, response: Response
-) -> list[dict[str, Any]]:
-    """Account-scoped material paper decisions; no broker actions or market-data calls."""
-    response.headers["Cache-Control"] = "no-store"
-    deployment = session.scalar(select(EquityDeployment.id).where(
-        EquityDeployment.id == deployment_id,
-        EquityDeployment.user_id == user.id,
-    ))
-    if deployment is None:
-        raise HTTPException(404, "Equity deployment not found")
-    events = session.scalars(
-        select(AuditEvent)
-        .where(
-            AuditEvent.actor_user_id == user.id,
-            AuditEvent.correlation_id == str(deployment_id),
-            AuditEvent.event_type.like("equity.deployment.%"),
-        )
-        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
-        .limit(200)
-    )
-    return [{
-        "id": str(event.id),
-        "event_type": event.event_type,
-        "created_at": utc(event.created_at),
-        "details": event.details,
-    } for event in events]
-
-
-@router.post("/deployments", status_code=201)
-async def deploy(body: DeployRequest, user: CurrentUser, session: SessionDep) -> dict[str, Any]:
-    from packages.paper_trading.test_pulse import KEY as TEST_KEY
-    from packages.paper_trading.test_pulse import VERSION as TEST_VERSION
-
-    diagnostic = body.strategy == TEST_KEY
-    if not get_settings().paper_trading_enabled:
-        raise HTTPException(403, "Paper trading is disabled")
-    if body.strategy not in STRATEGIES and not diagnostic:
-        raise HTTPException(422, "Unknown equity strategy")
-    if body.testing_only and not diagnostic:
-        raise HTTPException(422, "Testing opt-in applies only to the diagnostic strategy")
-    if diagnostic and (not body.testing_only or body.budget > 10000 or body.risk_budget > 200):
-        raise HTTPException(
-            422, "Test strategy requires opt-in, allocation <=10000 and risk <=200"
-        )
-    uid = user.id
-    excluded = {"command_key"} if diagnostic else {"command_key", "testing_only"}
-    digest = hashlib.sha256(body.model_dump_json(exclude=excluded).encode()).hexdigest()
-    # Resolve completed commands before provider I/O so a retry survives a data outage.
-    previous = session.scalar(
-        select(EquityDeployment).where(
-            EquityDeployment.user_id == uid, EquityDeployment.command_key == str(body.command_key)
-        )
-    )
-    if previous:
-        if previous.request_hash != digest:
-            raise HTTPException(409, "Command key was already used with different parameters")
-        return serialize(previous)
-    item = instrument(body, uid, session)
-    source, key, symbol = item.provider, item.instrument_key, item.trading_symbol
-    provider = get_market_data_provider()
-    if source != provider.provider_id:
-        raise HTTPException(409, "Select an instrument from the active data provider")
-    now = datetime.now(timezone.utc)
-    try:
-        bars = await history(provider, key, now)
-    except Exception as error:
-        raise HTTPException(503, "Cannot deploy without valid completed daily history") from error
-    baseline = bars[-1].timestamp.astimezone(ZONE).date()
-    required_bars = 50 if diagnostic else MINIMUM_BARS[body.strategy]
-    if len(bars) < required_bars:
-        raise HTTPException(
-            422, f"This strategy needs {required_bars} completed bars"
-        )
-    if (now.astimezone(ZONE).date() - baseline).days > 4:
-        raise HTTPException(422, "Daily history is stale; deployment blocked")
-    threshold = entry_threshold(body.strategy, bars)
-    initial_state = {
-        "signal_after": baseline.isoformat(),
-        "quote_mode": "INDICATIVE" if body.indicative_quotes else "VERIFIED",
-        "detail": "Deployed; waiting for a new completed daily candle",
-        "latest_daily_signal_date": baseline.isoformat(),
-        "latest_daily_signal_met": signal(body.strategy, bars),
-        "latest_daily_signal_after_apply": False,
-    }
-    if diagnostic:
-        initial_state.update(
-            testing_only=True, detail="Test only: collecting three fresh quote samples"
-        )
-    if threshold is not None:
-        initial_state["entry_threshold_price"] = str(money(threshold))
-    try:
-        wallet = lock_wallet(session, uid)
-    except EquityCashJournalMismatch as error:
-        raise HTTPException(409, str(error)) from error
-    previous = session.scalar(
-        select(EquityDeployment).where(
-            EquityDeployment.user_id == uid, EquityDeployment.command_key == str(body.command_key)
-        )
-    )
-    if previous:
-        if previous.request_hash != digest:
-            raise HTTPException(409, "Command key was already used with different parameters")
-        return serialize(previous)
-    active = list(
-        session.scalars(
-            select(EquityDeployment).where(
-                EquityDeployment.user_id == uid, EquityDeployment.status.in_(ACTIVE)
-            )
-        )
-    )
-    if any(row.provider == source and row.instrument_key == key for row in active):
-        raise HTTPException(409, "This symbol already has an active equity deployment")
-    if len(active) >= 5 or wallet.cash < body.budget:
-        raise HTTPException(
-            422, "Insufficient unreserved cash or five active deployment limit reached"
-        )
-    row = EquityDeployment(
-        user_id=uid,
-        command_key=str(body.command_key),
-        request_hash=digest,
-        provider=source,
-        instrument_key=key,
-        symbol=symbol,
-        strategy=body.strategy,
-        version=TEST_VERSION if diagnostic else VERSION,
-        budget=body.budget,
-        risk_budget=body.risk_budget,
-        status="WAITING_FOR_ENTRY",
-        created_at=now,
-        updated_at=now,
-        state=initial_state,
-    )
-    wallet.cash -= body.budget
-    session.add(row)
-    session.flush()
-    record_equity_cash_event(
-        session, wallet, row.id, kind="RESERVE", delta=-body.budget,
-    )
-    session.add(AuditEvent(
-        actor_user_id=uid,
-        correlation_id=str(row.id),
-        event_type="equity.deployment.applied",
-        details={
-            "deployment_id": str(row.id),
-            "strategy": row.strategy,
-            "strategy_version": row.version,
-            "provider": source,
-            "instrument_key": key,
-            "symbol": symbol,
-            "allocation": str(body.budget),
-            "planned_risk": str(body.risk_budget),
-            "quote_mode": "INDICATIVE" if body.indicative_quotes else "VERIFIED",
-            "signal_after": baseline.isoformat(),
-        },
-    ))
-    session.commit()
-    return serialize(row)
-
-
-@router.post("/deployments/{deployment_id}/stop")
-def stop(deployment_id: UUID, user: CurrentUser, session: SessionDep) -> dict[str, Any]:
-    uid = user.id
-    try:
-        wallet = lock_wallet(session, uid)
-    except EquityCashJournalMismatch as error:
-        raise HTTPException(409, str(error)) from error
-    row = session.get(EquityDeployment, deployment_id, populate_existing=True)
-    if row is None or row.user_id != uid:
-        raise HTTPException(404, "Deployment not found")
-    if row.status == "WAITING_FOR_ENTRY":
-        row.status = "CANCELLED"
-        wallet.cash += row.budget
-        record_equity_cash_event(
-            session, wallet, row.id, kind="RELEASE", delta=row.budget,
-        )
-        row.state = {**row.state, "detail": "Cancelled before entry; reserved cash released"}
-        session.add(AuditEvent(
-            actor_user_id=uid,
-            correlation_id=str(row.id),
-            event_type="equity.deployment.cancelled",
-            details={
-                "deployment_id": str(row.id),
-                "strategy": row.strategy,
-                "reserved_cash_released": str(row.budget),
-            },
-        ))
-    elif row.status == "OPEN":
-        row.status = "EXIT_REQUESTED"
-        row.state = {**row.state, "detail": "Exit requested; waiting for a valid open-market quote"}
-        session.add(AuditEvent(
-            actor_user_id=uid,
-            correlation_id=str(row.id),
-            event_type="equity.deployment.exit_requested",
-            details={"deployment_id": str(row.id), "strategy": row.strategy},
-        ))
-    row.updated_at = datetime.now(timezone.utc)
-    session.commit()
-    return serialize(row)

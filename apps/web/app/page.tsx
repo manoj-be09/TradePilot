@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { WorkerStatus } from "./WorkerStatus";
+import { StrategyPauses } from "./StrategyPauses";
 import { ExpiryTestControl } from "./ExpiryTestControl";
 import { InstrumentCatalog } from "./InstrumentCatalog";
 import { EquityStrategies } from "./EquityStrategies";
@@ -10,6 +11,7 @@ import { OptionDeploymentDecisions } from "./OptionDeploymentDecisions";
 import { OptionTradeObservations } from "./OptionTradeObservations";
 import { MarketOutlook } from "./MarketOutlook";
 import { StrategyRanking } from "./StrategyRanking";
+import { FuturesPaper } from "./FuturesPaper";
 import { BuildUpdateNotice } from "./BuildUpdateNotice";
 import { TradingDashboard } from "./TradingDashboard";
 import { ChartWorkspace } from "./ChartWorkspace";
@@ -2508,6 +2510,7 @@ export default function Home() {
     <main className={token ? "shell dashboard-shell" : "shell"}>
       <BuildUpdateNotice />
       {token && <WorkerStatus token={token} apiUrl={API_URL} />}
+      {token && <StrategyPauses token={token} apiUrl={API_URL} />}
       {token && paperEntry.identityError && <section className="worker-status worker-status--warning" role="alert">
         <strong>Paper entry is unavailable</strong>
         <p>{paperEntry.identityError}</p>
@@ -2914,6 +2917,8 @@ export default function Home() {
                 {paperLedger.issues.length > 0 ? <ul>{paperLedger.issues.map((issue, index) => <li key={`${index}-${issue}`}>{issue}</li>)}</ul> : null}
               </div> : null}
             </details>
+
+            {token && selectedOptionIndex === "NIFTY" ? <FuturesPaper apiUrl={API_URL} token={token} /> : null}
 
             {token && selectedOptionIndex === "NIFTY" ? (
               <StrategyRanking

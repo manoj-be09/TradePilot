@@ -318,7 +318,7 @@ def test_arm_waits_for_new_snapshot_then_worker_opens_once(client, monkeypatch, 
     with factory() as session:
         observation = session.scalar(select(AuditEvent).where(
             AuditEvent.event_type == "paper.trade.exit_checked"
-        ).order_by(AuditEvent.created_at.desc()))
+        ).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()))
         original_details = observation.details
         changed_snapshot = {**original_details["snapshot"], "decision": "HOLD"}
         changed_digest = hashlib.sha256(json.dumps(
@@ -340,14 +340,14 @@ def test_arm_waits_for_new_snapshot_then_worker_opens_once(client, monkeypatch, 
     with factory() as session:
         observation = session.scalar(select(AuditEvent).where(
             AuditEvent.event_type == "paper.trade.exit_checked"
-        ).order_by(AuditEvent.created_at.desc()))
+        ).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()))
         observation.details = original_details
         session.commit()
 
     with factory() as session:
         observation = session.scalar(select(AuditEvent).where(
             AuditEvent.event_type == "paper.trade.exit_checked"
-        ).order_by(AuditEvent.created_at.desc()))
+        ).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()))
         recorded = original_details["snapshot"]
         quote = recorded["leg_quotes"][0]
         altered_price = str(Decimal(quote["selected_side_quote"]) + 1)
@@ -368,7 +368,7 @@ def test_arm_waits_for_new_snapshot_then_worker_opens_once(client, monkeypatch, 
     with factory() as session:
         observation = session.scalar(select(AuditEvent).where(
             AuditEvent.event_type == "paper.trade.exit_checked"
-        ).order_by(AuditEvent.created_at.desc()))
+        ).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()))
         observation.details = original_details
         session.commit()
 

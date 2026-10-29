@@ -8,10 +8,11 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from apps.api.services.equity_runtime import process_equities
+from apps.api.services.futures_paper import monitor_futures_exits
 from apps.api.services.option_deployments import process_option_deployments
 from apps.api.services.paper_monitor import monitor_exits
 from apps.api.settings import Settings, get_settings
+from packages.database.futures_models import PaperFuturesTrade
 from packages.database.models import PaperTrade
 from packages.database.session import build_session_factory
 from packages.market_data.contracts import MarketDataProvider
@@ -55,20 +56,26 @@ async def run_cycle(
                 evaluated += result.evaluated_count
                 closed += len(result.closed_trade_ids)
                 warnings.extend(result.warnings)
+        with factory() as session:
+            futures_users = list(session.scalars(
+                select(PaperFuturesTrade.user_id)
+                .where(PaperFuturesTrade.status == "OPEN")
+                .distinct()
+            ))
+        for user_id in futures_users:
+            with factory() as session:
+                futures_checked, futures_closed, futures_warnings = await monitor_futures_exits(
+                    user_id, session, provider, settings, token
+                )
+                evaluated += futures_checked
+                closed += len(futures_closed)
+                warnings.extend(futures_warnings)
         option_checked, option_filled, option_warnings = await process_option_deployments(
             factory, provider, token, settings
         )
         evaluated += option_checked
         warnings.extend(option_warnings)
-        equity_evaluated, equity_closed, equity_warnings = await process_equities(
-            factory, provider, token
-        )
-        return (
-            evaluated + equity_evaluated,
-            closed + equity_closed,
-            option_filled,
-            warnings + equity_warnings,
-        )
+        return evaluated, closed, option_filled, warnings
 
     try:
         evaluated, closed, opened, warnings = await asyncio.wait_for(

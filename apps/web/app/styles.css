@@ -1169,3 +1169,23 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px
 @media (max-width: 640px) {
   .futures-position { grid-template-columns: 1fr; }
 }
+
+/* One compact status row replaces the worker banner and repeated paper badges. */
+.status-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0 6px; }
+.status-chip { position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 30px; border: 1px solid var(--line); border-radius: 999px; padding: 0 12px; background: #fff; color: var(--ink-muted); font: inherit; font-size: 12px; font-weight: 600; line-height: 1; }
+button.status-chip { cursor: pointer; }
+.status-chip::before { content: ""; width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #9aa6b2; }
+.status-chip--ok { border-color: #b7d9c4; background: #f1f8f3; color: #24583a; }
+.status-chip--ok::before { background: #2f8a55; }
+.status-chip--warn { border-color: #eadcb8; background: #fcf8ed; color: #684e1e; }
+.status-chip--warn::before { background: #c98a12; }
+.status-chip-action { border: 0; border-left: 1px solid currentColor; padding: 0 0 0 8px; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+.status-chip-menu { padding: 0; }
+.status-chip-menu summary { display: flex; align-items: center; min-height: 28px; padding: 0 12px 0 0; cursor: pointer; list-style: none; }
+.status-chip-menu summary::-webkit-details-marker { display: none; }
+.status-chip-menu::before { margin-left: 12px; margin-right: -2px; }
+.status-chip-panel { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; display: grid; width: min(340px, 85vw); gap: 6px; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #fff; box-shadow: 0 12px 28px #1b2b1f1f; color: #172431; font-weight: 400; line-height: 1.5; }
+.status-chip-panel p { margin: 0; }
+.status-chip :focus-visible, button.status-chip:focus-visible { outline: 2px solid #4c9272; outline-offset: 2px; }
+.dashboard-sidebar-nav { display: contents; }
+a.sidebar-action-button { display: flex; align-items: center; justify-content: center; text-decoration: none; }

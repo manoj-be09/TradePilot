@@ -52,23 +52,22 @@ export function WorkerStatus({ token, apiUrl }: { token: string; apiUrl: string 
       : status === "NOT_STARTED"
         ? "The independent paper exit worker has not started. Start it before relying on automatic exits."
         : status === "DEGRADED"
-          ? "One or more equity or options checks reported warnings. Review your positions’ latest checks; this shared status does not mean every strategy has stopped."
+          ? "The last check reported warnings. Review your positions’ latest checks; this does not mean every strategy has stopped."
           : "Exit monitoring is not confirmed healthy. Check the worker before relying on automatic exits.";
-  return <section className={`worker-status ${healthy ? "worker-status--healthy" : "worker-status--warning"}`} aria-label="Paper exit monitoring" aria-live="polite">
-    <div className="worker-status-heading"><strong>Shared paper worker: {status.toLowerCase().replaceAll("_", " ")}</strong><span>{healthy ? "Monitoring active" : degraded ? "Action may be needed" : "Checking"}</span></div>
-    {!healthy ? <p>{message}</p> : null}
-    <details className="worker-status-details">
-      <summary>Monitoring details</summary>
+  const label = healthy ? "running" : status === "NOT_STARTED" ? "not started"
+    : degraded ? "warnings" : status === "UNAVAILABLE" ? "unavailable" : "checking";
+  return <details className={`status-chip status-chip-menu ${healthy ? "status-chip--ok" : "status-chip--warn"}`} aria-live="polite">
+    <summary aria-label={`Paper exit worker: ${label}`}>Exit worker: {label}</summary>
+    <div className="status-chip-panel">
+      <p>{message}</p>
       {!unavailable && health?.detail && <small className="worker-detail">{health.detail}</small>}
       {!unavailable && health?.heartbeat_at && <small>Last worker update: {formatUpdate(health.heartbeat_at)}</small>}
       {!unavailable && health?.last_success_at && <small>Last fully healthy cycle: {formatUpdate(health.last_success_at)}</small>}
       {!unavailable && !!health?.own_expired_open_positions && <small>
         Your account has {health.own_expired_open_positions} expired open paper
         {" "}position{health.own_expired_open_positions === 1 ? "" : "s"} awaiting settlement review.
-        {" "}This may contribute to worker warnings; other checks may also need attention.
       </small>}
-      <small>A fully healthy cycle has no warnings across equity and options checks. Successful individual exits can still occur in a degraded cycle. This summary does not replace per-position quote and exit evidence.</small>
-      {!unavailable && health?.unverified_quotes_allowed && <p>Options educational simulation allows unverified exchange timestamps. Strict equity mode still requires an exchange-timed book; explicitly opted-in indicative equity fills are labeled and excluded from verified strategy feedback.</p>}
-    </details>
-  </section>;
+      {!unavailable && health?.unverified_quotes_allowed && <small>Option quotes without an exchange timestamp are allowed for this local paper simulation.</small>}
+    </div>
+  </details>;
 }

@@ -1117,3 +1117,41 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px
 .readiness-fail { background: #fce8e5; color: #9b3939; }
 .readiness-pass { background: #e1f2eb; color: #216c51; }
 @media (max-width: 480px) { .research-trial { padding: 14px; } .research-metrics { grid-template-columns: 1fr; } }
+
+/* Specialist strategy ranking */
+.specialist-ranking { display: grid; gap: 12px; margin: 4px 0 18px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.specialist-ranking-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.specialist-ranking-heading strong, .specialist-ranking-heading small { display: block; }
+.specialist-ranking-heading small, .specialist-context { color: var(--ink-muted); font-size: 12px; }
+.specialist-context { margin: 0; }
+.specialist-action { flex: none; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 700; }
+.specialist-action--go { background: var(--green-soft); color: var(--green); }
+.specialist-action--wait { background: #eef1f4; color: #4b5c70; }
+.specialist-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.specialist-card { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-top: 3px solid var(--specialist, #64748b); border-radius: 8px; }
+.specialist-card span { font-size: 12px; font-weight: 700; }
+.specialist-card b { font-size: 13px; }
+.specialist-card small { color: var(--ink-muted); font-size: 11px; line-height: 1.4; }
+.specialist-card--bullish { --specialist: #1f7a4d; }
+.specialist-card--bearish { --specialist: #a95c52; }
+.specialist-card--range { --specialist: #245c9b; }
+.specialist-card--volatility { --specialist: #7a4fa3; }
+.specialist-meter { height: 6px; border-radius: 999px; background: #edf0ec; overflow: hidden; }
+.specialist-meter i { display: block; height: 100%; background: var(--specialist, #64748b); }
+.specialist-candidates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.specialist-candidate { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfa; }
+.specialist-candidate.selected { border-color: var(--green); box-shadow: 0 0 0 2px rgba(33, 120, 76, .1); }
+.specialist-candidate--blocked { background: #fafafa; }
+.specialist-candidate-heading { display: flex; justify-content: space-between; gap: 8px; }
+.specialist-candidate-heading span { color: var(--ink-muted); font-size: 12px; white-space: nowrap; }
+.specialist-candidate small { color: var(--ink-muted); font-size: 12px; line-height: 1.4; }
+.specialist-candidate .specialist-blocked { color: var(--red); }
+.specialist-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; margin: 0; }
+.specialist-metrics dt { color: var(--ink-muted); font-size: 11px; }
+.specialist-metrics dd { margin: 0; font-size: 13px; font-weight: 700; }
+@media (max-width: 680px) {
+  .specialist-grid, .specialist-candidates { grid-template-columns: 1fr 1fr; }
+  .specialist-candidates { grid-template-columns: 1fr; }
+  .specialist-ranking-heading { flex-direction: column; }
+}
+.specialist-empty { margin: 0; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; color: var(--ink-muted); font-size: 13px; }

@@ -14,10 +14,10 @@ def test_observer_only_subscribes_when_normal_open_and_persists_safe_events(tmp_
     class Provider:
         subscriptions = 0
 
-        async def _get(self, path):
+        async def get_market_status(self, exchange):
             if status == "ERROR":
                 raise RuntimeError("private-token-url")
-            return {"status": status}
+            return status
 
         async def subscribe(self, instruments):
             self.subscriptions += 1
@@ -40,3 +40,31 @@ def test_observer_only_subscribes_when_normal_open_and_persists_safe_events(tmp_
     assert ("quote" in events) == (status == "NORMAL_OPEN")
     assert events[-1] == "stopped"
     assert "private-token-url" not in path.read_text()
+
+
+def test_observer_logs_status_failures_without_exception_text(tmp_path, caplog):
+    class Provider:
+        async def get_market_status(self, exchange):
+            raise RuntimeError("private-token-url")
+
+    journal = FeedJournal(tmp_path / "observer.jsonl")
+    try:
+        with caplog.at_level("WARNING", logger="feed_observer"):
+            asyncio.run(observe(Provider(), ["test"], journal, once=True, interval=0.01))
+    finally:
+        journal.close()
+    assert "RuntimeError" in caplog.text
+    assert "private-token-url" not in caplog.text
+
+
+
+def test_alembic_logging_config_keeps_existing_app_loggers():
+    # Migrations run in-process (CI PostgreSQL tests); they must not silence app loggers.
+    import logging
+    from logging.config import fileConfig
+    from pathlib import Path
+
+    assert "disable_existing_loggers=False" in Path("alembic/env.py").read_text(encoding="utf-8")
+    logger = logging.getLogger("feed_observer")
+    fileConfig("alembic.ini", disable_existing_loggers=False)
+    assert not logger.disabled

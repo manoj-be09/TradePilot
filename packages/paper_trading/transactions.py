@@ -5,7 +5,12 @@ from uuid import UUID
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from packages.database.models import PaperAccount, PaperOrder, PaperTrade
+from packages.database.models import (
+    PaperAccount,
+    PaperCapitalAdjustment,
+    PaperOrder,
+    PaperTrade,
+)
 from packages.paper_trading.ledger_reconciliation import reconcile_paper_ledger
 
 
@@ -21,7 +26,11 @@ def assert_consistent_ledger(session: Session, account: PaperAccount) -> None:
     orders = list(session.scalars(select(PaperOrder).where(
         PaperOrder.account_id == account.id, PaperOrder.user_id == account.user_id,
     )))
-    if reconcile_paper_ledger(account, trades, orders).status != "MATCHED":
+    adjustments = list(session.scalars(select(PaperCapitalAdjustment).where(
+        PaperCapitalAdjustment.account_id == account.id,
+        PaperCapitalAdjustment.user_id == account.user_id,
+    )))
+    if reconcile_paper_ledger(account, trades, orders, adjustments).status != "MATCHED":
         raise PaperLedgerMismatchError(
             "F&O paper ledger mismatch; review the account ledger before changing paper cash"
         )

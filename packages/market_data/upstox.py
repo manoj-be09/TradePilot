@@ -514,6 +514,22 @@ class UpstoxMarketDataProvider:
             raise MarketDataProviderError("Upstox expired-candle response had an unexpected shape")
         return _parse_historical_bars(candles)
 
+    async def get_market_status(self, exchange: str = "NSE") -> str:
+        """Current exchange status string, e.g. NORMAL_OPEN or NORMAL_CLOSE."""
+        data = await self._get(f"/v2/market/status/{exchange}")
+        status = data.get("status") if isinstance(data, dict) else None
+        if not isinstance(status, str) or not status:
+            raise MarketDataProviderError("Upstox market-status response had an unexpected shape")
+        return status
+
+    async def authorize_feed_url(self) -> str:
+        """Return a one-time Feed V3 WebSocket URL. It is a secret: never log or store it."""
+        data = await self._get("/v3/feed/market-data-feed/authorize")
+        uri = data.get("authorized_redirect_uri") or data.get("authorizedRedirectUri")
+        if not isinstance(uri, str) or not uri.startswith("wss://"):
+            raise MarketDataProviderError("Upstox did not provide a secure feed URL")
+        return uri
+
     def subscribe(
         self, instrument_tokens: list[str],
         *, raw_frame_recorder: Callable[[bytes, datetime], None] | None = None,
@@ -524,10 +540,7 @@ class UpstoxMarketDataProvider:
         async def stream() -> AsyncIterator[Quote]:
             if not keys or len(keys) > 100 or any(not key.strip() for key in keys):
                 raise MarketDataProviderError("Subscribe to 1–100 nonempty instrument keys")
-            data = await self._get("/v3/feed/market-data-feed/authorize")
-            uri = data.get("authorized_redirect_uri") or data.get("authorizedRedirectUri")
-            if not isinstance(uri, str) or not uri.startswith("wss://"):
-                raise MarketDataProviderError("Upstox did not provide a secure feed URL")
+            uri = await self.authorize_feed_url()
             request = json.dumps({
                 "guid": str(uuid4()), "method": "sub",
                 "data": {"mode": "full", "instrumentKeys": keys},

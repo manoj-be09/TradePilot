@@ -4,7 +4,12 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 
-from packages.database.models import PaperAccount, PaperOrder, PaperTrade
+from packages.database.models import (
+    PaperAccount,
+    PaperCapitalAdjustment,
+    PaperOrder,
+    PaperTrade,
+)
 from packages.paper_trading.expiry_settlement import calculate_expiry_settlement
 
 _CENT = Decimal("0.01")
@@ -28,6 +33,7 @@ def reconcile_paper_ledger(
     account: PaperAccount,
     trades: list[PaperTrade],
     orders: list[PaperOrder],
+    adjustments: list[PaperCapitalAdjustment] | None = None,
 ) -> PaperLedgerReconciliation:
     """Compare all saved option orders with the account cash and trade lifecycle.
 
@@ -110,12 +116,29 @@ def reconcile_paper_ledger(
         else:
             flag(f"Trade {trade.id} has an unknown lifecycle status.")
 
-    expected = (account.initial_cash + sum(
-        (order.net_cash_flow for order in orders), Decimal(0)
-    )).quantize(_CENT)
+    adjustments = adjustments or []
+    for adjustment in adjustments:
+        if adjustment.account_id != account.id or adjustment.user_id != account.user_id:
+            flag(f"Capital adjustment {adjustment.id} has a different account or owner.")
+        valid_delta = (
+            adjustment.cash_delta > 0
+            and (adjustment.cash_before + adjustment.cash_delta).quantize(_CENT)
+            == adjustment.cash_after.quantize(_CENT)
+        )
+        if not valid_delta:
+            flag(f"Capital adjustment {adjustment.id} has an invalid cash delta.")
+
+    expected = (
+        account.initial_cash
+        + sum((order.net_cash_flow for order in orders), Decimal(0))
+        + sum((adjustment.cash_delta for adjustment in adjustments), Decimal(0))
+    ).quantize(_CENT)
     difference = (account.cash_balance - expected).quantize(_CENT)
     if difference != 0:
-        flag("Account cash differs from initial cash plus all saved paper orders.")
+        flag(
+            "Account cash differs from initial cash, saved paper orders, "
+            "and audited capital adjustments."
+        )
     return PaperLedgerReconciliation(
         status="MATCHED" if issue_count == 0 else "MISMATCH",
         initial_cash=account.initial_cash,

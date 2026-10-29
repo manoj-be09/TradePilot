@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Edit(./.env)",
+      "Write(./.env)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Read|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -I C:/Users/manoj/Documents/Codex/TradePilot-GitHub/.claude/hooks/trading_guard.py",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Users/manoj/AppData/Roaming/uv/tools/graphifyy/Scripts/graphify.exe hook-guard search",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Users/manoj/AppData/Roaming/uv/tools/graphifyy/Scripts/graphify.exe hook-guard read",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

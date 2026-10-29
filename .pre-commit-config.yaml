@@ -1,0 +1,10 @@
+# Local hooks only: uses the project's .venv tools, so no hook downloads.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff check
+        entry: .venv\\Scripts\\ruff.exe check --force-exclude
+        language: system
+        types: [python]
+        files: ^(apps|packages|alembic|tests)/

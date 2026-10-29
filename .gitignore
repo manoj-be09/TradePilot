@@ -12,3 +12,15 @@ build/
 *.egg-info/
 /work/
 *.py[cod]
+
+# Private Feed V3 recordings (never commit or share)
+/data/
+
+# Ad-hoc pytest temp/cache folders and local scratch
+/.pytest-*/
+/.pytest-tmp*/
+
+# Build and generated output
+/apps/web/out/
+/apps/web/tsconfig.tsbuildinfo
+/graphify-out/

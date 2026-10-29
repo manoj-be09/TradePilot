@@ -1,0 +1,7 @@
+# Paths graphify scans skip (gitignore syntax)
+
+# pytest scratch directories
+.pytest-*/
+
+# Next.js static export output
+apps/web/out/

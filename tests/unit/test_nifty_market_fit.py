@@ -183,3 +183,41 @@ def test_market_fit_hashes_exact_provider_bars_without_qualifying_them(monkeypat
     bars[0] = bars[0].model_copy(update={"close": Decimal(101)})
     changed = asyncio.run(main.analytics_options_market_fit(None, body))
     assert changed.bar_digest != first.bar_digest
+
+
+def test_regime_merges_todays_intraday_bars_after_previous_session_history(monkeypatch):
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    grid = [now - timedelta(minutes=5 * (250 - index)) for index in range(250)]
+
+    def bar(timestamp, close=100):
+        return HistoricalBar(
+            timestamp=timestamp, open=100, high=102, low=98, close=close, volume=100,
+        )
+
+    class Provider:
+        provider_id = "merge-fixture"
+
+        async def get_historical(self, *_args):
+            return [bar(timestamp) for timestamp in grid[:200]]
+
+        async def get_intraday(self, *_args):
+            return [bar(timestamp, close=101) for timestamp in grid[190:]]
+
+    seen: list[list[HistoricalBar]] = []
+
+    def classify(bars, _interval):
+        seen.append(bars)
+        return _regime(now)
+
+    monkeypatch.setattr(main, "get_market_data_provider", Provider)
+    monkeypatch.setattr(main, "classify_market_regime", classify)
+    chain = _snapshot(now)
+    regime, digest, provider_id, _ = asyncio.run(
+        main._completed_nifty_regime(chain)
+    )
+    assert regime is not None and digest is not None and provider_id == "merge-fixture"
+    merged = seen[0]
+    assert len(merged) == 250
+    assert [item.timestamp for item in merged] == grid
+    assert merged[195].close == 101  # intraday wins on overlapping timestamps
+    assert merged[0].close == 100

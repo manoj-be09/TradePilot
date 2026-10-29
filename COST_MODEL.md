@@ -36,3 +36,14 @@ shown apart from gross expiry payoff, never deducted from paper cash or
 historical trades, and does not qualify a policy for after-cost ranking or
 profit probability. This scenario must be revised for future tariff dates;
 the existing illustrative order-snapshot model above remains unchanged.
+
+## Core F&O charge schedules (simulator and research)
+
+`packages/core/charges.py` holds dated, versioned NSE F&O schedules for futures and options, used per simulated order: brokerage (Upstox standard ₹20/order; futures capped at 0.05% of turnover; Plus up to ₹30), sell-side STT, transaction charges, IPFT, buy-side stamp duty, SEBI fee and 18% GST on brokerage + transaction + IPFT, plus STT on long ITM options exercised at expiry. Components round to paise per order.
+
+| Schedule | Source of rates | Unverified rates |
+|---|---|---|
+| `nse-fo-2024-10-01` | Upstox charges page, read 2026-10-27 | Exercise STT (0.125%) |
+| `nse-fo-2026-04-01` | Options STT 0.15% and transaction 0.03553% from the 2026-10-23 review above; others from the Upstox page | Futures STT (0.05%), futures transaction-charge revision, exercise STT |
+
+Every breakdown carries its `schedule_id` and a `verified` flag that is false whenever an unverified rate was used. Results produced with unverified rates must say so. Verify those rates against the official NSE circular or Finance Act text, then add a new schedule version rather than editing an existing one. The illustrative order-snapshot model and the public scenario above stay unchanged.

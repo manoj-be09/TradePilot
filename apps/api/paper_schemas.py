@@ -88,6 +88,22 @@ class PaperExitReconciliationResponse(BaseModel):
     detail: str
 
 
+class PaperCapitalAdjustmentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_balance: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+
+
+class PaperCapitalAdjustmentResponse(BaseModel):
+    adjustment_id: UUID
+    cash_before: Decimal
+    cash_delta: Decimal
+    cash_after: Decimal
+    initial_cash: Decimal
+    idempotent_replay: bool = False
+    paper_only: Literal[True] = True
+
+
 class PaperKillSwitchRequest(BaseModel):
     enabled: bool
 

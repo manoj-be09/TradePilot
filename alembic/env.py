@@ -4,12 +4,16 @@ from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 from apps.api.settings import get_settings
-from packages.database import models  # noqa: F401 - register model metadata
+from packages.database import (
+    models,  # noqa: F401 - register model metadata
+    recorder_models,  # noqa: F401 - register recorder metadata
+)
 from packages.database.base import Base
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep loggers created before migrations run (in-process upgrades and tests).
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
 target_metadata = Base.metadata
 

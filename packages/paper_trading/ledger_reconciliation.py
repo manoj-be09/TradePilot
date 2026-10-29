@@ -1,9 +1,10 @@
-"""Read-only consistency checks for one account's simulated options ledger."""
+"""Read-only consistency checks for one account's simulated F&O ledger."""
 
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 
+from packages.database.futures_models import PaperFuturesOrder, PaperFuturesTrade
 from packages.database.models import (
     PaperAccount,
     PaperCapitalAdjustment,
@@ -34,6 +35,8 @@ def reconcile_paper_ledger(
     trades: list[PaperTrade],
     orders: list[PaperOrder],
     adjustments: list[PaperCapitalAdjustment] | None = None,
+    futures_trades: list[PaperFuturesTrade] | None = None,
+    futures_orders: list[PaperFuturesOrder] | None = None,
 ) -> PaperLedgerReconciliation:
     """Compare all saved option orders with the account cash and trade lifecycle.
 
@@ -116,6 +119,41 @@ def reconcile_paper_ledger(
         else:
             flag(f"Trade {trade.id} has an unknown lifecycle status.")
 
+    futures_trades = futures_trades or []
+    futures_orders = futures_orders or []
+    futures_by_id = {trade.id: trade for trade in futures_trades}
+    futures_by_trade: dict[object, list[PaperFuturesOrder]] = {}
+    for futures_order in futures_orders:
+        if (futures_order.account_id != account.id
+                or futures_order.user_id != account.user_id):
+            flag(f"Futures order {futures_order.id} has a different account or owner.")
+        if futures_order.trade_id not in futures_by_id:
+            flag(f"Futures order {futures_order.id} has no trade in this account.")
+        futures_by_trade.setdefault(futures_order.trade_id, []).append(futures_order)
+    for future in futures_trades:
+        if future.account_id != account.id or future.user_id != account.user_id:
+            flag(f"Futures trade {future.id} has a different account or owner.")
+        found_futures = futures_by_trade.get(future.id, [])
+        opens = [order for order in found_futures if order.action == "OPEN"]
+        closes = [order for order in found_futures if order.action == "CLOSE"]
+        if (len(opens) != 1 or opens[0].net_cash_flow != future.entry_cash_flow
+                or future.entry_cash_flow != -future.margin_blocked):
+            flag(f"Futures trade {future.id} has no matching margin block.")
+        if len(found_futures) != len(opens) + len(closes):
+            flag(f"Futures trade {future.id} has an unsupported order action.")
+        if future.status == "OPEN":
+            if closes or future.realized_pnl is not None:
+                flag(f"Open futures trade {future.id} has a close or realized P&L.")
+        elif future.status == "CLOSED":
+            if len(closes) != 1 or future.realized_pnl is None:
+                flag(f"Closed futures trade {future.id} lacks one close or realized P&L.")
+            elif len(opens) == 1 and (
+                opens[0].net_cash_flow + closes[0].net_cash_flow
+            ).quantize(_CENT) != future.realized_pnl:
+                flag(f"Closed futures trade {future.id} P&L differs from its cash flows.")
+        else:
+            flag(f"Futures trade {future.id} has an unknown lifecycle status.")
+
     adjustments = adjustments or []
     for adjustment in adjustments:
         if adjustment.account_id != account.id or adjustment.user_id != account.user_id:
@@ -131,12 +169,13 @@ def reconcile_paper_ledger(
     expected = (
         account.initial_cash
         + sum((order.net_cash_flow for order in orders), Decimal(0))
+        + sum((order.net_cash_flow for order in futures_orders), Decimal(0))
         + sum((adjustment.cash_delta for adjustment in adjustments), Decimal(0))
     ).quantize(_CENT)
     difference = (account.cash_balance - expected).quantize(_CENT)
     if difference != 0:
         flag(
-            "Account cash differs from initial cash, saved paper orders, "
+            "Account cash differs from initial cash, saved option and futures orders, "
             "and audited capital adjustments."
         )
     return PaperLedgerReconciliation(
@@ -145,9 +184,11 @@ def reconcile_paper_ledger(
         recorded_cash_balance=account.cash_balance,
         expected_cash_balance=expected,
         cash_difference=difference,
-        order_count=len(orders),
-        open_trade_count=sum(trade.status == "OPEN" for trade in trades),
-        closed_trade_count=sum(trade.status == "CLOSED" for trade in trades),
+        order_count=len(orders) + len(futures_orders),
+        open_trade_count=sum(trade.status == "OPEN" for trade in trades)
+        + sum(trade.status == "OPEN" for trade in futures_trades),
+        closed_trade_count=sum(trade.status == "CLOSED" for trade in trades)
+        + sum(trade.status == "CLOSED" for trade in futures_trades),
         issue_count=issue_count,
         issues=issues,
     )

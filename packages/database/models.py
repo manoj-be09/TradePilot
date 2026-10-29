@@ -24,6 +24,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON, TypeDecorator
 
 from packages.database.base import Base
+from packages.database.clock import monotonic_utc_now
 
 
 class PortableJSON(TypeDecorator[dict[str, Any]]):
@@ -153,7 +154,7 @@ class AuditEvent(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=monotonic_utc_now,
         server_default=func.now(),
     )
 
@@ -665,3 +666,41 @@ class ResearchOpportunityEvent(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
     payload_digest: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class StrategyDrawdownBaseline(Base):
+    """Backtest maximum drawdown per lot that paper drawdown is compared against."""
+
+    __tablename__ = "strategy_drawdown_baselines"
+    __table_args__ = (
+        CheckConstraint("max_drawdown_per_lot >= 0", name="ck_drawdown_baseline_nonnegative"),
+        CheckConstraint("trades > 0", name="ck_drawdown_baseline_trades_positive"),
+        Index("ix_strategy_drawdown_baselines_key", "strategy_key", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    strategy_key: Mapped[str] = mapped_column(String(64))
+    max_drawdown_per_lot: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    trades: Mapped[int] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(String(128))
+    details: Mapped[dict[str, Any]] = mapped_column(PortableJSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class StrategyDemotion(Base):
+    """An automatic pause on new paper entries for one strategy; exits are never blocked."""
+
+    __tablename__ = "strategy_demotions"
+    __table_args__ = (
+        CheckConstraint("status IN ('ACTIVE', 'REINSTATED')", name="ck_strategy_demotion_status"),
+        Index("ix_strategy_demotions_user_key", "user_id", "strategy_key", "demoted_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    strategy_key: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(String(32))
+    details: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    demoted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reinstated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

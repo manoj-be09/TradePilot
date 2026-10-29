@@ -5,11 +5,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { WorkerStatus } from "./WorkerStatus";
 import { StrategyPauses } from "./StrategyPauses";
 import { ExpiryTestControl } from "./ExpiryTestControl";
-import { InstrumentCatalog } from "./InstrumentCatalog";
-import { EquityStrategies } from "./EquityStrategies";
 import { OptionDeploymentDecisions } from "./OptionDeploymentDecisions";
 import { OptionTradeObservations } from "./OptionTradeObservations";
-import { MarketOutlook } from "./MarketOutlook";
 import { StrategyRanking } from "./StrategyRanking";
 import { FuturesPaper } from "./FuturesPaper";
 import { BuildUpdateNotice } from "./BuildUpdateNotice";
@@ -170,7 +167,15 @@ type StrikeRow = {
   put?: OptionContractQuote;
 };
 
-type SidebarSection = "dashboard" | "charts" | "algo" | "broker" | "backtest" | "bridge" | "research";
+type SidebarSection = "dashboard" | "algo" | "charts" | "backtest" | "research";
+const NAVIGATION: { section: SidebarSection; label: string; icon: string }[] = [
+  { section: "dashboard", label: "Home", icon: "⌂" },
+  { section: "algo", label: "Trade", icon: "↗" },
+  { section: "charts", label: "Chart", icon: "⌁" },
+  { section: "backtest", label: "Backtest", icon: "◷" },
+  { section: "research", label: "Research", icon: "⌕" },
+];
+const WORKSPACE = "derivatives" as "equities" | "derivatives";
 
 type PaperStrategy = {
   key: string;
@@ -829,7 +834,7 @@ export default function Home() {
   const deploymentCommand = useRef<{ payload: string; key: string } | null>(null);
   const paperTicketRef = useRef<HTMLParagraphElement | null>(null);
   const [selectedStrategy, setSelectedStrategy] = useState("long_call");
-  const [workspace, setWorkspace] = useState<"equities" | "derivatives">("derivatives");
+  const workspace = WORKSPACE;
   const [activeSection, setActiveSection] = useState<SidebarSection>("dashboard");
   const [selectedPaperStrike, setSelectedPaperStrike] = useState("");
   const [paperLots, setPaperLots] = useState(1);
@@ -1777,6 +1782,14 @@ export default function Home() {
     }
   }
 
+  useEffect(() => {
+    if (!token) return;
+    void checkConnection();
+    const timer = window.setInterval(() => void checkConnection(), 120_000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAuthError("");
@@ -2509,7 +2522,6 @@ export default function Home() {
   return (
     <main className={token ? "shell dashboard-shell" : "shell"}>
       <BuildUpdateNotice />
-      {token && <WorkerStatus token={token} apiUrl={API_URL} />}
       {token && <StrategyPauses token={token} apiUrl={API_URL} />}
       {token && paperEntry.identityError && <section className="worker-status worker-status--warning" role="alert">
         <strong>Paper entry is unavailable</strong>
@@ -2533,7 +2545,7 @@ export default function Home() {
           </span>
         </a>
         <div className="topbar-right">
-          <span className="pill"><span className="status-dot" />PAPER MODE</span>
+          {!token ? <span className="pill"><span className="status-dot" />PAPER MODE</span> : null}
           {token ? <details className="mobile-account-menu">
             <summary>Account</summary>
             <div className="mobile-account-menu-panel">
@@ -2544,6 +2556,18 @@ export default function Home() {
           </details> : null}
         </div>
       </header>
+      {token && <section className="status-row" aria-label="Trading status">
+        <span className="status-chip status-chip--ok">Paper trading</span>
+        <WorkerStatus token={token} apiUrl={API_URL} />
+        <button className={`status-chip ${connectionStatus?.healthy ? "status-chip--ok" : "status-chip--warn"}`} disabled={connectionBusy} onClick={() => void checkConnection()} title={connectionError || connectionStatus?.detail || "Check read-only market data"} type="button">
+          Market data: {connectionBusy ? "checking" : connectionStatus?.healthy ? "connected" : "not verified"}
+        </button>
+        {paperAccount ? <span className={`status-chip ${paperAccount.kill_switch_enabled ? "status-chip--warn" : "status-chip--ok"}`}>
+          Entries {paperAccount.kill_switch_enabled ? "paused" : "on"}
+          <button className="status-chip-action" disabled={paperBusy} onClick={() => void togglePaperKillSwitch()} type="button">{paperAccount.kill_switch_enabled ? "Resume" : "Pause"}</button>
+        </span> : <span className="status-chip">Entries: unavailable</span>}
+        {paperError && activeSection !== "algo" ? <span className="status-chip status-chip--warn" role="alert">{paperError}</span> : null}
+      </section>}
 
       {!token && <section className="intro">
         <div className="eyebrow"><span className="eyebrow-mark" />{token && workspace === "equities" ? "EQUITIES & ETFs" : "NIFTY OPTIONS"} <span>·</span> MARKET RESEARCH</div>
@@ -2618,33 +2642,15 @@ export default function Home() {
               <span className="brand-mark">TP</span>
               <strong>TradingPilot</strong>
             </div>
-            <label className="sidebar-market-switch">
-              <span>Market</span>
-              <select
-                value={workspace}
-                onChange={(event) => {
-                  setWorkspace(event.target.value as "equities" | "derivatives");
-                  setActiveSection("dashboard");
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                }}
-              >
-                <option value="equities">Equity &amp; ETF</option>
-                <option value="derivatives">Future &amp; Options</option>
-              </select>
-            </label>
-            <button aria-current={activeSection === "dashboard" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "dashboard" ? "active" : ""}`} onClick={() => { setActiveSection("dashboard"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">⌂</span> Dashboard</button>
-            <button aria-current={activeSection === "charts" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "charts" ? "active" : ""}`} onClick={() => { setActiveSection("charts"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">⌁</span> Charts</button>
-            <button aria-current={activeSection === "algo" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "algo" ? "active" : ""}`} onClick={() => { setActiveSection("algo"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">↗</span> Strategies</button>
-            <button aria-current={activeSection === "broker" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "broker" ? "active" : ""}`} onClick={() => { setActiveSection("broker"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">▣</span> Broker Panel</button>
-            <button aria-current={activeSection === "backtest" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "backtest" ? "active" : ""}`} onClick={() => { setActiveSection("backtest"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">◷</span> Backtest</button>
-            <button aria-current={activeSection === "bridge" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "bridge" ? "active" : ""}`} onClick={() => { setActiveSection("bridge"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">◇</span> Bridge Tool</button>
-            <button aria-current={activeSection === "research" ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === "research" ? "active" : ""}`} onClick={() => { setActiveSection("research"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">⌕</span> Research</button>
-            <a className="dashboard-sidebar-item" href={`${API_URL}/docs`} rel="noreferrer" target="_blank"><span aria-hidden="true">?</span> Help Center</a>
+            <nav className="dashboard-sidebar-nav">
+              {NAVIGATION.map((item) => (
+                <button aria-current={activeSection === item.section ? "page" : undefined} className={`dashboard-sidebar-item ${activeSection === item.section ? "active" : ""}`} key={item.section} onClick={() => { setActiveSection(item.section); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span aria-hidden="true">{item.icon}</span> {item.label}</button>
+              ))}
+            </nav>
             <div className="dashboard-sidebar-footer">
               <div className="sidebar-account-card">
                 <span className="sidebar-account-label">Account</span>
                 <strong>{email || "Signed in"}</strong>
-                <small><span className="status-dot" /> Paper mode · Live orders disabled</small>
               </div>
               <div className="sidebar-account-actions">
                 <div className="notification-wrap sidebar-notification-wrap" ref={notificationWrapRef}>
@@ -2715,6 +2721,7 @@ export default function Home() {
                   }}
                   type="button"
                 >Account security</button>
+                <a className="sidebar-action-button" href={`${API_URL}/docs`} rel="noreferrer" target="_blank">Help</a>
                 <button className="sidebar-action-button danger" onClick={() => void revokeAndSignOut()} type="button">Sign out</button>
               </div>
             </div>
@@ -2736,39 +2743,8 @@ export default function Home() {
               {securityActivity.length ? <ul>{securityActivity.map((event) => <li key={event.id}><span>{SECURITY_ACTIVITY_LABELS[event.event_type]}</span><time dateTime={event.created_at}>{formatTime(event.created_at)}</time></li>)}</ul> : !securityActivityBusy && !securityActivityError ? <p className="muted">No activity available yet.</p> : null}
             </div>
           </section> : null}
-          {activeSection === "research" ? <ResearchWorkspace key={token} token={token} apiUrl={API_URL} /> : workspace === "equities" ? (
-            <section className={`equities-workspace app-section-page${activeSection === "dashboard" ? " dashboard-detail-section" : ""}`} aria-label="Equities workspace">
-              {activeSection !== "dashboard" ? <div className="equities-heading"><div><div className="panel-kicker">{activeSection.toUpperCase()}</div><h2>{activeSection === "charts" ? "Equity & ETF charts" : activeSection === "algo" ? "Equity algo strategies" : activeSection === "broker" ? "Equity broker panel" : activeSection === "backtest" ? "Equity backtest" : "Equity bridge tool"}</h2></div><span className="paper-mode-badge">PAPER TRADING</span></div> : null}
-              {activeSection === "dashboard" ? <><MarketOutlook token={token} apiUrl={API_URL} /><div id="equity-instruments"><InstrumentCatalog token={token} apiUrl={API_URL} compact /></div></> : null}
-              {activeSection === "charts" ? <ChartWorkspace token={token} apiUrl={API_URL} /> : null}
-              {activeSection === "algo" ? <EquityStrategies token={token} apiUrl={API_URL} /> : null}
-              {activeSection === "broker" ? <section className="empty-section-card"><h3>Paper account only</h3><p className="muted">This page will hold broker connection, account, and order-routing controls for equities. For now, live broker orders remain disabled and equity paper trading uses the local wallet.</p></section> : null}
-              {activeSection === "backtest" ? <section className="empty-section-card"><h3>Replay not available yet</h3><p className="muted">Equity strategy replay will use saved equity candles and paper-trade history. The current build has the F&O replay engine first; equity replay is planned next.</p></section> : null}
-              {activeSection === "bridge" ? <section className="empty-section-card"><h3>Bridge routing disabled</h3><p className="muted">This page will show paper/live bridge controls when live equity broker routing is enabled. It stays read-only in this milestone.</p></section> : null}
-            </section>
-          ) : <>
-          <label className="index-picker">Index
-            <select aria-label="Option index" value={selectedOptionIndex} onChange={(event) => {
-              setSelectedOptionIndex(event.target.value); setContracts([]); setSelectedExpiry("");
-              setChain(null); setOptionFeatures(null); setSelectedVersionId("");
-              setSelectedPaperStrike(""); setDeploymentPreparedKey("");
-            }}>
-              {optionIndexes.map((item) => <option key={item.symbol} value={item.symbol}>{item.name} · {item.exchange}</option>)}
-            </select>
-          </label>
+          {activeSection === "research" ? <ResearchWorkspace key={token} token={token} apiUrl={API_URL} /> : <>
           {indexCatalogError ? <p role="alert">{indexCatalogError}</p> : null}
-          {selectedOptionIndex !== "NIFTY" ? <p role="status">Market-data preview. Paper entry for this index is pending venue and settlement validation.</p> : null}
-          {activeSection === "broker" ? <section className="paper-workspace" aria-label="Broker connection">
-            <div className="paper-heading"><div><span className="panel-kicker">BROKER PANEL</span><h2>Market-data connection</h2><p className="muted">Upstox supplies data. Your paper account is simulated.</p></div><span className="paper-mode-badge">LIVE ORDERS DISABLED</span></div>
-            <div className="connection-row" aria-live="polite"><span className="connection-state">{connectionBusy ? "Checking…" : connectionStatus?.healthy ? "Connection available" : "Connection not verified"}</span><span className="connection-detail">{connectionError || connectionStatus?.detail || "Check access to read-only market data."}</span><button className="refresh-button" disabled={connectionBusy} onClick={() => void checkConnection()} type="button">Check connection</button></div>
-            <p className="features-note">Connection availability does not verify bid/ask book timestamps. Quote quality and session checks still apply to every paper entry.</p>
-            <button className="inline-button" onClick={() => setActiveSection("charts")} type="button">View market data</button>
-          </section> : null}
-          {activeSection === "bridge" ? <section className="paper-workspace" aria-label="Bridge availability">
-            <div className="paper-heading"><div><span className="panel-kicker">BRIDGE TOOL</span><h2>External routing disabled</h2><p className="muted">No broker execution or external signal bridge is enabled.</p></div><span className="paper-mode-badge">PAPER MODE</span></div>
-            <p className="features-note">Manage simulated entries, positions and exit rules in Strategies. This screen cannot route orders.</p>
-            <button className="refresh-button" onClick={() => setActiveSection("algo")} type="button">View paper strategies</button>
-          </section> : null}
           {activeSection === "charts" ? <ChartWorkspace token={token} apiUrl={API_URL} /> : null}
           {activeSection === "charts" ? <>
           <section className="market-toolbar">
@@ -2845,15 +2821,6 @@ export default function Home() {
               <div className="paper-actions">
                 <button className="refresh-button" type="button" disabled={chainBusy || paperBusy} onClick={() => void refreshPaperWorkspace()}>↻ Refresh</button>
                 <button aria-describedby="batch-paper-safety" className="primary-button" disabled={!batchArmReady} onClick={() => void armAllPaperTemplates()} type="button">{paperBusy ? "Applying paper strategies…" : "Apply all eligible paper strategies"}</button>
-                {paperAccount ? (
-                  <span className={`paper-mode-badge ${paperAccount.kill_switch_enabled ? "paused" : "active"}`}>
-                    {paperAccount.kill_switch_enabled ? "ENTRIES PAUSED" : "PAPER ACTIVE"}
-                  </span>
-                ) : null}
-                <button className={paperAccount?.kill_switch_enabled ? "primary-button" : "refresh-button"}
-                  disabled={paperBusy || !paperAccount} onClick={togglePaperKillSwitch} type="button">
-                  {paperAccount?.kill_switch_enabled ? "Resume entries" : "Pause entries"}
-                </button>
               </div>
             </div>
             <p className="features-note" id="batch-paper-safety">One click checks the paper-supported NIFTY option templates for the selected expiry, strike and lot size. {savedBatchPolicyCount} matching saved {savedBatchPolicyCount === 1 ? "policy" : "policies"} for {paperLots} {paperLots === 1 ? "lot" : "lots"}. Up to 26 saved policies may wait in the shared paper account; the worker checks five per cycle. Actual entries remain subject to cash, daily-loss, per-trade, portfolio-risk and open-position limits. Futures strategies are not yet paper-enabled. Arming opens no position immediately; live orders remain disabled.</p>

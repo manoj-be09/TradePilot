@@ -22,6 +22,7 @@ from packages.market_data.contracts import (
     ExpiredOptionContract,
     HistoricalBar,
     MarketDataProviderError,
+    MarketDataRateLimited,
 )
 
 EXPIRY = date(2025, 4, 17)
@@ -52,6 +53,7 @@ class Provider:
         self.empty: set[str] = set()
         self.broken: set[str] = set()
         self.error: set[str] = set()
+        self.throttled: dict[str, int] = {}
 
     async def get_expired_option_expiries(self, underlying="NIFTY"):
         return [date(2025, 4, 3), date(2025, 4, 9), EXPIRY, date(2030, 1, 1)]
@@ -69,6 +71,9 @@ class Provider:
 
     async def get_expired_historical(self, instrument_key, start, end, interval):
         self.calls.append(instrument_key)
+        if self.throttled.get(instrument_key, 0) > 0:
+            self.throttled[instrument_key] -= 1
+            raise MarketDataRateLimited("Upstox rate limit reached; wait before retrying")
         if instrument_key in self.error:
             raise MarketDataProviderError("Upstox rejected the request")
         if instrument_key in self.empty:
@@ -185,3 +190,23 @@ def test_list_expiries_excludes_future_and_out_of_range():
     expiries = asyncio.run(list_expiries(Provider(), date(2025, 4, 5), date(2031, 1, 1),
                                          date(2026, 10, 28)))
     assert expiries == [date(2025, 4, 9), EXPIRY]
+
+
+def test_rate_limits_back_off_and_retry_before_failing(factory):
+    provider = Provider()
+    recovers = _contract(23000, "CE").instrument_key
+    gives_up = _contract(23000, "PE").instrument_key
+    provider.throttled = {recovers: 2, gives_up: 99}
+    waits: list[float] = []
+
+    async def record_sleep(seconds):
+        waits.append(seconds)
+
+    settings = ImportSettings(interval="5m", strike_window_pct=Decimal(2), lookback_days=3,
+                              pause_seconds=0, rate_limit_retries=3, rate_limit_wait_seconds=10)
+    asyncio.run(import_expiry(provider, factory, EXPIRY, settings, sleep=record_sleep))
+    statuses = _statuses(factory)
+    assert statuses[recovers] == "COMPLETE"
+    assert statuses[gives_up] == "FAILED"
+    assert [wait for wait in waits if wait] == [10, 20, 10, 20, 40]
+    assert provider.calls.count(gives_up) == 4

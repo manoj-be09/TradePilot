@@ -24,6 +24,7 @@ from packages.market_data.contracts import (
     ExpiredOptionContract,
     HistoricalBar,
     MarketDataProviderError,
+    MarketDataRateLimited,
     MarketDataUnavailable,
 )
 
@@ -58,8 +59,11 @@ class ImportSettings:
     interval: str = "5m"
     strike_window_pct: Decimal = Decimal(3)
     lookback_days: int = 10
-    pause_seconds: float = 0.25  # stays well under Upstox per-second request limits
+    # About 1,800 requests per 30 minutes, under Upstox's 2,000-per-30-minute cap.
+    pause_seconds: float = 1.0
     force: bool = False
+    rate_limit_retries: int = 5
+    rate_limit_wait_seconds: float = 60.0
 
 
 @dataclass
@@ -151,6 +155,25 @@ def _record(
     ))
 
 
+async def _fetch_with_backoff(
+    provider: HistoryProvider, contract: ExpiredOptionContract, start: date, end: date,
+    settings: ImportSettings, sleep: Callable[[float], Any],
+) -> list[HistoricalBar]:
+    """Retry throttled requests after doubling waits; other errors fail at once."""
+    wait = settings.rate_limit_wait_seconds
+    for attempt in range(settings.rate_limit_retries + 1):
+        try:
+            return await provider.get_expired_historical(
+                contract.instrument_key, start, end, settings.interval
+            )
+        except MarketDataRateLimited:
+            if attempt == settings.rate_limit_retries:
+                raise
+            await sleep(wait)
+            wait = min(wait * 2, 900.0)
+    raise AssertionError("unreachable")
+
+
 async def import_expiry(
     provider: HistoryProvider,
     factory: sessionmaker[Session],
@@ -187,9 +210,7 @@ async def import_expiry(
         bars: list[HistoricalBar] = []
         try:
             bars = sorted(
-                await provider.get_expired_historical(
-                    contract.instrument_key, start, end, settings.interval
-                ),
+                await _fetch_with_backoff(provider, contract, start, end, settings, sleep),
                 key=lambda bar: bar.timestamp,
             )
             reason = validate_bars(bars, start, end)

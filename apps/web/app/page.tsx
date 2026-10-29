@@ -2822,78 +2822,18 @@ export default function Home() {
           <section className="paper-workspace" aria-label="Paper trading workspace">
             <div className="paper-heading">
               <div>
-                <div className="panel-kicker">PAPER TRADING</div>
-                <h2>Your strategies</h2>
-                <p className="muted">Plan. Monitor. Review. Paper orders only.</p>
+                <h2>Trade</h2>
+                <p className="muted">Paper orders only. Every entry is rechecked against your cash, loss limits and live quotes before it fills.</p>
               </div>
               <div className="paper-actions">
                 <button className="refresh-button" type="button" disabled={chainBusy || paperBusy} onClick={() => void refreshPaperWorkspace()}>↻ Refresh</button>
-                <button aria-describedby="batch-paper-safety" className="primary-button" disabled={!batchArmReady} onClick={() => void armAllPaperTemplates()} type="button">{paperBusy ? "Applying paper strategies…" : "Apply all eligible paper strategies"}</button>
               </div>
             </div>
-            <p className="features-note" id="batch-paper-safety">One click checks the paper-supported NIFTY option templates for the selected expiry, strike and lot size. {savedBatchPolicyCount} matching saved {savedBatchPolicyCount === 1 ? "policy" : "policies"} for {paperLots} {paperLots === 1 ? "lot" : "lots"}. Up to 26 saved policies may wait in the shared paper account; the worker checks five per cycle. Actual entries remain subject to cash, daily-loss, per-trade, portfolio-risk and open-position limits. Futures strategies are not yet paper-enabled. Arming opens no position immediately; live orders remain disabled.</p>
-            {savedBatchPolicyCount < paperStrategies.length && <p className="features-note">The batch cannot arm templates without saved entry and exit policies. Proposed rules are exploratory and need your review; saving does not arm a strategy. <button className="inline-button" onClick={reviewNextBatchPolicy} type="button">Review next missing policy</button> <button className="inline-button" disabled={selectedOptionIndex !== "NIFTY" || !chain || !selectedPaperStrike || selectedExpiry !== chain.expiry || selectedExpiry < indiaCalendarDate() || batchPolicyBusy || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={reviewAllBatchPolicies} type="button">Review all missing policies</button></p>}
-            {batchPolicyReview && <details className="workspace-disclosure" open><summary>Review batch policy proposals · {batchPolicyReview.rows.filter((row) => row.policy).length} reviewable</summary>
-              <p>Snapshot {new Date(batchPolicyReview.asOf).toLocaleString("en-IN")} · expiry {batchPolicyReview.expiry} · strike {formatPrice(batchPolicyReview.strike)} · {batchPolicyReview.lots} lot(s) · quote quality {batchPolicyReview.quality}. The entry filters and exits below are hypotheses derived from an indicative gross payoff, not validated trading rules or profit predictions. <a href="https://upstox.com/brokerage-charges/" rel="noreferrer" target="_blank">Upstox public-plan charges</a> are a separate scenario, not deducted from these gross risk values.</p>
-              <div className="paper-table-scroll"><table className="paper-table"><thead><tr><th>Strategy</th><th>Review status</th><th>Entry and exit proposal</th><th>Gross max loss</th><th>Round-trip cost scenario</th></tr></thead><tbody>
-                {batchPolicyReview.rows.map((row) => <tr key={row.key}><td>{row.name} · {row.version}</td><td>{row.status}</td><td>{row.policy ? <>{row.policy.conditions.map((condition) => `${ENTRY_RULE_METRICS.find((metric) => metric.key === condition.metric)?.label || condition.metric} ${operatorLabel(condition.operator)} ${condition.threshold}`).join(" · ")}<br />Stop ₹{formatPrice(String(row.policy.stopLoss))} · target ₹{formatPrice(String(row.policy.targetProfit))} · trail ₹{formatPrice(String(row.policy.trailingStop))}</> : "—"}</td><td>{row.maximumLoss === null ? "Unavailable" : `₹${formatPrice(row.maximumLoss)}`}</td><td>{row.costScenario === null ? "Unavailable" : `₹${formatPrice(row.costScenario)}`}</td></tr>)}
-              </tbody></table></div>
-              <p>Review these exploratory entry/exit rules before applying. The button saves immutable account-scoped versions and queues every eligible strategy in one action. It opens no position immediately; later entries still require a qualifying paper snapshot and pass the cash, daily-loss, per-trade, portfolio-risk and open-position checks. Strategies without a finite quote-backed loss or with failed quote quality are excluded. These rules are not validated trading rules or profit predictions.</p>
-              <div><button className="refresh-button" disabled={!token || batchPolicyBusy || paperBusy || selectedOptionIndex !== "NIFTY" || selectedExpiry !== batchPolicyReview.expiry || selectedExpiry < indiaCalendarDate() || !batchPolicyReview.rows.some((row) => row.policy) || batchPolicyReview.snapshot !== strategyPayoffKey || batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={() => void saveReviewedBatchPolicies()} type="button">{batchPolicyBusy ? "Saving and applying reviewed strategies…" : `Save and apply ${batchPolicyReview.rows.filter((row) => row.policy).length} reviewed strategies`}</button></div>
-              {batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}` && <p role="status">The selected snapshot changed. Review the policies again before saving.</p>}
-              {batchPolicyResults.length > 0 && <ul role="status">{batchPolicyResults.map((item) => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul>}
-            </details>}
-            {batchArmResults.length > 0 && <details className="workspace-disclosure" open><summary>Batch paper application · {batchArmResults.filter(item => item.result.startsWith("Armed")).length} armed, {batchArmResults.length} checked</summary><p>{batchArmContext}</p><ul>{batchArmResults.map(item => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul></details>}
-
-            <section className="paper-readiness" aria-label="Paper trading readiness">
-              <div className="paper-readiness-grid">
-                <span className={paperAccount ? "ready" : "waiting"}><b>{paperAccount ? "Ready" : "Waiting"}</b> paper account</span>
-                <span className={paperEntry.ready ? "ready" : "waiting"}><b>{paperEntry.ready ? "Ready" : "Waiting"}</b> account verification</span>
-                <span className={chain?.quality?.status === "PASS" ? "ready" : chain?.quality?.status === "FAIL" ? "blocked" : "waiting"}><b>{chain?.quality?.status || "Waiting"}</b> quote quality</span>
-                <span className={paperAccount?.live_trading_enabled === false ? "ready" : "blocked"}><b>{paperAccount?.live_trading_enabled === false ? "Disabled" : "Check"}</b> live broker orders</span>
-              </div>
-              <details className="workspace-disclosure"><summary>Entry checks &amp; fill policy</summary><p className="features-note">A strategy stays armed until a fresh qualifying snapshot passes its entry rules, risk limits, and quote checks. The server rechecks every condition before filling. Simulated buys use ask and sells use bid; no order is sent to a broker.</p></details>
-            </section>
-
-            {paperAccount ? (
-              <>
-              <div className="paper-stats" aria-label="Paper account summary">
-                <div><span>Cash balance</span><strong>₹{formatPrice(paperAccount.cash_balance)}</strong></div>
-                <div><span>Open positions</span><strong>{formatCount(paperAccount.open_trade_count)}</strong></div>
-                <div><span>Today’s realized P&amp;L</span><strong className={changeClass(paperAccount.daily_realized_pnl)}>{formatSignedPrice(paperAccount.daily_realized_pnl)}</strong></div>
-                <div><span>Remaining new-trade risk</span><strong>₹{formatPrice(paperAccount.daily_risk_remaining)}</strong></div>
-              </div>
-              {Number(paperAccount.cash_balance) < 5_000_000 ? <div className="paper-cash-adjustment">
-                <p className="features-note">NIFTY F&amp;O simulated wallet only. This does not add broker funds or change the original starting-capital risk base.</p>
-                <button className="refresh-button" disabled={!token || walletFundingBusy || paperLedger?.status === "MISMATCH"} onClick={() => void fundPaperWalletToFiftyLakh()} type="button">{walletFundingBusy ? "Recording paper cash…" : "Increase NIFTY F&O paper wallet to ₹50 lakh"}</button>
-                {walletFundingMessage ? <p role="status">{walletFundingMessage}</p> : null}
-                {walletFundingError ? <p className="error-banner" role="alert">{walletFundingError}</p> : null}
-              </div> : null}
-              </>
-            ) : <p className="features-note">Loading paper account…</p>}
-            <details className="workspace-disclosure paper-risk-details"><summary>Allocation &amp; risk details</summary>
-              {paperAccount ? <div className="paper-stats">
-                <div><span>Starting capital</span><strong>₹{formatPrice(paperAccount.initial_cash)}</strong></div>
-                <div><span>Open maximum loss</span><strong>₹{formatPrice(paperAccount.open_max_loss)}</strong></div>
-                <div><span>Daily loss budget</span><strong>₹{formatPrice(paperAccount.daily_loss_limit)}</strong></div>
-              </div> : null}
-              <p className="features-note">The daily budget uses realized losses and open positions’ theoretical maximum loss. It does not include live mark-to-market or transaction costs.</p>
+            <p className="trade-readiness" aria-label="Entry readiness">Quote quality <b className={chain?.quality?.status === "PASS" ? "home-gain" : chain?.quality?.status === "FAIL" ? "home-loss" : ""}>{chain?.quality?.status || "waiting"}</b> · Account check <b className={paperEntry.ready ? "home-gain" : ""}>{paperEntry.ready ? "ready" : "waiting"}</b>{paperAccount ? <> · Cash <b>₹{formatPrice(paperAccount.cash_balance)}</b> · Risk left today <b>₹{formatPrice(paperAccount.daily_risk_remaining)}</b></> : null}</p>
+            <details className="workspace-disclosure trade-how"><summary>How this works</summary>
+              <p className="features-note">A strategy stays armed until a fresh qualifying snapshot passes its entry rules, risk limits, and quote checks. The server rechecks every condition before filling. Simulated buys use ask and sells use bid; no order is sent to a broker.</p>
+              <p className="features-note">One click checks the paper-supported NIFTY option templates for the selected expiry, strike and lot size. {savedBatchPolicyCount} matching saved {savedBatchPolicyCount === 1 ? "policy" : "policies"} for {paperLots} {paperLots === 1 ? "lot" : "lots"}. Up to 26 saved policies may wait in the shared paper account; the worker checks five per cycle. Actual entries remain subject to cash, daily-loss, per-trade, portfolio-risk and open-position limits. Futures strategies are not yet paper-enabled. Arming opens no position immediately; live orders remain disabled.</p>
             </details>
-
-            <details className="paper-ledger-review">
-              <summary>Paper ledger check</summary>
-              <p className="features-note">Compare saved F&amp;O paper cash with simulated orders and trade records. A mismatch pauses new paper cash actions until reviewed; you can still pause entries with the kill switch. This checks internal arithmetic only, not exchange prices or expired-position settlement.</p>
-              <button className="inline-button" disabled={paperLedgerBusy} onClick={() => void checkPaperLedger()} type="button">{paperLedgerBusy ? "Checking…" : "Check ledger now"}</button>
-              {paperLedgerError ? <p className="error-banner" role="alert">{paperLedgerError}</p> : null}
-              {paperLedger ? <div className={`paper-ledger-result ${paperLedger.status === "MISMATCH" ? "paper-ledger-result--mismatch" : ""}`} role="status">
-                <strong>{paperLedger.status === "MATCHED" ? "Saved ledger matches" : `${paperLedger.issue_count} ledger issue${paperLedger.issue_count === 1 ? "" : "s"} found`}</strong>
-                <p>Recorded cash ₹{formatPrice(paperLedger.recorded_cash_balance)} · Expected cash ₹{formatPrice(paperLedger.expected_cash_balance)} · Difference {formatSignedPrice(paperLedger.cash_difference)}</p>
-                <p>{paperLedger.order_count} orders · {paperLedger.open_trade_count} open trades · {paperLedger.closed_trade_count} closed trades{paperLedgerCheckedAt ? ` · Checked ${formatTime(paperLedgerCheckedAt)}` : ""}</p>
-                {paperLedger.issues.length > 0 ? <ul>{paperLedger.issues.map((issue, index) => <li key={`${index}-${issue}`}>{issue}</li>)}</ul> : null}
-              </div> : null}
-            </details>
-
-            {token && selectedOptionIndex === "NIFTY" ? <FuturesPaper apiUrl={API_URL} token={token} /> : null}
 
             {token && selectedOptionIndex === "NIFTY" ? (
               <StrategyRanking
@@ -2909,7 +2849,86 @@ export default function Home() {
               />
             ) : null}
 
-            <details className="strategy-builder strategy-composer" id="paper-strategy-builder"><summary>Add a paper strategy</summary>
+            <section className="trade-group" aria-label="Your strategies and positions">
+            {paperDeployments.length > 0 && <details className="equity-history" open={paperDeployments.some(item => item.status === "WAITING_FOR_ENTRY")}><summary>Armed F&amp;O strategies ({paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").length} waiting)</summary><div className="equity-deployments">{paperDeployments.slice(0, 10).map(item => <article key={item.id}><div className="equity-deployment-heading"><strong>{paperStrategies.find(strategy => strategy.key === item.strategy_key)?.name || item.strategy_key} · {item.expiry}</strong><span>{item.status.replaceAll("_", " ")}</span></div><p>{item.detail}</p><small>Reference strike {formatPrice(item.reference_strike)} · {item.lots} lot(s) · Armed {new Date(item.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}{item.updated_at !== item.created_at ? ` · Last update ${new Date(item.updated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}</small>
+              <details><summary>Saved entry &amp; exit rules</summary><div className="equity-deployment-rules">
+                <p><strong>Entry:</strong> A later open-market option-chain snapshot must satisfy every saved condition: {item.entry_conditions.map(condition => `${ENTRY_RULE_METRICS.find(metric => metric.key === condition.metric)?.label || condition.metric} ${operatorLabel(condition.operator)} ${condition.threshold}`).join(" · ") || "No saved conditions"}. The selected option legs, quote quality, expiry window and paper risk checks must also pass.</p>
+                <p><strong>Exit:</strong> Net paper P&amp;L stop at −{formatPrice(item.stop_loss_amount)}; {item.target_profit_amount ? `target at +${formatPrice(item.target_profit_amount)}` : "no profit target saved"}; moving stop trails {formatPrice(item.trailing_stop_amount)} below peak net P&amp;L after it turns positive. The expiry policy may close earlier.</p>
+              </div></details>
+              <OptionDeploymentDecisions deploymentId={item.id} apiUrl={API_URL} token={token} />{item.status === "WAITING_FOR_ENTRY" && <button className="inline-button" disabled={paperBusy} onClick={() => void cancelPaperDeployment(item.id)} type="button">Cancel waiting strategy</button>}</article>)}</div></details>}
+            {paperWarnings.length ? <ul className="paper-warning-list">{paperWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
+            <section className="position-overview" aria-label="Paper positions">
+              <div className="workspace-section-heading"><h3>Your positions</h3><span>{paperTrades.filter(trade => trade.status === "OPEN").length} unsettled · {expiredPaperTrades.length} expired awaiting review · {paperTrades.filter(trade => trade.status === "CLOSED").length} closed</span></div>
+              <div className="position-view-tabs" aria-label="Position view">{(["OPEN", "CLOSED", "ALL"] as const).map(view => <button key={view} type="button" aria-pressed={positionView === view} onClick={() => setPositionView(view)}>{view === "OPEN" ? "Open / unsettled" : view === "CLOSED" ? "Closed trades" : "All positions"} <span>{paperTrades.filter(trade => view === "ALL" || trade.status === view).length}</span></button>)}</div>
+              <div className="position-card-grid">{paperTrades.filter(trade => positionView === "ALL" || trade.status === positionView).map(trade => <article className={`position-card position-card--${trade.status.toLowerCase()}`} key={trade.id}>
+                <div className="workspace-section-heading"><strong>{trade.strategy_name}</strong><span className={`trade-state trade-${trade.status === "OPEN" && trade.expiry < indiaCalendarDate() ? "expired" : trade.status.toLowerCase()}`}>{trade.status === "OPEN" && trade.expiry < indiaCalendarDate() ? "EXPIRED · SETTLEMENT PENDING" : trade.status}</span></div>
+                <small>{trade.underlying} · Expiry {trade.expiry} · {trade.lots} lot(s)</small>
+                <div className="position-contracts" aria-label="Position contracts">{trade.legs.map(leg => <span key={`${leg.side}-${leg.strike}-${leg.option_type}`}>{leg.side} {formatPrice(leg.strike)} {leg.option_type}</span>)}</div>
+                <div className="position-card-metrics"><div><span>{Number(trade.entry_cash_flow) < 0 ? "Entry debit" : "Entry credit"}</span><strong>₹{formatPrice(String(Math.abs(Number(trade.entry_cash_flow))))}</strong></div><div><span>{trade.status === "OPEN" ? trade.expiry < indiaCalendarDate() ? "Settlement P&L pending" : "Marked P&L" : "Realized P&L"}</span><strong className={changeClass(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}>{formatSignedPrice(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}</strong></div><div className="position-metric--risk"><span>Max modeled loss</span><strong>₹{formatPrice(trade.max_loss)}</strong></div><PositionMaximumProfit trade={trade} token={token} /></div><small className="position-model-note">Expiry model · entry fills · before costs; not a profit forecast.</small><div className="position-probability"><span>Entry win / loss probability</span><strong>Not recorded</strong><small>{trade.status === "CLOSED" ? "No forecast was saved at entry; closed trades are not scored retrospectively." : "No validated forecast was saved at entry. Current estimates are withheld: insufficient evidence."}</small></div>
+                {trade.valuation_warning ? <p className="table-warning">{trade.valuation_warning}</p> : null}
+                {trade.execution_warnings.length ? <p className="table-warning">{trade.execution_warnings.join(" · ")}</p> : null}
+                {trade.exit_reason ? <small>{trade.exit_reason.replaceAll("_", " ")}</small> : null}
+                <details><summary>Legs, stops &amp; evidence</summary><p>{trade.legs.map(leg => `${leg.side} ${formatPrice(leg.strike)} ${leg.option_type} ×${formatCount(leg.quantity_units / trade.lot_size)} lots`).join(" / ")}</p><p>Stop {trade.stop_loss_amount ? `₹${formatPrice(trade.stop_loss_amount)}` : "Off"} · Target {trade.target_profit_amount ? `₹${formatPrice(trade.target_profit_amount)}` : "Off"} · Trail {trade.trailing_stop_amount ? `₹${formatPrice(trade.trailing_stop_amount)}` : "Off"}</p>
+                  {trade.entry_rule_snapshot.entry_market_context ? <EntryMarketEvidence context={trade.entry_rule_snapshot.entry_market_context} /> : <p>Entry market context was not saved for this older trade.</p>}
+                  <OptionTradeObservations tradeId={trade.id} apiUrl={API_URL} token={token} /></details>
+                {trade.status === "OPEN" ? <button className="inline-button" disabled={paperBusy || (trade.expiry < indiaCalendarDate() && settlementBusy)} onClick={() => { if (trade.expiry < indiaCalendarDate()) { setSettlementTradeId(trade.id); setSettlementValue(""); setSettlementSource(""); setSettlementPreview(null); setIndexCloseReference(null); setOfficialIndexCloseReference(null); setSettlementError(""); } else { void closePaperTrade(trade.id); } }} type="button">{trade.expiry < indiaCalendarDate() ? "Review expiry settlement" : "Close paper position"}</button> : null}
+              </article>)}</div>
+              {!paperTrades.length ? <p className="workspace-empty">No positions yet. Add a strategy to begin monitoring.</p> : null}
+              {paperTrades.length > 0 && !paperTrades.some(trade => positionView === "ALL" || trade.status === positionView) ? <p className="workspace-empty">No {positionView === "OPEN" ? "open positions" : "closed trades"}. Use the tabs to review your other results.</p> : null}
+            </section>
+            <details className="workspace-disclosure"><summary>All positions · detailed table</summary>
+            {paperTrades.length ? (
+              <div className="paper-table-scroll">
+                <table className="paper-table">
+                  <thead><tr><th>Strategy / expiry</th><th>Position</th><th>Lots</th><th>Max loss</th><th>Open P&amp;L</th><th>Status</th><th /></tr></thead>
+                  <tbody>
+                    {paperTrades.map((trade) => (
+                      <tr key={trade.id}>
+                        <td><strong>{trade.strategy_name}</strong><small>{trade.expiry} · ref {formatPrice(trade.reference_strike)}</small><small>{[
+                          trade.stop_loss_amount ? `SL ₹${formatPrice(trade.stop_loss_amount)}` : null,
+                          trade.target_profit_amount ? `Target ₹${formatPrice(trade.target_profit_amount)}` : null,
+                          trade.trailing_stop_amount ? `Trail ₹${formatPrice(trade.trailing_stop_amount)}` : null,
+                        ].filter(Boolean).join(" · ") || "No automatic exit rule"}</small>{trade.entry_rule_snapshot?.strategy_version_id ? <small>Version {strategyVersions.find((version) => version.id === trade.entry_rule_snapshot.strategy_version_id)?.name || trade.entry_rule_snapshot.strategy_version_id} · hash {String(trade.entry_rule_snapshot.strategy_definition_hash || "").slice(0, 8)}</small> : null}{trade.entry_rule_snapshot?.conditions?.length ? <small>Entry: {trade.entry_rule_snapshot.conditions.map((condition) => `${ENTRY_RULE_METRICS.find((metric) => metric.key === condition.metric)?.label || condition.metric} ${operatorLabel(condition.operator)} ${condition.threshold}`).join(" · ")}</small> : null}</td>
+                        <td>{trade.legs.map((leg) => `${leg.side} ${formatPrice(leg.strike)} ${leg.option_type} ×${formatCount(leg.quantity_units / trade.lot_size)} lots`).join(" / ")}</td>
+                        <td>{trade.lots}</td>
+                        <td>₹{formatPrice(trade.max_loss)}</td>
+                        <td className={changeClass(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}>
+                          {trade.status === "OPEN" ? formatSignedPrice(trade.unrealized_pnl) : formatSignedPrice(trade.realized_pnl)}
+                          {trade.status === "OPEN" && trade.trailing_stop_amount ? <small className="moving-stop-status">{Number(trade.peak_unrealized_pnl) > 0 ? `Moving stop trigger ${formatSignedPrice(Number(trade.peak_unrealized_pnl) - Number(trade.trailing_stop_amount))} · peak ${formatSignedPrice(trade.peak_unrealized_pnl)}` : "Moving stop armed · activates after positive P&L"}</small> : null}
+                          {trade.valuation_warning ? <small className="table-warning">{trade.valuation_warning}</small> : null}
+                        </td>
+                        <td><span className={`trade-state trade-${trade.status === "OPEN" && trade.expiry < indiaCalendarDate() ? "expired" : trade.status.toLowerCase()}`}>{trade.status === "OPEN" && trade.expiry < indiaCalendarDate() ? "EXPIRED · SETTLEMENT PENDING" : trade.status}</span>{trade.exit_reason ? <small>{trade.exit_reason.replaceAll("_", " ")}</small> : null}</td>
+                        <td>{trade.status === "OPEN" ? (trade.expiry < indiaCalendarDate() ? <button className="inline-button" disabled={settlementBusy} onClick={() => { setSettlementTradeId(trade.id); setSettlementValue(""); setSettlementSource(""); setSettlementPreview(null); setIndexCloseReference(null); setOfficialIndexCloseReference(null); setSettlementError(""); }} type="button">Review expiry settlement</button> : <button className="inline-button" disabled={paperBusy} onClick={() => closePaperTrade(trade.id)} type="button">Close at market</button>) : null}<OptionTradeObservations tradeId={trade.id} apiUrl={API_URL} token={token} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="features-note">No paper trades yet. Add a strategy below to start your simulated portfolio.</p>}
+
+            </details>
+
+            </section>
+
+            <section className="trade-group" aria-label="Add a strategy">
+              <div className="trade-group-heading"><h3 className="trade-group-title">Add a strategy</h3>
+                <button aria-describedby="batch-paper-safety" className="primary-button" disabled={!batchArmReady} onClick={() => void armAllPaperTemplates()} type="button">{paperBusy ? "Applying paper strategies…" : "Apply all eligible paper strategies"}</button>
+              </div>
+              <p className="features-note" id="batch-paper-safety">Apply all arms every template with a saved entry and exit policy ({savedBatchPolicyCount} saved for {paperLots} {paperLots === 1 ? "lot" : "lots"}). Nothing opens until a later snapshot passes its rules and risk limits.</p>
+            {savedBatchPolicyCount < paperStrategies.length && <p className="features-note">The batch cannot arm templates without saved entry and exit policies. Proposed rules are exploratory and need your review; saving does not arm a strategy. <button className="inline-button" onClick={reviewNextBatchPolicy} type="button">Review next missing policy</button> <button className="inline-button" disabled={selectedOptionIndex !== "NIFTY" || !chain || !selectedPaperStrike || selectedExpiry !== chain.expiry || selectedExpiry < indiaCalendarDate() || batchPolicyBusy || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={reviewAllBatchPolicies} type="button">Review all missing policies</button></p>}
+            {batchPolicyReview && <details className="workspace-disclosure" open><summary>Review batch policy proposals · {batchPolicyReview.rows.filter((row) => row.policy).length} reviewable</summary>
+              <p>Snapshot {new Date(batchPolicyReview.asOf).toLocaleString("en-IN")} · expiry {batchPolicyReview.expiry} · strike {formatPrice(batchPolicyReview.strike)} · {batchPolicyReview.lots} lot(s) · quote quality {batchPolicyReview.quality}. The entry filters and exits below are hypotheses derived from an indicative gross payoff, not validated trading rules or profit predictions. <a href="https://upstox.com/brokerage-charges/" rel="noreferrer" target="_blank">Upstox public-plan charges</a> are a separate scenario, not deducted from these gross risk values.</p>
+              <div className="paper-table-scroll"><table className="paper-table"><thead><tr><th>Strategy</th><th>Review status</th><th>Entry and exit proposal</th><th>Gross max loss</th><th>Round-trip cost scenario</th></tr></thead><tbody>
+                {batchPolicyReview.rows.map((row) => <tr key={row.key}><td>{row.name} · {row.version}</td><td>{row.status}</td><td>{row.policy ? <>{row.policy.conditions.map((condition) => `${ENTRY_RULE_METRICS.find((metric) => metric.key === condition.metric)?.label || condition.metric} ${operatorLabel(condition.operator)} ${condition.threshold}`).join(" · ")}<br />Stop ₹{formatPrice(String(row.policy.stopLoss))} · target ₹{formatPrice(String(row.policy.targetProfit))} · trail ₹{formatPrice(String(row.policy.trailingStop))}</> : "—"}</td><td>{row.maximumLoss === null ? "Unavailable" : `₹${formatPrice(row.maximumLoss)}`}</td><td>{row.costScenario === null ? "Unavailable" : `₹${formatPrice(row.costScenario)}`}</td></tr>)}
+              </tbody></table></div>
+              <p>Review these exploratory entry/exit rules before applying. The button saves immutable account-scoped versions and queues every eligible strategy in one action. It opens no position immediately; later entries still require a qualifying paper snapshot and pass the cash, daily-loss, per-trade, portfolio-risk and open-position checks. Strategies without a finite quote-backed loss or with failed quote quality are excluded. These rules are not validated trading rules or profit predictions.</p>
+              <div><button className="refresh-button" disabled={!token || batchPolicyBusy || paperBusy || selectedOptionIndex !== "NIFTY" || selectedExpiry !== batchPolicyReview.expiry || selectedExpiry < indiaCalendarDate() || !batchPolicyReview.rows.some((row) => row.policy) || batchPolicyReview.snapshot !== strategyPayoffKey || batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={() => void saveReviewedBatchPolicies()} type="button">{batchPolicyBusy ? "Saving and applying reviewed strategies…" : `Save and apply ${batchPolicyReview.rows.filter((row) => row.policy).length} reviewed strategies`}</button></div>
+              {batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}` && <p role="status">The selected snapshot changed. Review the policies again before saving.</p>}
+              {batchPolicyResults.length > 0 && <ul role="status">{batchPolicyResults.map((item) => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul>}
+            </details>}
+            {batchArmResults.length > 0 && <details className="workspace-disclosure" open><summary>Batch paper application · {batchArmResults.filter(item => item.result.startsWith("Armed")).length} armed, {batchArmResults.length} checked</summary><p>{batchArmContext}</p><ul>{batchArmResults.map(item => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul></details>}
+
+            <details className="strategy-builder strategy-composer" id="paper-strategy-builder"><summary>Choose or build one strategy</summary>
               <div className={`strategy-controls ${isCustomStrategy ? "custom-strategy-controls" : ""}`}>
                 <label>
                   Strategy
@@ -3244,63 +3263,50 @@ export default function Home() {
               <p className="paper-footnote">Arming a template does not reserve funds or enter now. At entry, risk caps are rechecked: up to 2% of starting capital per position and 10% across open positions. Simulated fills do not model queue priority, partial fills, charges, or slippage.</p>
             </details>
 
-            {paperDeployments.length > 0 && <details className="equity-history" open={paperDeployments.some(item => item.status === "WAITING_FOR_ENTRY")}><summary>Armed F&amp;O strategies ({paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").length} waiting)</summary><div className="equity-deployments">{paperDeployments.slice(0, 10).map(item => <article key={item.id}><div className="equity-deployment-heading"><strong>{paperStrategies.find(strategy => strategy.key === item.strategy_key)?.name || item.strategy_key} · {item.expiry}</strong><span>{item.status.replaceAll("_", " ")}</span></div><p>{item.detail}</p><small>Reference strike {formatPrice(item.reference_strike)} · {item.lots} lot(s) · Armed {new Date(item.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}{item.updated_at !== item.created_at ? ` · Last update ${new Date(item.updated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}</small>
-              <details><summary>Saved entry &amp; exit rules</summary><div className="equity-deployment-rules">
-                <p><strong>Entry:</strong> A later open-market option-chain snapshot must satisfy every saved condition: {item.entry_conditions.map(condition => `${ENTRY_RULE_METRICS.find(metric => metric.key === condition.metric)?.label || condition.metric} ${operatorLabel(condition.operator)} ${condition.threshold}`).join(" · ") || "No saved conditions"}. The selected option legs, quote quality, expiry window and paper risk checks must also pass.</p>
-                <p><strong>Exit:</strong> Net paper P&amp;L stop at −{formatPrice(item.stop_loss_amount)}; {item.target_profit_amount ? `target at +${formatPrice(item.target_profit_amount)}` : "no profit target saved"}; moving stop trails {formatPrice(item.trailing_stop_amount)} below peak net P&amp;L after it turns positive. The expiry policy may close earlier.</p>
-              </div></details>
-              <OptionDeploymentDecisions deploymentId={item.id} apiUrl={API_URL} token={token} />{item.status === "WAITING_FOR_ENTRY" && <button className="inline-button" disabled={paperBusy} onClick={() => void cancelPaperDeployment(item.id)} type="button">Cancel waiting strategy</button>}</article>)}</div></details>}
-            {paperWarnings.length ? <ul className="paper-warning-list">{paperWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
-            <section className="position-overview" aria-label="Paper positions">
-              <div className="workspace-section-heading"><h3>Positions &amp; results</h3><span>{paperTrades.filter(trade => trade.status === "OPEN").length} unsettled · {expiredPaperTrades.length} expired awaiting review · {paperTrades.filter(trade => trade.status === "CLOSED").length} closed</span></div>
-              <div className="position-view-tabs" aria-label="Position view">{(["OPEN", "CLOSED", "ALL"] as const).map(view => <button key={view} type="button" aria-pressed={positionView === view} onClick={() => setPositionView(view)}>{view === "OPEN" ? "Open / unsettled" : view === "CLOSED" ? "Closed trades" : "All positions"} <span>{paperTrades.filter(trade => view === "ALL" || trade.status === view).length}</span></button>)}</div>
-              <div className="position-card-grid">{paperTrades.filter(trade => positionView === "ALL" || trade.status === positionView).map(trade => <article className={`position-card position-card--${trade.status.toLowerCase()}`} key={trade.id}>
-                <div className="workspace-section-heading"><strong>{trade.strategy_name}</strong><span className={`trade-state trade-${trade.status === "OPEN" && trade.expiry < indiaCalendarDate() ? "expired" : trade.status.toLowerCase()}`}>{trade.status === "OPEN" && trade.expiry < indiaCalendarDate() ? "EXPIRED · SETTLEMENT PENDING" : trade.status}</span></div>
-                <small>{trade.underlying} · Expiry {trade.expiry} · {trade.lots} lot(s)</small>
-                <div className="position-contracts" aria-label="Position contracts">{trade.legs.map(leg => <span key={`${leg.side}-${leg.strike}-${leg.option_type}`}>{leg.side} {formatPrice(leg.strike)} {leg.option_type}</span>)}</div>
-                <div className="position-card-metrics"><div><span>{Number(trade.entry_cash_flow) < 0 ? "Entry debit" : "Entry credit"}</span><strong>₹{formatPrice(String(Math.abs(Number(trade.entry_cash_flow))))}</strong></div><div><span>{trade.status === "OPEN" ? trade.expiry < indiaCalendarDate() ? "Settlement P&L pending" : "Marked P&L" : "Realized P&L"}</span><strong className={changeClass(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}>{formatSignedPrice(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}</strong></div><div className="position-metric--risk"><span>Max modeled loss</span><strong>₹{formatPrice(trade.max_loss)}</strong></div><PositionMaximumProfit trade={trade} token={token} /></div><small className="position-model-note">Expiry model · entry fills · before costs; not a profit forecast.</small><div className="position-probability"><span>Entry win / loss probability</span><strong>Not recorded</strong><small>{trade.status === "CLOSED" ? "No forecast was saved at entry; closed trades are not scored retrospectively." : "No validated forecast was saved at entry. Current estimates are withheld: insufficient evidence."}</small></div>
-                {trade.valuation_warning ? <p className="table-warning">{trade.valuation_warning}</p> : null}
-                {trade.execution_warnings.length ? <p className="table-warning">{trade.execution_warnings.join(" · ")}</p> : null}
-                {trade.exit_reason ? <small>{trade.exit_reason.replaceAll("_", " ")}</small> : null}
-                <details><summary>Legs, stops &amp; evidence</summary><p>{trade.legs.map(leg => `${leg.side} ${formatPrice(leg.strike)} ${leg.option_type} ×${formatCount(leg.quantity_units / trade.lot_size)} lots`).join(" / ")}</p><p>Stop {trade.stop_loss_amount ? `₹${formatPrice(trade.stop_loss_amount)}` : "Off"} · Target {trade.target_profit_amount ? `₹${formatPrice(trade.target_profit_amount)}` : "Off"} · Trail {trade.trailing_stop_amount ? `₹${formatPrice(trade.trailing_stop_amount)}` : "Off"}</p>
-                  {trade.entry_rule_snapshot.entry_market_context ? <EntryMarketEvidence context={trade.entry_rule_snapshot.entry_market_context} /> : <p>Entry market context was not saved for this older trade.</p>}
-                  <OptionTradeObservations tradeId={trade.id} apiUrl={API_URL} token={token} /></details>
-                {trade.status === "OPEN" ? <button className="inline-button" disabled={paperBusy || (trade.expiry < indiaCalendarDate() && settlementBusy)} onClick={() => { if (trade.expiry < indiaCalendarDate()) { setSettlementTradeId(trade.id); setSettlementValue(""); setSettlementSource(""); setSettlementPreview(null); setIndexCloseReference(null); setOfficialIndexCloseReference(null); setSettlementError(""); } else { void closePaperTrade(trade.id); } }} type="button">{trade.expiry < indiaCalendarDate() ? "Review expiry settlement" : "Close paper position"}</button> : null}
-              </article>)}</div>
-              {!paperTrades.length ? <p className="workspace-empty">No positions yet. Add a strategy to begin monitoring.</p> : null}
-              {paperTrades.length > 0 && !paperTrades.some(trade => positionView === "ALL" || trade.status === positionView) ? <p className="workspace-empty">No {positionView === "OPEN" ? "open positions" : "closed trades"}. Use the tabs to review your other results.</p> : null}
             </section>
-            <details className="workspace-disclosure"><summary>All positions · detailed table</summary>
-            {paperTrades.length ? (
-              <div className="paper-table-scroll">
-                <table className="paper-table">
-                  <thead><tr><th>Strategy / expiry</th><th>Position</th><th>Lots</th><th>Max loss</th><th>Open P&amp;L</th><th>Status</th><th /></tr></thead>
-                  <tbody>
-                    {paperTrades.map((trade) => (
-                      <tr key={trade.id}>
-                        <td><strong>{trade.strategy_name}</strong><small>{trade.expiry} · ref {formatPrice(trade.reference_strike)}</small><small>{[
-                          trade.stop_loss_amount ? `SL ₹${formatPrice(trade.stop_loss_amount)}` : null,
-                          trade.target_profit_amount ? `Target ₹${formatPrice(trade.target_profit_amount)}` : null,
-                          trade.trailing_stop_amount ? `Trail ₹${formatPrice(trade.trailing_stop_amount)}` : null,
-                        ].filter(Boolean).join(" · ") || "No automatic exit rule"}</small>{trade.entry_rule_snapshot?.strategy_version_id ? <small>Version {strategyVersions.find((version) => version.id === trade.entry_rule_snapshot.strategy_version_id)?.name || trade.entry_rule_snapshot.strategy_version_id} · hash {String(trade.entry_rule_snapshot.strategy_definition_hash || "").slice(0, 8)}</small> : null}{trade.entry_rule_snapshot?.conditions?.length ? <small>Entry: {trade.entry_rule_snapshot.conditions.map((condition) => `${ENTRY_RULE_METRICS.find((metric) => metric.key === condition.metric)?.label || condition.metric} ${operatorLabel(condition.operator)} ${condition.threshold}`).join(" · ")}</small> : null}</td>
-                        <td>{trade.legs.map((leg) => `${leg.side} ${formatPrice(leg.strike)} ${leg.option_type} ×${formatCount(leg.quantity_units / trade.lot_size)} lots`).join(" / ")}</td>
-                        <td>{trade.lots}</td>
-                        <td>₹{formatPrice(trade.max_loss)}</td>
-                        <td className={changeClass(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}>
-                          {trade.status === "OPEN" ? formatSignedPrice(trade.unrealized_pnl) : formatSignedPrice(trade.realized_pnl)}
-                          {trade.status === "OPEN" && trade.trailing_stop_amount ? <small className="moving-stop-status">{Number(trade.peak_unrealized_pnl) > 0 ? `Moving stop trigger ${formatSignedPrice(Number(trade.peak_unrealized_pnl) - Number(trade.trailing_stop_amount))} · peak ${formatSignedPrice(trade.peak_unrealized_pnl)}` : "Moving stop armed · activates after positive P&L"}</small> : null}
-                          {trade.valuation_warning ? <small className="table-warning">{trade.valuation_warning}</small> : null}
-                        </td>
-                        <td><span className={`trade-state trade-${trade.status === "OPEN" && trade.expiry < indiaCalendarDate() ? "expired" : trade.status.toLowerCase()}`}>{trade.status === "OPEN" && trade.expiry < indiaCalendarDate() ? "EXPIRED · SETTLEMENT PENDING" : trade.status}</span>{trade.exit_reason ? <small>{trade.exit_reason.replaceAll("_", " ")}</small> : null}</td>
-                        <td>{trade.status === "OPEN" ? (trade.expiry < indiaCalendarDate() ? <button className="inline-button" disabled={settlementBusy} onClick={() => { setSettlementTradeId(trade.id); setSettlementValue(""); setSettlementSource(""); setSettlementPreview(null); setIndexCloseReference(null); setOfficialIndexCloseReference(null); setSettlementError(""); }} type="button">Review expiry settlement</button> : <button className="inline-button" disabled={paperBusy} onClick={() => closePaperTrade(trade.id)} type="button">Close at market</button>) : null}<OptionTradeObservations tradeId={trade.id} apiUrl={API_URL} token={token} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+
+            <details className="trade-group trade-account"><summary>Account, risk and ledger</summary>
+            {paperAccount ? (
+              <>
+              <div className="paper-stats" aria-label="Paper account summary">
+                <div><span>Cash balance</span><strong>₹{formatPrice(paperAccount.cash_balance)}</strong></div>
+                <div><span>Open positions</span><strong>{formatCount(paperAccount.open_trade_count)}</strong></div>
+                <div><span>Today’s realized P&amp;L</span><strong className={changeClass(paperAccount.daily_realized_pnl)}>{formatSignedPrice(paperAccount.daily_realized_pnl)}</strong></div>
+                <div><span>Remaining new-trade risk</span><strong>₹{formatPrice(paperAccount.daily_risk_remaining)}</strong></div>
               </div>
-            ) : <p className="features-note">No paper trades yet. Choose a strategy above to start your simulated portfolio.</p>}
+              {Number(paperAccount.cash_balance) < 5_000_000 ? <div className="paper-cash-adjustment">
+                <p className="features-note">NIFTY F&amp;O simulated wallet only. This does not add broker funds or change the original starting-capital risk base.</p>
+                <button className="refresh-button" disabled={!token || walletFundingBusy || paperLedger?.status === "MISMATCH"} onClick={() => void fundPaperWalletToFiftyLakh()} type="button">{walletFundingBusy ? "Recording paper cash…" : "Increase NIFTY F&O paper wallet to ₹50 lakh"}</button>
+                {walletFundingMessage ? <p role="status">{walletFundingMessage}</p> : null}
+                {walletFundingError ? <p className="error-banner" role="alert">{walletFundingError}</p> : null}
+              </div> : null}
+              </>
+            ) : <p className="features-note">Loading paper account…</p>}
+            <details className="workspace-disclosure paper-risk-details"><summary>Allocation &amp; risk details</summary>
+              {paperAccount ? <div className="paper-stats">
+                <div><span>Starting capital</span><strong>₹{formatPrice(paperAccount.initial_cash)}</strong></div>
+                <div><span>Open maximum loss</span><strong>₹{formatPrice(paperAccount.open_max_loss)}</strong></div>
+                <div><span>Daily loss budget</span><strong>₹{formatPrice(paperAccount.daily_loss_limit)}</strong></div>
+              </div> : null}
+              <p className="features-note">The daily budget uses realized losses and open positions’ theoretical maximum loss. It does not include live mark-to-market or transaction costs.</p>
+            </details>
+
+            <details className="paper-ledger-review">
+              <summary>Paper ledger check</summary>
+              <p className="features-note">Compare saved F&amp;O paper cash with simulated orders and trade records. A mismatch pauses new paper cash actions until reviewed; you can still pause entries with the kill switch. This checks internal arithmetic only, not exchange prices or expired-position settlement.</p>
+              <button className="inline-button" disabled={paperLedgerBusy} onClick={() => void checkPaperLedger()} type="button">{paperLedgerBusy ? "Checking…" : "Check ledger now"}</button>
+              {paperLedgerError ? <p className="error-banner" role="alert">{paperLedgerError}</p> : null}
+              {paperLedger ? <div className={`paper-ledger-result ${paperLedger.status === "MISMATCH" ? "paper-ledger-result--mismatch" : ""}`} role="status">
+                <strong>{paperLedger.status === "MATCHED" ? "Saved ledger matches" : `${paperLedger.issue_count} ledger issue${paperLedger.issue_count === 1 ? "" : "s"} found`}</strong>
+                <p>Recorded cash ₹{formatPrice(paperLedger.recorded_cash_balance)} · Expected cash ₹{formatPrice(paperLedger.expected_cash_balance)} · Difference {formatSignedPrice(paperLedger.cash_difference)}</p>
+                <p>{paperLedger.order_count} orders · {paperLedger.open_trade_count} open trades · {paperLedger.closed_trade_count} closed trades{paperLedgerCheckedAt ? ` · Checked ${formatTime(paperLedgerCheckedAt)}` : ""}</p>
+                {paperLedger.issues.length > 0 ? <ul>{paperLedger.issues.map((issue, index) => <li key={`${index}-${issue}`}>{issue}</li>)}</ul> : null}
+              </div> : null}
+            </details>
 
             </details>
+
+            {token && selectedOptionIndex === "NIFTY" ? <FuturesPaper apiUrl={API_URL} token={token} /> : null}
 
             {selectedOptionIndex === "NIFTY" && token && <ExpiryTestControl key={token} token={token} apiUrl={API_URL} expiry={selectedExpiry} strike={selectedPaperStrike} disabled={paperBusy || !paperEntry.ready || !!paperAccount?.kill_switch_enabled} onApplied={() => setPaperRefreshCount(value => value + 1)} />}
             {expiredPaperTrades.length > 0 ? <details className="equity-history expiry-settlement" open>

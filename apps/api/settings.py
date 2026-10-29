@@ -5,6 +5,7 @@ from typing import Self
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from packages.paper_trading.demotion import DemotionLimits
 from packages.paper_trading.margin import MarginParameters
 
 
@@ -42,6 +43,12 @@ class Settings(BaseSettings):
     paper_margin_short_option_minimum_pct: int = Field(default=3, ge=1, le=10)
     # SEBI additional exposure margin on short options on their expiry day.
     paper_margin_expiry_day_short_option_pct: int = Field(default=2, ge=2, le=10)
+    # Automatic demotion (packages/paper_trading/demotion.py): pause a strategy's new
+    # entries after this many consecutive losses, or when its realized drawdown per lot
+    # exceeds the multiple of its backtest drawdown (or the fallback share of capital).
+    paper_demotion_loss_streak: int = Field(default=5, ge=2, le=20)
+    paper_demotion_drawdown_multiple: int = Field(default=2, ge=1, le=5)
+    paper_demotion_fallback_drawdown_pct: int = Field(default=6, ge=1, le=20)
     paper_worker_interval_seconds: int = Field(default=15, ge=1, le=60)
     paper_worker_lease_seconds: int = Field(default=120, ge=30, le=600)
     access_token_minutes: int = Field(default=30, gt=0, le=1440)
@@ -72,6 +79,15 @@ class Settings(BaseSettings):
             exposure_pct=Decimal(self.paper_margin_exposure_pct),
             short_option_minimum_pct=Decimal(self.paper_margin_short_option_minimum_pct),
             expiry_day_short_option_pct=Decimal(self.paper_margin_expiry_day_short_option_pct),
+        )
+
+    def paper_demotion_limits(self, initial_cash: Decimal) -> DemotionLimits:
+        return DemotionLimits(
+            loss_streak=self.paper_demotion_loss_streak,
+            drawdown_multiple=Decimal(self.paper_demotion_drawdown_multiple),
+            fallback_drawdown_per_lot=(
+                initial_cash * Decimal(self.paper_demotion_fallback_drawdown_pct) / Decimal(100)
+            ).quantize(Decimal("0.01")),
         )
 
     @property

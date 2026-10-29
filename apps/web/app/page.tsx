@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { WorkerStatus } from "./WorkerStatus";
+import { StrategyPauses } from "./StrategyPauses";
 import { ExpiryTestControl } from "./ExpiryTestControl";
 import { InstrumentCatalog } from "./InstrumentCatalog";
 import { EquityStrategies } from "./EquityStrategies";
@@ -2509,6 +2510,7 @@ export default function Home() {
     <main className={token ? "shell dashboard-shell" : "shell"}>
       <BuildUpdateNotice />
       {token && <WorkerStatus token={token} apiUrl={API_URL} />}
+      {token && <StrategyPauses token={token} apiUrl={API_URL} />}
       {token && paperEntry.identityError && <section className="worker-status worker-status--warning" role="alert">
         <strong>Paper entry is unavailable</strong>
         <p>{paperEntry.identityError}</p>

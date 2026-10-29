@@ -65,6 +65,7 @@ from apps.api.paper_schemas import (
     PaperTradeListResponse,
     PaperTradeResponse,
     StrategyDefinitionResponse,
+    StrategyDemotionResponse,
     StrategyLegDefinitionResponse,
     UserNotificationResponse,
 )
@@ -114,6 +115,7 @@ from packages.database.models import (
     PaperTrade,
     ResearchPolicySet,
     ResearchStudy,
+    StrategyDemotion,
     StrategyVersion,
     User,
     UserNotification,
@@ -169,6 +171,12 @@ from packages.options.pricing import calculate_greeks
 from packages.options.upstox_cost_benchmark import upstox_option_cost_scenario
 from packages.paper_trading.costs import cost_snapshot, summarize_costs
 from packages.paper_trading.daily_risk import daily_realized_pnl, daily_risk_budget
+from packages.paper_trading.demotion import (
+    active_demotion,
+    check_strategy,
+    enforce_strategy_demotion,
+    reinstate_strategy,
+)
 from packages.paper_trading.expiry_settlement import (
     ExpirySettlement,
     calculate_expiry_settlement,
@@ -310,6 +318,43 @@ def _require_consistent_paper_ledger(session: SessionDep, account: PaperAccount)
     except PaperLedgerMismatchError as error:
         session.rollback()
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+def _require_strategy_not_demoted(
+    session: SessionDep, user_id: UUID, strategy_key: str, initial_cash: Decimal
+) -> None:
+    """Refuse new entries for a paused strategy; call while holding the account lock."""
+    limits = get_settings().paper_demotion_limits(initial_cash)
+    demotion = enforce_strategy_demotion(session, user_id, strategy_key, limits)
+    if demotion is None:
+        return
+    summary = str(demotion.details.get("summary") or demotion.reason)
+    # Keep a newly staged pause and its audit event even though this entry is refused.
+    session.commit()
+    raise HTTPException(
+        status_code=423,
+        detail=(
+            f"Strategy {strategy_key} is paused after {summary}; existing positions keep "
+            "their exits. Reinstate it to allow new paper entries."
+        ),
+    )
+
+
+def _demotion_response(
+    session: SessionDep, user: User, strategy_key: str, initial_cash: Decimal
+) -> StrategyDemotionResponse:
+    demotion = active_demotion(session, user.id, strategy_key)
+    check = check_strategy(
+        session, user.id, strategy_key, get_settings().paper_demotion_limits(initial_cash)
+    )
+    return StrategyDemotionResponse(
+        strategy_key=strategy_key,
+        paused=demotion is not None,
+        reason=demotion.reason if demotion else None,
+        summary=str(demotion.details.get("summary")) if demotion else None,
+        demoted_at=demotion.demoted_at if demotion else None,
+        check=check.snapshot(),
+    )
 
 
 def _paper_trade_response(trade: PaperTrade) -> PaperTradeResponse:
@@ -2135,6 +2180,50 @@ def fund_nifty_paper_wallet(
     )
 
 
+@app.get(
+    "/paper/strategies/demotions",
+    response_model=list[StrategyDemotionResponse],
+    tags=["paper trading"],
+)
+def list_paper_strategy_demotions(
+    user: CurrentUser, session: SessionDep
+) -> list[StrategyDemotionResponse]:
+    """Pause state and current rule check for every strategy this account has traded."""
+    account = _get_paper_account(session, user)
+    keys = sorted(set(session.scalars(
+        select(PaperTrade.strategy_key).where(PaperTrade.user_id == user.id)
+    )) | set(session.scalars(
+        select(StrategyDemotion.strategy_key).where(StrategyDemotion.user_id == user.id)
+    )))
+    return [_demotion_response(session, user, key, account.initial_cash) for key in keys]
+
+
+@app.post(
+    "/paper/strategies/{strategy_key}/reinstate",
+    response_model=StrategyDemotionResponse,
+    tags=["paper trading"],
+)
+def reinstate_paper_strategy(
+    strategy_key: str, user: CurrentUser, session: SessionDep
+) -> StrategyDemotionResponse:
+    """Owner action: lift an automatic pause. Only later closed trades count from here."""
+    _get_paper_account(session, user)
+    account = lock_account(session, user.id)
+    if account is None:
+        raise HTTPException(status_code=409, detail="Paper account unavailable")
+    demotion = reinstate_strategy(session, user.id, strategy_key)
+    if demotion is None:
+        session.rollback()
+        raise HTTPException(status_code=404, detail="Strategy is not paused")
+    _add_user_notification(
+        session, user.id, "paper.strategy.reinstated", "Strategy reinstated",
+        f"New paper entries for {strategy_key} are allowed again.",
+        {"strategy_key": strategy_key},
+    )
+    session.commit()
+    return _demotion_response(session, user, strategy_key, account.initial_cash)
+
+
 @app.put(
     "/paper/account/kill-switch",
     response_model=PaperKillSwitchResponse,
@@ -2304,6 +2393,7 @@ async def arm_paper_deployment(
     if account is None or account.kill_switch_enabled:
         raise HTTPException(423, "Paper kill switch is active")
     _require_consistent_paper_ledger(session, account)
+    _require_strategy_not_demoted(session, user.id, body.strategy_key, account.initial_cash)
     previous = session.scalar(select(PaperDeployment).where(
         PaperDeployment.user_id == user.id,
         PaperDeployment.command_key == idempotency_key,
@@ -3099,6 +3189,7 @@ async def _open_paper_trade_with_provider(
         raise HTTPException(
             status_code=423, detail="Paper kill switch is active; new trades are paused"
         )
+    _require_strategy_not_demoted(session, user.id, strategy_key, account.initial_cash)
     open_trades = session.scalars(
         select(PaperTrade).where(PaperTrade.account_id == account.id, PaperTrade.status == "OPEN")
     ).all()

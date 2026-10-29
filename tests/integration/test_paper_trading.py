@@ -961,7 +961,7 @@ def test_estimated_margin_must_fit_in_cash_even_when_maximum_loss_does(client, m
     assert opened.status_code == 201, opened.text
     orders = client.get("/paper/orders", headers=headers).json()
     margin = orders[0]["fill_snapshot"]["estimated_margin"]
-    assert margin["model_id"] == "nifty-span-style-scenarios-v1"
+    assert margin["model_id"] == "nifty-span-style-scenarios-v2"
     assert Decimal("1025") < Decimal(margin["total"]) < Decimal("20000")
 
     # Leave enough free cash for the new spread's own margin and every maximum loss, but

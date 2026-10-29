@@ -178,6 +178,7 @@ from packages.paper_trading.margin import (
     FALLBACK_VOLATILITY_PCT,
     MarginLeg,
     estimate_position_margin,
+    is_expiry_day,
     years_to_expiry,
 )
 from packages.paper_trading.observed_entries import replay_observed_entries
@@ -2938,6 +2939,7 @@ async def _open_paper_trade_with_provider(
             ),
         )
     margin_years = years_to_expiry(body.expiry)
+    margin_expires_today = is_expiry_day(body.expiry)
     for option_contract, side, leg_lots in selected:
         quantity_units = leg_lots * lot_size
         fill_price, market_contract = _require_quote(
@@ -2951,6 +2953,7 @@ async def _open_paper_trade_with_provider(
                 strike=option_contract.strike,
                 years_to_expiry=margin_years,
                 volatility_pct=market_contract.implied_volatility or FALLBACK_VOLATILITY_PCT,
+                expires_today=margin_expires_today,
             )
         )
         amount = (fill_price * quantity_units).quantize(_CENT, rounding=ROUND_HALF_UP)

@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     paper_margin_volatility_scan_points: int = Field(default=4, ge=1, le=20)
     paper_margin_exposure_pct: int = Field(default=2, ge=1, le=10)
     paper_margin_short_option_minimum_pct: int = Field(default=3, ge=1, le=10)
+    # SEBI additional exposure margin on short options on their expiry day.
+    paper_margin_expiry_day_short_option_pct: int = Field(default=2, ge=2, le=10)
     paper_worker_interval_seconds: int = Field(default=15, ge=1, le=60)
     paper_worker_lease_seconds: int = Field(default=120, ge=30, le=600)
     access_token_minutes: int = Field(default=30, gt=0, le=1440)
@@ -69,6 +71,7 @@ class Settings(BaseSettings):
             volatility_scan_points=Decimal(self.paper_margin_volatility_scan_points),
             exposure_pct=Decimal(self.paper_margin_exposure_pct),
             short_option_minimum_pct=Decimal(self.paper_margin_short_option_minimum_pct),
+            expiry_day_short_option_pct=Decimal(self.paper_margin_expiry_day_short_option_pct),
         )
 
     @property

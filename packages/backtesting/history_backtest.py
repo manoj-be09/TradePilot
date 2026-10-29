@@ -16,6 +16,7 @@ from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from packages.backtesting.performance import PerformanceTrade, summarize
+from packages.backtesting.spread_model import SpreadModel
 from packages.core.charges import order_charges
 from packages.options.models import PayoffLeg, PayoffRequest
 from packages.options.payoff import calculate_expiry_payoff
@@ -23,7 +24,8 @@ from packages.paper_trading.strategies import StrategyDefinition
 
 MODEL_ID = "nifty-history-candle-replay-v1"
 FILL_MODEL = (
-    "Fills at the bar close moved against the trade by the half-spread model; no "
+    "Fills at the bar close moved against the trade by the half-spread model (flat, or "
+    "per premium band from recorded quotes); no "
     "historical bid/ask, queue or depth. Exits are checked on bar closes only."
 )
 _IST = ZoneInfo("Asia/Kolkata")
@@ -58,6 +60,13 @@ class BacktestConfig:
     target_profit_amount: Decimal | None = None
     half_spread_pct: Decimal = Decimal(1)
     square_off_minutes_before_close: int = 20
+    # When set, replaces the flat half-spread with recorded per-premium-band spreads.
+    spread_model: SpreadModel | None = None
+
+    def half_spread_for(self, price: Decimal) -> Decimal:
+        if self.spread_model is None:
+            return self.half_spread_pct
+        return self.spread_model.half_spread_pct(price)
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -71,6 +80,7 @@ class BacktestConfig:
                 str(self.target_profit_amount) if self.target_profit_amount else None
             ),
             "half_spread_pct": str(self.half_spread_pct),
+            "spread_model": self.spread_model.snapshot() if self.spread_model else None,
             "square_off_minutes_before_close": self.square_off_minutes_before_close,
         }
 
@@ -273,13 +283,13 @@ def _simulate(
     spot: Decimal,
     reference: Decimal,
 ) -> BacktestTrade | SkippedExpiry:
-    hs = config.half_spread_pct
     entries = []
     entry_cash = Decimal(0)
     payoff_legs = []
     for strike, kind, side, ratio in legs:
         units = ratio * config.lots * history.lot_size
-        price = fill_price(closes[(strike, kind)][entry_at], side, hs)
+        close = closes[(strike, kind)][entry_at]
+        price = fill_price(close, side, config.half_spread_for(close))
         entry_cash += -price * units if side == "BUY" else price * units
         entries.append((strike, kind, side, units, price))
         payoff_legs.append(PayoffLeg(
@@ -310,7 +320,8 @@ def _simulate(
         cash, prices = Decimal(0), []
         for strike, kind, side, units, _ in entries:
             exit_side: Literal["BUY", "SELL"] = "SELL" if side == "BUY" else "BUY"
-            price = fill_price(closes[(strike, kind)][moment], exit_side, hs)
+            close = closes[(strike, kind)][moment]
+            price = fill_price(close, exit_side, config.half_spread_for(close))
             prices.append(price)
             cash += price * units if exit_side == "SELL" else -price * units
         return cash, prices

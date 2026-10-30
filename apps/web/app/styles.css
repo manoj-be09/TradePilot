@@ -1143,3 +1143,13 @@ a.sidebar-action-button { display: flex; align-items: center; justify-content: c
 .backtest-mode button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px #1b2b1f1a; }
 .backtest-mode button:focus-visible { outline: 2px solid #4c9272; outline-offset: 2px; }
 .backtest-assumption-panel { margin-bottom: 12px; }
+
+/* Phone: the five pages become a bottom tab bar; the top bar keeps the brand and account menu. */
+@media (max-width: 680px) {
+  .dashboard-shell { padding: 0 16px calc(86px + env(safe-area-inset-bottom)); }
+  .dashboard-sidebar { top: auto; right: 0; bottom: 0; left: 0; height: auto; overflow: visible; border-top: 1px solid var(--line); border-bottom: 0; padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); box-shadow: 0 -6px 18px #1b2b1f12; }
+  .dashboard-sidebar-brand { display: none; }
+  .dashboard-sidebar-nav { display: grid; width: 100%; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; }
+  .dashboard-sidebar-item { display: flex; width: auto; min-height: 50px; flex-direction: column; align-items: center; justify-content: center; gap: 3px; margin: 0; padding: 4px 2px; font-size: 11px; text-align: center; white-space: nowrap; }
+  .dashboard-sidebar-item span { font-size: 16px; line-height: 1; }
+}

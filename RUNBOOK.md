@@ -73,13 +73,31 @@ Session open and close come from Upstox's scheduled exchange timings for that da
 
 The worker checks closed paper trades every cycle, and each entry checks them again. A strategy is paused after 5 consecutive losses, when its closed paper drawdown passes 2× its backtest baseline (6% of capital per lot without a baseline), or when a closed trade has no usable P&L. While paused it can't be armed or entered and ranks as blocked; open positions keep their exits, and armed entries stay waiting without filling. The pause is listed at the top of the app. Research lists every demotion and promotion with its reason and time.
 
-It comes back by rule, with no action needed apart from arming it again:
+It comes back by rule:
 
 1. **Cooling-off:** 7 days after the pause (`PAPER_PROMOTION_COOLDOWN_DAYS`).
-2. **Probation:** one lot, one open position or armed entry at a time, armed by you from Trade. The ranking shows it as blocked and never selects it.
+2. **Probation:** one lot, one open position or armed entry at a time. Arm it from Trade, or let the forward paper runner arm its 1-lot version for the next expiry. The ranking shows it as blocked and never selects it.
 3. **Promotion:** at least 5 trades opened during probation have closed (`PAPER_PROMOTION_MIN_TRADES`), their total P&L per lot is positive, and a saved backtest baseline exists. Without a baseline it stays on probation: save one with `--save-baseline` in `scripts/run-history-backtest.py`.
 4. **Failure:** 3 consecutive losses (`PAPER_PROMOTION_LOSS_STREAK`), drawdown past 1× the baseline, or missing P&L during probation restarts the cooling-off.
 
 **Reinstate** still lifts a pause or probation at once; use it only after reviewing why the strategy lost more than its history suggested. It is recorded as an owner action. These rules decide eligibility only: they don't change a strategy's own rules or the 2% and 10% risk limits.
 
 A pause for missing P&L means a saved trade is incomplete. Treat it like a ledger mismatch: don't edit the database by hand, and fix the cause in code with a test.
+
+## Forward paper period
+
+The runner arms each frozen strategy version once per expiry, for the nearest expiry after today, at the strike nearest the index. It goes through the same checks as the web app, and the worker rechecks entry rules and risk limits before any simulated fill. A strategy you cancel stays cancelled for that expiry.
+
+Freeze a period once (this refuses to overwrite `work/forward-paper.json`; the file is private and not committed):
+
+```bash
+DATABASE_URL="sqlite:///./work/nifty-local.db" PYTHONPATH=. .venv/Scripts/python.exe -m apps.forward_runner.main --freeze --user-email <account email> --start 2026-10-30 --weeks 6
+```
+
+Then keep it running alongside the worker:
+
+```bash
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-forward-runner-local.ps1
+```
+
+Its log shows one line per cycle: `OK`, `CLOSED`, `PAUSED`, `NO_DATA` or `FINISHED`. Pausing entries stops it arming anything new. A strategy that is paused automatically is skipped and retried each cycle, while the others are still armed.

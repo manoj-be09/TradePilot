@@ -295,7 +295,7 @@ class StrategyEligibility:
             return (
                 f"On probation after {self.summary or self.reason}: "
                 f"{self.probation_trades} of {self.probation_trades_needed} trades, "
-                f"{PROBATION_MAX_LOTS} lot at a time, armed from Trade only."
+                f"{PROBATION_MAX_LOTS} lot at a time, never selected by the ranking."
             )
         return None
 

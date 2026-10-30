@@ -13,8 +13,9 @@ Scope: NIFTY 50 futures and options, **paper trading only**. Live orders are for
 - SPAN-style margin estimate with exposure and expiry-day margin; within ±5% of Upstox's margin calculator on seven sample positions (29 Oct 2026).
 - Versioned charge model (brokerage, STT, exchange, SEBI, stamp duty, GST) applied to fills.
 - Automatic demotion: a strategy's new entries pause on 5 consecutive closed paper losses, when its closed paper drawdown passes 2× its backtest baseline (6% of capital per lot without one), or when a closed trade has no usable P&L. It then ranks as blocked and can't be armed.
-- Rule-based promotion: after 7 days a paused strategy goes on one-lot probation; 5 closed probation trades with a positive total, inside tighter limits and with a saved baseline, make it eligible again. Every step is listed on Research.
+- Rule-based promotion: after 7 days a paused strategy goes on one-lot probation; 5 closed probation trades with a positive total, inside tighter limits and with a saved baseline, make it eligible again. Every step is listed on Research. The forward runner skips a paused strategy and keeps arming the others.
 - Ledger reconciliation check; a mismatch pauses new paper cash actions.
+- Forward paper runner: keeps a frozen set of saved strategy versions armed once per expiry for a fixed period, through the same checks as the web app (`scripts/start-forward-runner-local.ps1`).
 
 **Data and research**
 - Expired NIFTY option candles imported from Upstox (2 years, 5-minute) into private local storage.

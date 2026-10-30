@@ -15,6 +15,7 @@ import { TradingDashboard } from "./TradingDashboard";
 import { ChartWorkspace } from "./ChartWorkspace";
 import { ResearchWorkspace } from "./ResearchWorkspace";
 import { usePaperEntry } from "./usePaperEntry";
+import { StrategyDetails } from "./StrategyDetails";
 import { STRATEGY_CATALOG, STRATEGY_CATALOG_META, StrategyCatalogStatus, StrategyMarketBias } from "./strategyCatalog";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
@@ -467,6 +468,7 @@ type PayoffEstimate = {
   maximum_loss_unbounded: boolean;
   maximum_profit: string | null;
   maximum_profit_unbounded: boolean;
+  breakeven_prices?: string[];
   entry_spread_cost?: number;
   transaction_cost_scenario?: {
     model_id: string; source_url: string; entry_charge: string;
@@ -474,6 +476,11 @@ type PayoffEstimate = {
     limitations: string; complete_broker_costs: boolean;
   } | null;
 };
+
+function maximumProfitText(payoff: PayoffEstimate): string {
+  if (payoff.maximum_profit_unbounded) return "No fixed limit";
+  return Number(payoff.maximum_profit) > 0 ? `₹${formatPrice(payoff.maximum_profit)}` : "None at these quotes";
+}
 
 function paperTemplatePolicy(strategyKey: string, payoff: PayoffEstimate) {
   const maximumLoss = Number(payoff.maximum_loss);
@@ -821,6 +828,7 @@ export default function Home() {
   const [payoffEstimateBusy, setPayoffEstimateBusy] = useState(false);
   const [strategyPayoffs, setStrategyPayoffs] = useState<Record<string, PayoffEstimate>>({});
   const [strategyPayoffKey, setStrategyPayoffKey] = useState("");
+  const [detailStrategyKey, setDetailStrategyKey] = useState("");
   const payoffSelection = useRef("");
   const [batchComparison, setBatchComparison] = useState<{
     asOf: string; expiry: string; strike: string; lots: number;
@@ -2369,6 +2377,69 @@ export default function Home() {
     }
   }
 
+  function renderStrategyDetails() {
+    const strategy = paperStrategies.find(item => item.key === detailStrategyKey);
+    if (!strategy) return null;
+    const meta = STRATEGY_CATALOG_META[strategy.key];
+    const payoff = strategyPayoffs[strategy.key];
+    const preview = strategyTilePreviews.find(item => item.strategy.key === strategy.key);
+    const policy = payoff ? paperTemplatePolicy(strategy.key, payoff) : null;
+    const waiting = paperDeployments.some((item) => item.status === "WAITING_FOR_ENTRY" && item.strategy_key === strategy.key && item.expiry === selectedExpiry);
+    const open = paperTrades.some((item) => item.status === "OPEN" && item.strategy_name === strategy.name);
+    const entryFlow = preview?.legs.reduce((sum, leg) => sum + (leg.side === "BUY" ? 1 : -1) * leg.price * leg.quantityLots * leg.lotSize, 0);
+    const breakevens = payoff?.breakeven_prices ?? [];
+    const close = () => setDetailStrategyKey("");
+    const pendingText = "Waiting for quotes";
+    const conditions = policy?.conditions ?? [];
+    return <StrategyDetails
+      action={open ? <span>Open now. See it under Running.</span> : waiting ? <span>Waiting for entry. Cancel it under Running.</span> : <>
+        <button className="text-link" disabled={paperBusy || !policy} onClick={() => { close(); const details = document.getElementById("paper-strategy-builder"); if (details instanceof HTMLDetailsElement) details.open = true; if (payoff) applyStrategyToPaperTicket(strategy, payoff); }} type="button">Edit rules</button>
+        <button className="primary-button" disabled={paperBusy || !policy || !!paperAccount?.kill_switch_enabled} onClick={() => { close(); void startPaperStrategy(strategy.key); }} type="button">▶ Start in paper</button>
+      </>}
+      context={`NIFTY, expiry ${selectedExpiry || "not chosen"}, strike ${formatPrice(selectedPaperStrike)}, ${paperLots} lot${paperLots === 1 ? "" : "s"}. Simulated.`}
+      entry={[
+        ...conditions.map((condition) => {
+          const metric = ENTRY_RULE_METRICS.find((item) => item.key === condition.metric);
+          const now = ruleMetricValue(condition.metric, optionFeatures, chain);
+          const unit = metric?.unit === "%" ? "%" : "";
+          return {
+            text: `${metric?.label || condition.metric} ${operatorLabel(condition.operator)} ${condition.threshold}${unit}`,
+            now: now === null ? null : `${formatPrice(now)}${unit}`,
+            met: ruleComparison(now, condition.operator, condition.threshold),
+          };
+        }),
+        { text: "The market is open, the quotes pass quality checks and the account's risk limits have room" },
+        { text: "On expiry day, no new entry in the last 20 minutes before the close" },
+      ]}
+      exit={[
+        { text: policy ? `Target: profit reaches +₹${formatPrice(String(policy.targetProfit))}` : `Target: ${pendingText.toLowerCase()}` },
+        { text: policy ? `Stop-loss: loss reaches −₹${formatPrice(String(policy.stopLoss))}` : `Stop-loss: ${pendingText.toLowerCase()}` },
+        { text: policy ? `Trailing stop: once profit has reached ₹${formatPrice(String(policy.trailingStop))}, it falls by that much from its peak` : `Trailing stop: ${pendingText.toLowerCase()}` },
+        { text: "Expiry day: 20 minutes before the close, if it is still open" },
+        { text: "You press Close under Running" },
+      ]}
+      figures={[
+        { label: "Max profit at expiry", value: payoff ? maximumProfitText(payoff) : pendingText, tone: "profit" },
+        { label: "Max loss at expiry", value: payoff?.maximum_loss_unbounded ? "No fixed limit" : payoff ? `₹${formatPrice(payoff.maximum_loss)}` : pendingText, tone: "loss" },
+        { label: entryFlow !== undefined && entryFlow < 0 ? "You receive to enter" : "You pay to enter", value: entryFlow === undefined ? pendingText : `₹${formatPrice(String(Math.abs(entryFlow)))}` },
+        { label: breakevens.length === 1 ? "Breakeven at expiry" : "Breakevens at expiry", value: breakevens.length ? breakevens.map(formatPrice).join(", ") : payoff ? "None" : pendingText },
+      ]}
+      legs={preview?.legs.map((leg) => `${leg.side === "BUY" ? "Buy" : "Sell"} ${formatPrice(leg.strike)} ${leg.option_type}, ${leg.quantityLots * leg.lotSize} units at ₹${formatPrice(String(leg.price))}`)}
+      name={strategy.name}
+      notes={[
+        "Max profit and max loss are theoretical limits at expiry, from current bid and ask, before charges. The exit rules usually close the trade well before either is reached.",
+        "Target, stop and trailing amounts are set from the quotes at the moment you start, so they can differ a little from these.",
+        "Exits act on live quote checks, so a real exit can land past the amount shown.",
+        ...(conditions.length === 1 ? ["This strategy has no market-view rule, so it usually enters at the next check once spreads are tight enough."] : []),
+        ...(strategy.closed_trade_count > 0 ? [`Your simulated results so far: ${strategy.closed_trade_count} closed, ${strategy.winning_trade_count} won${strategy.average_net_pnl === null ? "" : `, average ${signedRupees(Number(strategy.average_net_pnl))} per trade`}.`] : []),
+        "These rules are exploratory and not validated. Starting here is separate from the 6-week forward test, which runs its own frozen copy.",
+      ]}
+      onClose={close}
+      summary={strategy.description}
+      tone={(meta?.bias || "special").toLowerCase()}
+    />;
+  }
+
   // One click: generate the template's entry and exit policy from the current modeled risk and arm it.
   // The server still rechecks rules, quotes, session and every risk limit before any paper fill.
   async function startPaperStrategy(strategyKey: string) {
@@ -3135,14 +3206,16 @@ export default function Home() {
                   const waiting = paperDeployments.some((item) => item.status === "WAITING_FOR_ENTRY" && item.strategy_key === strategy.key && item.expiry === selectedExpiry);
                   const open = paperTrades.some((item) => item.status === "OPEN" && item.strategy_name === strategy.name);
                   return <li className={`strategy-tile strategy-tile--${(STRATEGY_CATALOG_META[strategy.key]?.bias || "special").toLowerCase()}`} key={strategy.key}>
-                    <div><strong>{strategy.name}</strong><small>{STRATEGY_CATALOG_META[strategy.key]?.label || "Paper template"}{finiteLoss ? `, max loss ₹${formatPrice(payoff.maximum_loss)}` : ""}</small></div>
-                    {open ? <span>Open</span> : waiting ? <span>Waiting</span> : <div className="strategy-start-actions">
-                      <button className="text-link" disabled={paperBusy || !finiteLoss} onClick={() => { const details = document.getElementById("paper-strategy-builder"); if (details instanceof HTMLDetailsElement) details.open = true; applyStrategyToPaperTicket(strategy, payoff); }} type="button">Edit rules</button>
-                      <button aria-label={`Start ${strategy.name} in paper`} className="strategy-play" disabled={paperBusy || !finiteLoss || !!paperAccount?.kill_switch_enabled} onClick={() => void startPaperStrategy(strategy.key)} title="Start in paper" type="button">▶</button>
-                    </div>}
+                    <button aria-label={`${strategy.name}: rules and details`} className="strategy-tile-open" onClick={() => setDetailStrategyKey(strategy.key)} type="button">
+                      <strong>{strategy.name}</strong>
+                      <small>{STRATEGY_CATALOG_META[strategy.key]?.label || "Paper template"}<u>Rules and details</u></small>
+                      {finiteLoss ? <small className="strategy-tile-figures"><span className="detail-profit">Max profit {maximumProfitText(payoff)}</span><span className="detail-loss">Max loss ₹{formatPrice(payoff.maximum_loss)}</span></small> : null}
+                    </button>
+                    {open ? <span>Open</span> : waiting ? <span>Waiting</span> : <button aria-label={`Start ${strategy.name} in paper`} className="strategy-play" disabled={paperBusy || !finiteLoss || !!paperAccount?.kill_switch_enabled} onClick={() => void startPaperStrategy(strategy.key)} title="Start in paper" type="button">▶</button>}
                   </li>;
                 })}
               </ul>}
+              {renderStrategyDetails()}
             </section>
 
             <section className="trade-more" aria-label="More">

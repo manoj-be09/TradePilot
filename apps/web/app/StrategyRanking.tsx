@@ -57,7 +57,7 @@ const money = (value: string | null) =>
   value === null ? "Unavailable" : `₹${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 export function StrategyRanking({
-  token, apiUrl, chain, referenceStrike, onUse, compact = false, busy = false,
+  token, apiUrl, chain, referenceStrike, onUse, compact = false, busy = false, hideLinkWithoutPick = false,
 }: {
   token: string;
   apiUrl: string;
@@ -68,6 +68,8 @@ export function StrategyRanking({
   compact?: boolean;
   /** True while a paper action is in flight; disables the start buttons. */
   busy?: boolean;
+  /** On Trade itself the "Open Trade" fallback would go nowhere. */
+  hideLinkWithoutPick?: boolean;
 }) {
   const [result, setResult] = useState<RankingResult | null>(null);
   const [error, setError] = useState("");
@@ -108,7 +110,7 @@ export function StrategyRanking({
           <strong>{headline}</strong>
           {reason ? <small>{reason}</small> : null}
         </div>
-        <button className="refresh-button" disabled={busy} onClick={() => onUse(pick?.strategy_key ?? "")} type="button">{pick ? "Start in paper" : "Open Trade"}</button>
+        {pick || !hideLinkWithoutPick ? <button className="refresh-button" disabled={busy} onClick={() => onUse(pick?.strategy_key ?? "")} type="button">{pick ? "Start in paper" : "Open Trade"}</button> : null}
       </section>
     );
   }

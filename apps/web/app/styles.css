@@ -1170,3 +1170,60 @@ a.sidebar-action-button { display: flex; align-items: center; justify-content: c
 @media (max-width: 680px) {
   .paper-toast { right: 16px; bottom: 76px; left: 16px; max-width: none; }
 }
+
+/* Trade: what's running, what to start, and everything else out of the way. */
+.trade-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 32px; }
+.trade-head > div:first-child { flex: 1 1 220px; }
+.trade-head h2 { margin: 0 0 4px; font-family: Manrope, sans-serif; font-size: 28px; letter-spacing: -.035em; }
+.trade-head .muted { margin: 0; font-size: 13px; }
+.trade-stats { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 0; }
+.trade-stats div { margin: 0; }
+.trade-stats dt { color: var(--ink-muted); font-size: 12px; }
+.trade-stats dd { margin: 2px 0 0; font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.trade-note { margin: 12px 0 0; color: var(--ink-muted); font-size: 12px; line-height: 1.5; }
+.trade-block { margin-top: 30px; }
+.trade-block-title { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-family: Manrope, sans-serif; font-size: 17px; letter-spacing: -.02em; }
+.trade-block-title span { border-radius: 999px; background: var(--green-soft); padding: 1px 9px; color: var(--green); font-size: 12px; font-weight: 700; }
+.trade-empty { margin: 0; border: 1px dashed var(--line); border-radius: 10px; padding: 18px; color: var(--ink-muted); font-size: 13px; }
+.running-list { margin: 0; padding: 0; list-style: none; }
+.running-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 260px) 104px; align-items: center; gap: 4px 20px; border-top: 1px solid var(--line); padding: 12px 0; }
+.running-row:first-child { border-top: 0; }
+.running-name strong { display: block; font-size: 14px; }
+.running-name small, .running-pnl small { display: block; margin-top: 3px; color: var(--ink-muted); font-size: 12px; line-height: 1.4; }
+.running-state { font-weight: 700; }
+.running-state::after { content: "."; }
+.running-state--open { color: var(--green); }
+.running-state--waiting { color: #8a6412; }
+.running-state--alert { color: #b23b3b; }
+.running-pnl { text-align: right; }
+.running-pnl b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.running-row > .inline-button, .running-action-note { justify-self: end; }
+.running-action-note { color: var(--ink-muted); font-size: 12px; }
+.running-details { grid-column: 1 / -1; }
+.running-details > summary { width: fit-content; cursor: pointer; color: var(--ink-muted); font-size: 12px; }
+.running-details[open] > summary { margin-bottom: 10px; }
+.running-details .position-card { max-width: none; }
+.strategy-start-list li { min-height: 52px; }
+.strategy-start-actions { display: flex; flex: none; align-items: center; gap: 12px; }
+.text-link { border: 0; background: none; padding: 0; color: var(--ink-muted); font-size: 12px; cursor: pointer; white-space: nowrap; }
+.text-link:hover:not(:disabled) { color: var(--green); text-decoration: underline; }
+.text-link:disabled { opacity: .5; cursor: default; }
+.refresh-button.strategy-start { min-height: 34px; padding: 6px 12px; font-size: 12px; white-space: nowrap; }
+.trade-filter { margin-top: 14px; }
+.home-suggestion + .trade-filter { margin-top: 16px; }
+.trade-more { margin-top: 34px; border-top: 1px solid var(--line); padding-top: 22px; }
+.trade-more-item, .trade-more > details { border-top: 1px solid var(--line); padding: 12px 0; margin: 0; background: none; box-shadow: none; border-radius: 0; border-left: 0; border-right: 0; border-bottom: 0; }
+.trade-more > details:first-of-type { border-top: 0; }
+.trade-more > details > summary { display: flex; justify-content: space-between; cursor: pointer; font-size: 14px; font-weight: 700; }
+.trade-more > details > summary span { color: var(--ink-muted); font-size: 12px; font-weight: 400; }
+.trade-more > details[open] > summary { margin-bottom: 12px; }
+.trade-nested { margin-top: 14px; }
+.trade-nested > summary { display: flex; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 700; }
+.trade-nested > summary span { color: var(--ink-muted); font-weight: 400; }
+@media (max-width: 680px) {
+  .trade-stats { width: 100%; justify-content: space-between; }
+  .running-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .running-pnl { grid-column: 1; grid-row: 2; text-align: left; }
+  .running-row > .inline-button, .running-action-note { grid-column: 2; grid-row: 1; }
+  .strategy-start-list { grid-template-columns: minmax(0, 1fr); }
+}

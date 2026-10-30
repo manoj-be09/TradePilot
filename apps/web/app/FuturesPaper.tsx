@@ -148,7 +148,7 @@ export function FuturesPaper({ token, apiUrl, waitingKeys, entriesPaused, onChan
       });
       if (!response.ok) { setError(await readError(response)); return; }
       armCommand.current = null;
-      setMessage(`${strategy.name} started in paper mode. It waits for its entry rules and risk checks before opening a simulated position. Cancel it any time under Armed F&O strategies.`);
+      setMessage(`${strategy.name} started in paper mode. It waits for its entry rules and risk checks before opening a simulated position. Cancel it any time under Running.`);
       onChanged();
     } finally {
       setBusy(false);
@@ -186,24 +186,22 @@ export function FuturesPaper({ token, apiUrl, waitingKeys, entriesPaused, onChan
 
   return (
     <section className="futures-paper" id="paper-futures" aria-label="NIFTY futures paper strategies">
-      <div className="workspace-section-heading"><h3>NIFTY futures strategies</h3><span>{frontContract ? `Next fill: ${frontContract.trading_symbol}` : "Contract unavailable"}</span></div>
-      <p className="strategy-library-note">Simulated only. Starting one arms it: the worker waits for its rules, then fills at the live bid or ask if the quote, margin and risk checks pass. Futures risk is not capped by the instrument, so <strong>a price gap can lose more than the stop-loss</strong>; starting a strategy accepts that for this paper position. Live broker orders remain disabled.</p>
+      <p className="trade-note">{frontContract ? `Fills on ${frontContract.trading_symbol}. ` : "Contract unavailable. "}Futures risk isn't capped: <strong>a price gap can lose more than the stop-loss</strong>, and starting a strategy accepts that for this paper position.</p>
       <label className="futures-lots">Lots per strategy
         <input disabled={busy} inputMode="numeric" min={1} max={10} type="number" value={strategyLots} onChange={(event) => setStrategyLots(Math.max(1, Math.min(10, Math.trunc(Number(event.target.value) || 1))))} />
       </label>
-      <div className="futures-strategy-list">
+      <ul className="strategy-start-list" aria-label="Futures strategies">
         {strategies.map((strategy) => {
           const waiting = waitingKeys.includes(strategy.key);
           return (
-            <article className="futures-position" key={strategy.key}>
-              <div><b>{strategy.name}</b><small>{strategy.description}</small></div>
-              <div><small>Stop −{amount(strategy.stop_points)} · target +{amount(strategy.target_points)} · trail {amount(strategy.trailing_points)}</small><small>{strategy.intraday ? "Squared off before every close" : `Held overnight; closes and re-arms ${ROLLOVER_DAYS} days before expiry`}</small></div>
-              <button className="strategy-apply" disabled={busy || waiting || entriesPaused || !frontContract} onClick={() => void startStrategy(strategy)} title={entriesPaused ? "Entries are paused" : undefined} type="button">{waiting ? "Waiting for entry" : entriesPaused ? "Entries paused" : "Start in paper"}</button>
-            </article>
+            <li key={strategy.key} title={strategy.description}>
+              <div><strong>{strategy.name}</strong><small>Stop −{amount(strategy.stop_points)}, target +{amount(strategy.target_points)}. {strategy.intraday ? "Closes before every close." : `Held overnight, rolls ${ROLLOVER_DAYS} days before expiry.`}</small></div>
+              {waiting ? <span>Waiting</span> : <button className="refresh-button strategy-start" disabled={busy || entriesPaused || !frontContract} onClick={() => void startStrategy(strategy)} title={entriesPaused ? "Entries are paused" : undefined} type="button">Start in paper</button>}
+            </li>
           );
         })}
-        {strategies.length === 0 && !error ? <p className="specialist-empty">Loading futures strategies…</p> : null}
-      </div>
+      </ul>
+      {strategies.length === 0 && !error ? <p className="trade-empty">Loading futures strategies…</p> : null}
       {strategies[0] ? <p className="strategy-library-note">{strategies[0].note}</p> : null}
       {error ? <p className="error-banner" role="alert">{error}</p> : null}
       {message ? <p className="strategy-library-note" role="status">{message}</p> : null}

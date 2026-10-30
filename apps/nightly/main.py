@@ -8,6 +8,7 @@ only reads the account, and places no orders.
 
 import argparse
 import logging
+import shutil
 import sqlite3
 import time as clock
 from datetime import date, datetime, time, timezone
@@ -31,6 +32,11 @@ DATABASE = Path("work/nifty-local.db")
 BACKUPS = Path("work/backups")
 REPORTS = Path("work/forward-reports")
 DEFAULT_PLAN = Path("work/forward-paper.json")
+LOW_DISK_GB = 10.0
+
+
+def disk_free_gb(path: Path) -> float:
+    return shutil.disk_usage(path if path.exists() else Path.cwd()).free / 1024**3
 
 
 def due(now: datetime, last_run: date | None) -> bool:
@@ -78,6 +84,16 @@ def run_once(
         results["ledger"] = "FAILED"
     if results["ledger"] != "MATCHED":
         logger.error("Ledger needs review: %s", results["ledger"])
+    free = disk_free_gb(database.parent)
+    results["disk_free_gb"] = f"{free:.1f}"
+    if free < LOW_DISK_GB:
+        logger.error("Low disk space: %.1f GB free. The recorder and backups need room.", free)
+    reports.mkdir(parents=True, exist_ok=True)
+    day_report = reports / f"{now.astimezone(IST).date().isoformat()}.md"
+    if day_report.exists():
+        warning = " LOW: free up space soon." if free < LOW_DISK_GB else ""
+        with day_report.open("a", encoding="utf-8") as handle:
+            handle.write(f"\nDisk free: {free:.1f} GB.{warning}\n")
     return results
 
 
@@ -89,7 +105,11 @@ def main() -> None:
     args = parser.parse_args()
     plan = load_plan(args.plan)
     factory = build_session_factory()
+    # A restart later the same day must not repeat a full backup.
     last_run: date | None = None
+    today = datetime.now(timezone.utc).astimezone(IST).date()
+    if (REPORTS / f"{today.isoformat()}.md").exists() and any(BACKUPS.glob(f"*{today:%Y%m%d}*.db")):
+        last_run = today
     while True:
         now = datetime.now(timezone.utc)
         if args.once or due(now, last_run):

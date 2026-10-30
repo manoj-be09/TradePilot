@@ -10,6 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import apps.nightly.main as nightly
 from apps.nightly.main import IST, due, run_once
 from packages.database import futures_models  # noqa: F401
 from packages.database.base import Base
@@ -81,6 +82,36 @@ def test_a_backup_is_a_readable_copy_and_only_the_newest_are_kept(tmp_path):
     connection.close()
     assert len(list(backups.glob("*.db"))) == 2
     assert not list(backups.glob("*.partial"))
+
+
+def test_a_backup_of_a_write_ahead_log_database_is_one_clean_file(tmp_path):
+    source = tmp_path / "nifty.db"
+    _sqlite_file(source)
+    connection = sqlite3.connect(source)
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.close()
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    (backups / "nifty-old.partial").write_bytes(b"interrupted copy")
+    (backups / "nifty-old.partial-wal").write_bytes(b"")
+    made = backup_database(source, backups, NOW)
+    assert [item.name for item in backups.iterdir()] == [made.name]
+    copy = sqlite3.connect(made)
+    assert copy.execute("select x from t").fetchone() == (1,)
+    copy.close()
+
+
+def test_low_disk_space_is_reported(tmp_path, factory, monkeypatch, caplog):
+    monkeypatch.setattr(nightly, "disk_free_gb", lambda _path: 4.0)
+    with factory() as session:
+        _account(session)
+        session.commit()
+    results = run_once(
+        factory, PLAN, tmp_path / "absent.db", tmp_path / "backups", tmp_path / "reports", NOW,
+    )
+    assert results["disk_free_gb"] == "4.0"
+    assert "Low disk space" in caplog.text
+    assert "Disk free: 4.0 GB. LOW" in (tmp_path / "reports" / "2026-11-03.md").read_text()
 
 
 def test_a_missing_database_is_an_error_and_a_corrupt_one_leaves_no_copy(tmp_path):

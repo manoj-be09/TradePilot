@@ -176,7 +176,6 @@ const NAVIGATION: { section: SidebarSection; label: string; icon: string }[] = [
   { section: "backtest", label: "Backtest", icon: "◷" },
   { section: "research", label: "Research", icon: "⌕" },
 ];
-const WORKSPACE = "derivatives" as "equities" | "derivatives";
 
 type PaperStrategy = {
   key: string;
@@ -836,7 +835,6 @@ export default function Home() {
   const deploymentCommand = useRef<{ payload: string; key: string } | null>(null);
   const paperTicketRef = useRef<HTMLParagraphElement | null>(null);
   const [selectedStrategy, setSelectedStrategy] = useState("long_call");
-  const workspace = WORKSPACE;
   const [activeSection, setActiveSection] = useState<SidebarSection>("dashboard");
   const [selectedPaperStrike, setSelectedPaperStrike] = useState("");
   const [paperLots, setPaperLots] = useState(1);
@@ -2572,9 +2570,9 @@ export default function Home() {
       </section>}
 
       {!token && <section className="intro">
-        <div className="eyebrow"><span className="eyebrow-mark" />{token && workspace === "equities" ? "EQUITIES & ETFs" : "NIFTY OPTIONS"} <span>·</span> MARKET RESEARCH</div>
-        <h1>{token && workspace === "equities" ? <>Research stocks<br /><em>before you trade.</em></> : <>See the market<br /><em>as it moves.</em></>}</h1>
-        <p>{token && workspace === "equities" ? "Search equities and ETFs, build a watchlist, inspect live snapshots, and study price history from your starting workspace." : "Build a defined-risk NIFTY options position, simulate it from current quotes, and track it in a paper portfolio. Live broker orders remain disabled."}</p>
+        <div className="eyebrow"><span className="eyebrow-mark" />NIFTY OPTIONS <span>·</span> MARKET RESEARCH</div>
+        <h1>See the market<br /><em>as it moves.</em></h1>
+        <p>Build a defined-risk NIFTY options position, simulate it from current quotes, and track it in a paper portfolio. Live broker orders remain disabled.</p>
       </section>}
       {token && activeSection === "dashboard" ? <TradingDashboard token={token} apiUrl={API_URL} account={paperAccount}
         onOpenTrade={() => { setActiveSection("algo"); window.scrollTo({ top: 0, behavior: "smooth" }); }}

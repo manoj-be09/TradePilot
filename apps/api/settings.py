@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     jwt_secret: SecretStr = SecretStr("development-only-change-me")
     upstox_analytics_token: SecretStr | None = None
+    # Optional phone alerts (apps/alert_relay). The relay stays idle unless all three are set;
+    # only the named account's notifications are forwarded.
+    telegram_bot_token: SecretStr | None = None
+    telegram_chat_id: str | None = None
+    telegram_alert_user_email: str | None = None
     cors_origins: str = (
         "http://127.0.0.1:3000,http://localhost:3000,"
         "http://127.0.0.1:3010,http://localhost:3010"

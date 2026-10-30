@@ -133,3 +133,12 @@ The Trade page sorts option strategies by results in `work/bt/rules-*.json`, wri
 It falls back to `work/bt/wf-*.json` from `scripts/run-walk-forward.py`. These files are built from private data and stay out of git. If
 they are missing or belong to an older template version, a strategy shows "No past test" and
 sorts last. Ordering is display only: nothing is started, sized or blocked because of it.
+
+## Comparing exit rules
+`scripts/run-exit-rule-comparison.py` closes each entry from the template replay under other exit
+rules (`packages/backtesting/exit_rules.py`) and writes `work/bt/exits-*.json`. It is research only:
+paper trading, the forward test and the Trade page do not read these files, which stay out of git
+because they are built from private data. The earlier half of the expiries picks a rule set for each
+strategy and the later half judges it. A result only counts if the later half makes money and beats
+the current rules with a paired t-value of at least 2. Run it from the main checkout so that it uses
+the local database.

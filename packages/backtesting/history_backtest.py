@@ -16,13 +16,15 @@ With template_rules the replay follows a template's real paper rules: the strike
 when armed, entry waits for the entry conditions, and each trade's stop, target and trail are
 sized from its own entry quotes and judged by the paper exit function. Candles have no
 bid/ask, so the spread rule is judged on the half-spread model, and put/call ratio uses only
-the imported strikes.
+the imported strikes. exit_rule_sets also closes each of those entries under other exit rules,
+for research only: paper trading never reads them.
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
+from functools import cache
 from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo
 
@@ -54,7 +56,9 @@ FILL_MODEL = (
 _IST = ZoneInfo("Asia/Kolkata")
 _CENT = Decimal("0.01")
 _TICK = Decimal("0.05")
-ExitReason = Literal["STOP_LOSS", "TARGET", "TRAILING_STOP", "EXPIRY_SQUARE_OFF"]
+ExitReason = Literal[
+    "STOP_LOSS", "TARGET", "TRAILING_STOP", "EXPIRY_SQUARE_OFF", "EARLY_SQUARE_OFF",
+]
 OptionKind = Literal["CE", "PE"]
 
 
@@ -75,6 +79,21 @@ class ExpiryHistory:
 
 
 @dataclass(frozen=True)
+class ExitRuleSet:
+    """Another way to close the same entry, built from the template's own stop, target, trail."""
+
+    name: str
+    use_stop: bool = True
+    # Scales the template target; None means no target and no trail.
+    target_multiple: Decimal | None = Decimal(1)
+    use_trail: bool = True
+    # The target is at least this many times the round-trip charges at the entry prices.
+    charges_floor_multiple: Decimal | None = None
+    # Square off at 15:10 on the last session before expiry day.
+    leave_before_expiry_day: bool = False
+
+
+@dataclass(frozen=True)
 class BacktestConfig:
     strategy: StrategyDefinition
     lots: int = 1
@@ -90,6 +109,8 @@ class BacktestConfig:
     template_rules: bool = False
     # Entries whose maximum loss exceeds this are skipped, as the account's per-trade limit would.
     max_trade_risk: Decimal | None = None
+    # Also close each template-rule entry under these, for research.
+    exit_rule_sets: tuple[ExitRuleSet, ...] = ()
     # The paper account's default PAPER_MARGIN_* settings.
     margin_parameters: MarginParameters = field(default_factory=lambda: MarginParameters(
         price_scan_pct=Decimal(9), volatility_scan_points=Decimal(4),
@@ -145,6 +166,8 @@ class BacktestTrade:
     charges: Decimal
     legs: list[BacktestLeg]
     entry_margin: Decimal
+    # The same entry closed under each of config.exit_rule_sets, by name.
+    alternatives: dict[str, "BacktestTrade"] = field(default_factory=dict)
 
     @property
     def net_pnl(self) -> Decimal:
@@ -278,7 +301,9 @@ def _stats(trades: Sequence[BacktestTrade]) -> dict[str, Any]:
     )
     result["exit_reasons"] = {
         reason: sum(trade.exit_reason == reason for trade in trades)
-        for reason in ("STOP_LOSS", "TARGET", "TRAILING_STOP", "EXPIRY_SQUARE_OFF")
+        for reason in (
+            "STOP_LOSS", "TARGET", "TRAILING_STOP", "EXPIRY_SQUARE_OFF", "EARLY_SQUARE_OFF",
+        )
     }
     return result
 
@@ -482,7 +507,9 @@ def _simulate(
     if not moments or moments[-1].date() != history.expiry:
         return SkippedExpiry(history.expiry, "no common bar on expiry day before square-off")
 
-    def exit_at_moment(moment: datetime) -> tuple[Decimal, list[Decimal]]:
+    # Every rule set reads the same prices, so each moment is only priced once.
+    @cache
+    def exit_at_moment(moment: datetime) -> tuple[Decimal, tuple[Decimal, ...]]:
         cash, prices = Decimal(0), []
         for strike, kind, side, units, _ in entries:
             exit_side: Literal["BUY", "SELL"] = "SELL" if side == "BUY" else "BUY"
@@ -490,46 +517,88 @@ def _simulate(
             price = fill_price(close, exit_side, config.half_spread_for(close))
             prices.append(price)
             cash += price * units if exit_side == "SELL" else -price * units
-        return cash, prices
-
-    reason: ExitReason = "EXPIRY_SQUARE_OFF"
-    exit_moment = moments[-1]
-    peak = Decimal(0)
-    for moment in moments:
-        decision = evaluate_exit(
-            pnl=entry_cash + exit_at_moment(moment)[0], peak_pnl=peak,
-            stop_loss_amount=stop, target_profit_amount=target, trailing_stop_amount=trail,
-        )
-        peak = decision.peak_pnl
-        if decision.reason is not None:
-            reason, exit_moment = cast(ExitReason, decision.reason), moment
-            break
-    exit_cash, exit_prices = exit_at_moment(exit_moment)
+        return cash, tuple(prices)
 
     try:
         schedule_for(entry_at.date())
     except ValueError:
         # Costs before the first dated schedule are unknown; skip rather than guess them.
         return SkippedExpiry(history.expiry, "no charge schedule covers the entry date")
-    charges = Decimal(0)
-    for (_, _, side, units, price), exit_price in zip(entries, exit_prices, strict=True):
-        exit_side: Literal["BUY", "SELL"] = "SELL" if side == "BUY" else "BUY"
-        charges += order_charges(instrument="OPT", side=side, price=price, quantity=units,
-                                 trade_date=entry_at.date()).total
-        charges += order_charges(instrument="OPT", side=exit_side, price=exit_price,
-                                 quantity=units, trade_date=exit_moment.date()).total
-    return BacktestTrade(
-        expiry=history.expiry, entry_at=entry_at, exit_at=exit_moment, exit_reason=reason,
-        synthetic_spot=_money(spot), reference_strike=reference, max_loss=max_loss,
-        gross_pnl=_money(entry_cash + exit_cash), charges=_money(charges),
-        legs=[
-            BacktestLeg(strike=strike, option_type=kind, side=side, quantity_units=units,
-                        entry_price=price, exit_price=exit_price)
-            for (strike, kind, side, units, price), exit_price
-            in zip(entries, exit_prices, strict=True)
-        ],
-        entry_margin=_entry_margin(history, config, entry_at, spot, margin_inputs),
-    )
+
+    def charges_for(prices: Sequence[Decimal], exit_day: date) -> Decimal:
+        total = Decimal(0)
+        for (_, _, side, units, price), exit_price in zip(entries, prices, strict=True):
+            exit_side: Literal["BUY", "SELL"] = "SELL" if side == "BUY" else "BUY"
+            total += order_charges(instrument="OPT", side=side, price=price, quantity=units,
+                                   trade_date=entry_at.date()).total
+            total += order_charges(instrument="OPT", side=exit_side, price=exit_price,
+                                   quantity=units, trade_date=exit_day).total
+        return total
+
+    def close_trade(
+        stop: Decimal | None, target: Decimal | None, trail: Decimal | None,
+        checks: list[datetime], last_reason: ExitReason,
+    ) -> BacktestTrade:
+        reason, exit_moment = last_reason, checks[-1]
+        peak = Decimal(0)
+        for moment in checks:
+            decision = evaluate_exit(
+                pnl=entry_cash + exit_at_moment(moment)[0], peak_pnl=peak,
+                stop_loss_amount=stop, target_profit_amount=target, trailing_stop_amount=trail,
+            )
+            peak = decision.peak_pnl
+            if decision.reason is not None:
+                reason, exit_moment = cast(ExitReason, decision.reason), moment
+                break
+        exit_cash, exit_prices = exit_at_moment(exit_moment)
+        return BacktestTrade(
+            expiry=history.expiry, entry_at=entry_at, exit_at=exit_moment, exit_reason=reason,
+            synthetic_spot=_money(spot), reference_strike=reference, max_loss=max_loss,
+            gross_pnl=_money(entry_cash + exit_cash),
+            charges=_money(charges_for(exit_prices, exit_moment.date())),
+            legs=[
+                BacktestLeg(strike=strike, option_type=kind, side=side, quantity_units=units,
+                            entry_price=price, exit_price=exit_price)
+                for (strike, kind, side, units, price), exit_price
+                in zip(entries, exit_prices, strict=True)
+            ],
+            entry_margin=entry_margin,
+        )
+
+    entry_margin = _entry_margin(history, config, entry_at, spot, margin_inputs)
+    trade = close_trade(stop, target, trail, moments, "EXPIRY_SQUARE_OFF")
+    for rules in config.exit_rule_sets:
+        new_target, new_trail = target, trail
+        if rules.target_multiple is None or target is None:
+            new_target, new_trail = None, None
+        else:
+            new_target = target * rules.target_multiple
+            if rules.charges_floor_multiple is not None:
+                entry_prices = [price for *_, price in entries]
+                new_target = max(new_target, rules.charges_floor_multiple
+                                 * charges_for(entry_prices, entry_at.date()))
+            new_trail = _money(trail * new_target / target) if trail is not None else None
+            new_target = _money(new_target)
+        checks = moments
+        last_reason: ExitReason = "EXPIRY_SQUARE_OFF"
+        if rules.leave_before_expiry_day:
+            early = _before_expiry_day(moments, history.expiry)
+            if early:
+                checks, last_reason = early, "EARLY_SQUARE_OFF"
+        trade.alternatives[rules.name] = close_trade(
+            stop if rules.use_stop else None, new_target,
+            new_trail if rules.use_trail else None, checks, last_reason,
+        )
+    return trade
+
+
+def _before_expiry_day(moments: list[datetime], expiry: date) -> list[datetime]:
+    """Moments up to 15:10 on the last earlier session; empty when entry was on expiry day."""
+    days = [moment.date() for moment in moments if moment.date() < expiry]
+    if not days:
+        return []
+    cutoff = datetime.combine(max(days), time(15, 10), tzinfo=_IST)
+    return [moment for moment in moments if moment <= cutoff]
 
 
 def run_backtest(histories: Sequence[ExpiryHistory], config: BacktestConfig) -> BacktestReport:

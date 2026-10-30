@@ -122,6 +122,8 @@ class RankingInputs:
     limits: RiskLimits | None = None
     allow_unverified_book_time: bool = False
     weights: Mapping[Stance, Decimal] = field(default_factory=dict)
+    # Strategy key -> why paper results have made it ineligible (paused or on probation).
+    strategy_blocks: Mapping[str, str] = field(default_factory=dict)
 
 
 def _q(value: Decimal, places: str = "0.01") -> Decimal:
@@ -205,6 +207,9 @@ def _build_candidate(
 ) -> RankedCandidate:
     chain = inputs.chain
     reasons = list(global_blocks)
+    strategy_block = inputs.strategy_blocks.get(strategy.key)
+    if strategy_block is not None:
+        reasons.append(strategy_block)
     legs: list[RankedLeg] = []
     payoff_legs: list[PayoffLeg] = []
     book_times: list[datetime] = []

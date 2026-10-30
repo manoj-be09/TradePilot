@@ -13,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from apps.api.paper_schemas import PaperTradeCreateRequest
+from apps.api.services.strategy_eligibility import StrategyNotEligible
 from apps.forward_runner.main import freeze, run_cycle
 from packages.database import futures_models  # noqa: F401
 from packages.database.base import Base
@@ -152,6 +153,19 @@ def test_paused_entries_stop_the_cycle_and_other_refusals_skip_one_strategy(worl
                   _recording_arm([], HTTPException(423, "Paused"))) == "PAUSED"
     assert _cycle(factory, plan, _Provider(),
                   _recording_arm([], HTTPException(409, "Demoted"))) == "OK"
+
+
+def test_one_ineligible_strategy_does_not_stop_the_others_being_armed(world):
+    factory, plan = world
+    calls = []
+
+    async def arm(body, _user, _session, key):
+        if body.strategy_key == "bear_call_spread":
+            raise StrategyNotEligible("Paused after 5 consecutive losing paper trades.")
+        calls.append((body, key))
+
+    assert _cycle(factory, plan, _Provider(), arm) == "OK"
+    assert [body.strategy_key for body, _ in calls] == ["long_put"]
 
 
 def test_a_frozen_definition_with_invalid_rules_is_skipped_not_fatal(world):

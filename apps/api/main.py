@@ -66,6 +66,7 @@ from apps.api.paper_schemas import (
     PaperTradeResponse,
     StrategyDefinitionResponse,
     StrategyDemotionResponse,
+    StrategyEligibilityEventResponse,
     StrategyLegDefinitionResponse,
     UserNotificationResponse,
 )
@@ -82,6 +83,7 @@ from apps.api.schemas import (
 )
 from apps.api.services.futures_paper import monitor_futures_exits
 from apps.api.services.paper_monitor import monitor_exits
+from apps.api.services.strategy_eligibility import StrategyNotEligible
 from apps.api.settings import get_settings
 from apps.api.strategy_schemas import (
     StrategyDefinitionSnapshot,
@@ -172,9 +174,11 @@ from packages.options.upstox_cost_benchmark import upstox_option_cost_scenario
 from packages.paper_trading.costs import cost_snapshot, summarize_costs
 from packages.paper_trading.daily_risk import daily_realized_pnl, daily_risk_budget
 from packages.paper_trading.demotion import (
-    active_demotion,
-    check_strategy,
-    enforce_strategy_demotion,
+    PROBATION_MAX_LOTS,
+    apply_strategy_eligibility,
+    as_utc,
+    assess_strategy,
+    eligibility_history,
     reinstate_strategy,
 )
 from packages.paper_trading.expiry_settlement import (
@@ -320,41 +324,79 @@ def _require_consistent_paper_ledger(session: SessionDep, account: PaperAccount)
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
-def _require_strategy_not_demoted(
-    session: SessionDep, user_id: UUID, strategy_key: str, initial_cash: Decimal
+def _require_strategy_eligible(
+    session: SessionDep, user_id: UUID, strategy_key: str, initial_cash: Decimal, lots: int,
+    *, arming: bool = False,
 ) -> None:
-    """Refuse new entries for a paused strategy; call while holding the account lock."""
-    limits = get_settings().paper_demotion_limits(initial_cash)
-    demotion = enforce_strategy_demotion(session, user_id, strategy_key, limits)
-    if demotion is None:
-        return
-    summary = str(demotion.details.get("summary") or demotion.reason)
-    # Keep a newly staged pause and its audit event even though this entry is refused.
-    session.commit()
-    raise HTTPException(
-        status_code=423,
-        detail=(
-            f"Strategy {strategy_key} is paused after {summary}; existing positions keep "
-            "their exits. Reinstate it to allow new paper entries."
-        ),
+    """Refuse entries demotion or probation rules forbid; call holding the account lock.
+
+    Only new entries are gated; exits never come through here.
+    """
+    settings = get_settings()
+    eligibility = apply_strategy_eligibility(
+        session, user_id, strategy_key, settings.paper_demotion_limits(initial_cash),
+        settings.paper_promotion_policy,
     )
+    refusal: str | None = None
+    if eligibility.stage == "DEMOTED":
+        refusal = (
+            f"Strategy {strategy_key}: {eligibility.block_reason} "
+            "Existing positions keep their exits."
+        )
+    elif eligibility.stage == "PROBATION":
+        if lots > PROBATION_MAX_LOTS:
+            refusal = f"Strategy {strategy_key} is on probation: at most 1 lot at a time."
+        elif session.scalar(select(PaperTrade.id).where(
+            PaperTrade.user_id == user_id,
+            PaperTrade.strategy_key == strategy_key,
+            PaperTrade.status == "OPEN",
+        ).limit(1)) is not None or (arming and any(
+            row.request_data.get("strategy_key") == strategy_key
+            for row in session.scalars(select(PaperDeployment).where(
+                PaperDeployment.user_id == user_id,
+                PaperDeployment.status == "WAITING_FOR_ENTRY",
+            ))
+        )):
+            refusal = (
+                f"Strategy {strategy_key} is on probation: one position or armed entry at a time."
+            )
+    if refusal is None:
+        return
+    # Keep a newly staged step and its audit event even though this entry is refused.
+    session.commit()
+    raise StrategyNotEligible(refusal)
 
 
 def _demotion_response(
     session: SessionDep, user: User, strategy_key: str, initial_cash: Decimal
 ) -> StrategyDemotionResponse:
-    demotion = active_demotion(session, user.id, strategy_key)
-    check = check_strategy(
-        session, user.id, strategy_key, get_settings().paper_demotion_limits(initial_cash)
+    settings = get_settings()
+    state = assess_strategy(
+        session, user.id, strategy_key, settings.paper_demotion_limits(initial_cash),
+        settings.paper_promotion_policy,
     )
     return StrategyDemotionResponse(
         strategy_key=strategy_key,
-        paused=demotion is not None,
-        reason=demotion.reason if demotion else None,
-        summary=str(demotion.details.get("summary")) if demotion else None,
-        demoted_at=demotion.demoted_at if demotion else None,
-        check=check.snapshot(),
+        paused=state.stage != "ELIGIBLE",
+        reason=state.reason if state.stage != "ELIGIBLE" else None,
+        summary=state.summary if state.stage != "ELIGIBLE" else None,
+        demoted_at=as_utc(state.demotion.demoted_at) if state.demotion else None,
+        check=state.check.snapshot(),
+        stage=state.stage,
+        block_reason=state.block_reason,
+        probation_starts_at=state.probation_starts_at,
+        probation_trades=state.probation_trades,
+        probation_trades_needed=state.probation_trades_needed,
+        promotion_needs=list(state.promotion_needs),
     )
+
+
+def _strategy_keys_with_records(session: SessionDep, user_id: UUID) -> list[str]:
+    return sorted(set(session.scalars(
+        select(PaperTrade.strategy_key).where(PaperTrade.user_id == user_id)
+    )) | set(session.scalars(
+        select(StrategyDemotion.strategy_key).where(StrategyDemotion.user_id == user_id)
+    )))
 
 
 def _paper_trade_response(trade: PaperTrade) -> PaperTradeResponse:
@@ -1396,6 +1438,15 @@ async def analytics_options_ranking(
     open_trades = session.scalars(
         select(PaperTrade).where(PaperTrade.account_id == account.id, PaperTrade.status == "OPEN")
     ).all()
+    # Read-only, and any failure here fails the whole ranking rather than unblocking a strategy.
+    strategy_blocks = {
+        key: block
+        for key in _strategy_keys_with_records(session, user.id)
+        if (block := assess_strategy(
+            session, user.id, key, settings.paper_demotion_limits(account.initial_cash),
+            settings.paper_promotion_policy,
+        ).block_reason) is not None
+    }
     return rank_nifty_strategies(RankingInputs(
         chain=chain,
         reference_strike=body.reference_strike,
@@ -1416,6 +1467,7 @@ async def analytics_options_ranking(
             daily_loss_limit_pct=settings.paper_daily_loss_limit_pct,
         ),
         allow_unverified_book_time=allow_unverified,
+        strategy_blocks=strategy_blocks,
     ))
 
 
@@ -2190,12 +2242,26 @@ def list_paper_strategy_demotions(
 ) -> list[StrategyDemotionResponse]:
     """Pause state and current rule check for every strategy this account has traded."""
     account = _get_paper_account(session, user)
-    keys = sorted(set(session.scalars(
-        select(PaperTrade.strategy_key).where(PaperTrade.user_id == user.id)
-    )) | set(session.scalars(
-        select(StrategyDemotion.strategy_key).where(StrategyDemotion.user_id == user.id)
-    )))
+    keys = _strategy_keys_with_records(session, user.id)
     return [_demotion_response(session, user, key, account.initial_cash) for key in keys]
+
+
+@app.get(
+    "/paper/strategies/eligibility-history",
+    response_model=list[StrategyEligibilityEventResponse],
+    tags=["paper trading"],
+)
+def list_paper_strategy_eligibility_history(
+    user: CurrentUser, session: SessionDep
+) -> list[StrategyEligibilityEventResponse]:
+    """Every recorded demotion, probation step and promotion, newest first."""
+    return [
+        StrategyEligibilityEventResponse(
+            strategy_key=event.strategy_key, event_type=event.event_type, reason=event.reason,
+            summary=event.summary, occurred_at=as_utc(event.occurred_at),
+        )
+        for event in eligibility_history(session, user.id)
+    ]
 
 
 @app.post(
@@ -2393,7 +2459,6 @@ async def arm_paper_deployment(
     if account is None or account.kill_switch_enabled:
         raise HTTPException(423, "Paper kill switch is active")
     _require_consistent_paper_ledger(session, account)
-    _require_strategy_not_demoted(session, user.id, body.strategy_key, account.initial_cash)
     previous = session.scalar(select(PaperDeployment).where(
         PaperDeployment.user_id == user.id,
         PaperDeployment.command_key == idempotency_key,
@@ -2402,6 +2467,9 @@ async def arm_paper_deployment(
         if previous.request_hash != digest:
             raise HTTPException(409, "Command key was already used with different parameters")
         return PaperDeploymentResponse.from_model(previous)
+    _require_strategy_eligible(
+        session, user.id, body.strategy_key, account.initial_cash, body.lots, arming=True,
+    )
     waiting = session.scalars(select(PaperDeployment).where(
         PaperDeployment.user_id == user.id,
         PaperDeployment.status == "WAITING_FOR_ENTRY",
@@ -3189,7 +3257,7 @@ async def _open_paper_trade_with_provider(
         raise HTTPException(
             status_code=423, detail="Paper kill switch is active; new trades are paused"
         )
-    _require_strategy_not_demoted(session, user.id, strategy_key, account.initial_cash)
+    _require_strategy_eligible(session, user.id, strategy_key, account.initial_cash, body.lots)
     open_trades = session.scalars(
         select(PaperTrade).where(PaperTrade.account_id == account.id, PaperTrade.status == "OPEN")
     ).all()

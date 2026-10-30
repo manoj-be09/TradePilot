@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from apps.api.services.futures_paper import monitor_futures_exits
 from apps.api.services.option_deployments import process_option_deployments
 from apps.api.services.paper_monitor import monitor_exits
+from apps.api.services.strategy_eligibility import sweep_strategy_eligibility
 from apps.api.settings import Settings, get_settings
 from packages.database.futures_models import PaperFuturesTrade
 from packages.database.models import PaperTrade
@@ -70,6 +71,8 @@ async def run_cycle(
                 evaluated += futures_checked
                 closed += len(futures_closed)
                 warnings.extend(futures_warnings)
+        # After exits, so a close that breaches a limit blocks this cycle's armed entries.
+        warnings.extend(sweep_strategy_eligibility(factory, token, settings))
         option_checked, option_filled, option_warnings = await process_option_deployments(
             factory, provider, token, settings
         )

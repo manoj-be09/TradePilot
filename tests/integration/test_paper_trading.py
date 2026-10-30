@@ -201,6 +201,8 @@ def test_paper_workflow_is_authenticated_and_persists_simulated_fills(client, mo
     assert all(order["fill_snapshot"]["paper_only"] for order in orders.json())
     open_order = next(order for order in orders.json() if order["action"] == "OPEN")
     opened_fill = open_order["fill_snapshot"]["fills"][0]
+    # No recorder rows in this test: evidence says so, and the fill still happened.
+    assert opened_fill["feed_status"] == "NO_RECENT_RECORD"
     assert opened_fill["displayed_bid_quantity"] == 1000
     assert opened_fill["displayed_ask_quantity"] == 1000
     assert opened_fill["traded_volume"] == 1000

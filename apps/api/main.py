@@ -228,6 +228,7 @@ from packages.paper_trading.transactions import (
 )
 from packages.paper_trading.worker_lease import WORKER_NAME, LeaseToken, assert_owned
 from packages.ranking.selector import RankingInputs, RankingResult, rank_nifty_strategies
+from packages.recorder.freshness import with_feed_freshness
 from packages.regime.candidate_registry import fingerprint
 from packages.regime.classifier import MarketRegimeResult, classify_market_regime
 from packages.regime.frozen_nifty_study import FrozenNiftyStudy
@@ -3339,7 +3340,7 @@ async def _open_paper_trade_with_provider(
                 "entry_rule_snapshot": entry_rule_snapshot,
                 "modeled_costs": cost_snapshot(fills),
                 "estimated_margin": option_margin.snapshot(),
-                "fills": fills,
+                "fills": with_feed_freshness(session, fills, datetime.now(timezone.utc)),
                 "method": (
                     "Immediate simulated fills: buys at ask and sells at bid; "
                     "no queue or slippage model."
@@ -4167,7 +4168,7 @@ async def close_paper_trade(
                 "market_as_of": chain.as_of.isoformat(),
                 "quality_status": quality.status,
                 "modeled_costs": cost_snapshot(fills),
-                "fills": fills,
+                "fills": with_feed_freshness(session, fills, datetime.now(timezone.utc)),
                 "method": (
                     "Immediate simulated fills: closing sells at bid and buys at ask; "
                     "no queue or slippage model."

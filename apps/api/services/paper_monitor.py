@@ -43,6 +43,7 @@ from packages.paper_trading.transactions import (
     lock_account,
 )
 from packages.paper_trading.worker_lease import LeaseToken, assert_owned
+from packages.recorder.freshness import with_feed_freshness
 
 _CENT = Decimal("0.01")
 
@@ -581,7 +582,7 @@ async def monitor_exits(
                     "quality_status": assess_option_chain(trade_chain).status,
                     "exit_reason": decision.reason,
                     "modeled_costs": cost_snapshot(fills),
-                    "fills": fills,
+                    "fills": with_feed_freshness(session, fills, datetime.now(timezone.utc)),
                     "method": (
                         "Paper risk-rule exit; simulated closing sells at bid and buys at ask; "
                         "no queue or slippage model."

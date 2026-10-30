@@ -6,6 +6,7 @@ import logging
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from apps.api.services.futures_deployments import process_futures_deployments
@@ -114,7 +115,15 @@ async def serve(once: bool = False) -> None:
     factory = build_session_factory()
     owner = str(uuid4())
     while True:
-        status = await run_cycle(factory, get_market_data_provider(), settings, owner)
+        try:
+            status = await run_cycle(factory, get_market_data_provider(), settings, owner)
+        except SQLAlchemyError as error:
+            # A busy database must not end the only process managing open paper exits.
+            # The next cycle retries; health shows stale if this keeps happening.
+            if once:
+                raise
+            status = f"RETRY ({type(error).__name__})"
+            logger.error("Paper exit cycle could not reach the database; retrying")
         logger.info("Paper exit cycle: %s", status)
         if once:
             return

@@ -3,7 +3,9 @@ as ERROR, release the lease for the next cycle, and never store the exception te
 
 import asyncio
 
+import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -74,3 +76,25 @@ def test_a_second_worker_is_busy_while_the_first_holds_the_lease(monkeypatch):
     monkeypatch.setattr(worker, "process_option_deployments", nested)
     assert asyncio.run(worker.run_cycle(factory, object(), _settings(), "worker-a")) == "HEALTHY"
     assert results == ["BUSY"]
+
+
+def test_a_locked_database_does_not_end_the_worker_loop(monkeypatch):
+    calls = []
+
+    async def locked_then_stop(*_args, **_kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise OperationalError("commit", {}, Exception("database is locked"))
+        raise KeyboardInterrupt
+
+    async def no_wait(_seconds):
+        return None
+
+    monkeypatch.setattr(worker, "run_cycle", locked_then_stop)
+    monkeypatch.setattr(worker, "get_settings", _settings)
+    monkeypatch.setattr(worker, "build_session_factory", _factory)
+    monkeypatch.setattr(worker, "get_market_data_provider", object)
+    monkeypatch.setattr(worker.asyncio, "sleep", no_wait)
+    with pytest.raises(KeyboardInterrupt):
+        asyncio.run(worker.serve())
+    assert len(calls) == 2

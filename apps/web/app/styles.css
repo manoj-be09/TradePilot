@@ -1246,3 +1246,45 @@ a.sidebar-action-button { display: flex; align-items: center; justify-content: c
   .running-row > .inline-button, .running-action-note { grid-column: 2; grid-row: 1; }
   .strategy-start-list { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Trade layout: results and running strategies stay in view while you browse strategies. */
+.trade-layout { display: grid; gap: 28px; margin-top: 20px; }
+.trade-main, .trade-side { min-width: 0; }
+.trade-main > .trade-block:first-child { margin-top: 0; }
+.trade-hero { display: grid; gap: 4px; border-radius: 14px; background: var(--green); padding: 18px 20px; color: #fff; }
+.trade-hero > span { font-size: 12px; opacity: .85; }
+.trade-hero > strong { font-family: Manrope, sans-serif; font-size: 32px; font-variant-numeric: tabular-nums; letter-spacing: -.03em; line-height: 1.15; }
+.trade-hero > small { margin-top: 8px; font-size: 11px; opacity: .85; }
+.trade-hero dl { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin: 12px 0 0; border-top: 1px solid rgb(255 255 255 / 22%); padding-top: 12px; }
+.trade-hero dl div { margin: 0; }
+.trade-hero dt { font-size: 11px; opacity: .8; }
+.trade-hero dd { margin: 1px 0 0; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.side-tabs { margin-top: 14px; padding-bottom: 8px; }
+.side-tabs button { flex: 1; justify-content: center; min-height: 36px; padding: 6px 10px; }
+.trade-side .trade-empty { margin-top: 10px; }
+.trade-side .running-row { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; }
+.trade-side .running-pnl { grid-column: 1 / -1; grid-row: 2; text-align: left; }
+.trade-side .running-row > .inline-button, .trade-side .running-action-note { grid-column: 2; grid-row: 1; }
+.trade-side .running-pnl b { font-size: 15px; }
+.strategy-start-list:has(.strategy-tile) { gap: 8px; }
+.strategy-start-list .strategy-tile { border: 0; border-radius: 10px; padding: 10px 10px 10px 14px; }
+.strategy-tile--bullish { background: #edf7f0; }
+.strategy-tile--bearish { background: #fcf0f0; }
+.strategy-tile--sideways { background: #fbf6e6; }
+.strategy-tile--volatility { background: #edf3fb; }
+.strategy-tile--futures, .strategy-tile--income, .strategy-tile--special { background: #f2f3f7; }
+.strategy-tile strong { font-size: 13px; }
+.strategy-play { display: grid; flex: none; width: 36px; height: 36px; place-items: center; border: 0; border-radius: 50%; background: var(--green); padding: 0 0 0 2px; color: #fff; font-size: 12px; cursor: pointer; }
+.strategy-play:hover:not(:disabled) { filter: brightness(1.15); }
+.strategy-play:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.strategy-play:disabled { background: #b9c6be; cursor: default; }
+@media (min-width: 1180px) {
+  .trade-layout { grid-template-columns: minmax(0, 1fr) 360px; align-items: start; }
+  .trade-side { position: sticky; top: 12px; order: 2; max-height: calc(100vh - 24px); overflow-y: auto; }
+  .trade-main { order: 1; }
+}
+.trade-intro { margin-top: 0; }
+.trade-intro + .trade-note { margin-top: 4px; }
+.trade-filter { gap: 4px; }
+.trade-filter button { min-height: 34px; padding: 5px 10px; font-size: 13px; }
+.trade-filter button span { padding: 1px 5px; }

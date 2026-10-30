@@ -194,9 +194,9 @@ export function FuturesPaper({ token, apiUrl, waitingKeys, entriesPaused, onChan
         {strategies.map((strategy) => {
           const waiting = waitingKeys.includes(strategy.key);
           return (
-            <li key={strategy.key} title={strategy.description}>
+            <li className="strategy-tile strategy-tile--futures" key={strategy.key} title={strategy.description}>
               <div><strong>{strategy.name}</strong><small>Stop −{amount(strategy.stop_points)}, target +{amount(strategy.target_points)}. {strategy.intraday ? "Exits before the market closes each day." : `Held overnight, rolls ${ROLLOVER_DAYS} days before expiry.`}</small></div>
-              {waiting ? <span>Waiting</span> : <button className="refresh-button strategy-start" disabled={busy || entriesPaused || !frontContract} onClick={() => void startStrategy(strategy)} title={entriesPaused ? "Entries are paused" : undefined} type="button">Start in paper</button>}
+              {waiting ? <span>Waiting</span> : <button aria-label={`Start ${strategy.name} in paper`} className="strategy-play" disabled={busy || entriesPaused || !frontContract} onClick={() => void startStrategy(strategy)} title={entriesPaused ? "Entries are paused" : "Start in paper"} type="button">▶</button>}
             </li>
           );
         })}

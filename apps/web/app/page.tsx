@@ -742,6 +742,7 @@ export default function Home() {
   const [paperRefreshCount, setPaperRefreshCount] = useState(0);
   const [startFilter, setStartFilter] = useState<StrategyMarketBias | "ALL" | "FUTURES">("ALL");
   const [rankingOpen, setRankingOpen] = useState(false);
+  const [sideTab, setSideTab] = useState<"RUNNING" | "CLOSED">("RUNNING");
   const [paperStrategies, setPaperStrategies] = useState<PaperStrategy[]>([]);
   useEffect(() => { setPaperStrategies([]); }, [selectedOptionIndex]);
   const [paperPresets, setPaperPresets] = useState<PaperStrategyPreset[]>([]);
@@ -1480,8 +1481,16 @@ export default function Home() {
   const closedFuturesTrades = futuresTrades.filter(trade => trade.status === "CLOSED");
   const finishedDeployments = paperDeployments.filter(item => item.status !== "WAITING_FOR_ENTRY");
   const runningCount = paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").length + openPaperTrades.length + openFuturesTrades.length;
+  const sumPnl = (values: (string | null)[]) => values.reduce((sum, value) => sum + (Number(value) || 0), 0);
+  const openPnl = sumPnl([...openPaperTrades, ...openFuturesTrades].map(trade => trade.unrealized_pnl));
+  const totalPnl = openPnl + sumPnl([...closedPaperTrades, ...closedFuturesTrades].map(trade => trade.realized_pnl));
+  const unpricedOpen = [...openPaperTrades, ...openFuturesTrades].filter(trade => trade.unrealized_pnl === null).length;
+  const biasOrder = (key: string) => {
+    const position = (["BULLISH", "BEARISH", "SIDEWAYS", "VOLATILITY"] as string[]).indexOf(STRATEGY_CATALOG_META[key]?.bias ?? "");
+    return position < 0 ? 99 : position;
+  };
   const startFilters: { key: StrategyMarketBias | "ALL" | "FUTURES"; label: string; count: number }[] = [
-    { key: "ALL", label: "All options", count: paperStrategies.length },
+    { key: "ALL", label: "Options", count: paperStrategies.length },
     ...(["BULLISH", "BEARISH", "SIDEWAYS", "VOLATILITY"] as const).map(bias => ({
       key: bias, label: bias.charAt(0) + bias.slice(1).toLowerCase(),
       count: paperStrategies.filter(strategy => STRATEGY_CATALOG_META[strategy.key]?.bias === bias).length,
@@ -2996,18 +3005,29 @@ export default function Home() {
                 <h2>Trade</h2>
                 <p className="muted">Simulated with live quotes. No real orders are sent.</p>
               </div>
-              {paperAccount ? <dl className="trade-stats">
-                <div><dt>Cash</dt><dd>₹{formatPrice(paperAccount.cash_balance)}</dd></div>
-                <div><dt>Today</dt><dd className={changeClass(paperAccount.daily_realized_pnl)}>{signedRupees(paperAccount.daily_realized_pnl)}</dd></div>
-                <div><dt>Risk left today</dt><dd>₹{formatPrice(paperAccount.daily_risk_remaining)}</dd></div>
-              </dl> : null}
               <button className="refresh-button" type="button" disabled={chainBusy || paperBusy} onClick={() => void refreshPaperWorkspace()}>↻ Refresh</button>
             </div>
             {tradeMessages.length ? <ul className="paper-warning-list">{tradeMessages.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
             {!tradeMessages.length && chain?.quality && chain.quality.status !== "PASS" ? <p className="trade-note">Quote check: {chain.quality.status}. Each entry is rechecked against live quotes before it fills.</p> : null}
 
-            <section className="trade-block" aria-label="Running">
-              <h3 className="trade-block-title">Running{runningCount ? <span>{runningCount}</span> : null}</h3>
+            <div className="trade-layout">
+            <aside className="trade-side" aria-label="Your results and running strategies">
+              <section className="trade-hero" aria-label="Paper results">
+                <span>Total P&amp;L, simulated, before charges</span>
+                <strong>{signedRupees(totalPnl)}</strong>
+                {paperAccount ? <dl>
+                  <div><dt>Today</dt><dd>{signedRupees(paperAccount.daily_realized_pnl)}</dd></div>
+                  <div><dt>Open</dt><dd>{signedRupees(openPnl)}</dd></div>
+                  <div><dt>Cash</dt><dd>₹{formatPrice(paperAccount.cash_balance)}</dd></div>
+                  <div><dt>Risk left today</dt><dd>₹{formatPrice(paperAccount.daily_risk_remaining)}</dd></div>
+                </dl> : null}
+                {unpricedOpen ? <small>{unpricedOpen} open {unpricedOpen === 1 ? "position has" : "positions have"} no live price, so {unpricedOpen === 1 ? "it isn't" : "they aren't"} counted.</small> : null}
+              </section>
+              <div className="position-view-tabs side-tabs" aria-label="Show">
+                <button aria-pressed={sideTab === "RUNNING"} onClick={() => setSideTab("RUNNING")} type="button">Running <span>{runningCount}</span></button>
+                <button aria-pressed={sideTab === "CLOSED"} onClick={() => setSideTab("CLOSED")} type="button">Closed <span>{closedPaperTrades.length + closedFuturesTrades.length}</span></button>
+              </div>
+              {sideTab === "RUNNING" ? <>
               {runningCount === 0 ? <p className="trade-empty">Nothing is running. Start a strategy below and it will appear here.</p> : <ul className="running-list">
                 {paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").map(item => <li className="running-row" key={item.id}>
                   <div className="running-name"><strong>{deploymentName(item)}</strong><small><span className="running-state running-state--waiting">Waiting for entry</span> {waitingStatus(item.detail)}</small></div>
@@ -3034,7 +3054,22 @@ export default function Home() {
                   </li>;
                 })}
               </ul>}
-            </section>
+              </> : <>
+                {closedPaperTrades.length + closedFuturesTrades.length === 0 ? <p className="trade-empty">No closed trades yet.</p> : <ul className="running-list">
+                  {closedPaperTrades.map(trade => <li className="running-row" key={trade.id}>
+                    <div className="running-name"><strong>{trade.strategy_name}</strong><small>{trade.exit_reason ? trade.exit_reason.replaceAll("_", " ").toLowerCase() : "closed"}, expiry {trade.expiry}</small></div>
+                    <div className="running-pnl"><b className={changeClass(trade.realized_pnl)}>{signedRupees(trade.realized_pnl)}</b></div>
+                    <details className="running-details"><summary>Details</summary>{renderOptionCard(trade, token)}</details>
+                  </li>)}
+                  {closedFuturesTrades.map(trade => <li className="running-row" key={trade.id}>
+                    <div className="running-name"><strong>{futuresTradeName(trade)}</strong><small>{trade.exit_reason ? trade.exit_reason.replaceAll("_", " ").toLowerCase() : "closed"}, {trade.trading_symbol}</small></div>
+                    <div className="running-pnl"><b className={changeClass(trade.realized_pnl)}>{signedRupees(trade.realized_pnl)}</b></div>
+                    <details className="running-details"><summary>Details</summary><FuturesPositionCard apiUrl={API_URL} onChanged={() => void refreshPaperWorkspace()} token={token} trade={trade} /></details>
+                  </li>)}
+                </ul>}
+              </>}
+            </aside>
+            <div className="trade-main">
             {expiredPaperTrades.length > 0 ? <details className="equity-history expiry-settlement" open>
               <summary>Expired paper positions needing settlement ({expiredPaperTrades.length})</summary>
               <p className="paper-warning">Expired options need settlement evidence instead of a current quote. Review the selected index’s official close and corrections. Fetching a reference never closes the position.</p>
@@ -3088,21 +3123,22 @@ export default function Home() {
 
             <section className="trade-block" aria-label="Start a strategy">
               <h3 className="trade-block-title">Start a strategy</h3>
+              <p className="trade-note trade-intro">Press ▶ to start one in paper. It waits for its entry rules before opening a simulated trade.</p>
               {selectedOptionIndex === "NIFTY" ? <StrategyRanking apiUrl={API_URL} busy={paperBusy} chain={chain} compact hideLinkWithoutPick onUse={(key) => { if (key) void startPaperStrategy(key); }} referenceStrike={selectedPaperStrike} token={token} /> : null}
               <div className="position-view-tabs trade-filter" aria-label="Filter strategies">
                 {startFilters.map(filter => <button aria-pressed={startFilter === filter.key} key={filter.key} onClick={() => setStartFilter(filter.key)} type="button">{filter.label} <span>{filter.count}</span></button>)}
               </div>
               {startFilter === "FUTURES" ? (selectedOptionIndex === "NIFTY" ? <FuturesPaper apiUrl={API_URL} entriesPaused={!paperAccount || paperAccount.kill_switch_enabled} onChanged={() => void refreshPaperWorkspace()} token={token} waitingKeys={paperDeployments.filter(item => item.instrument_kind === "FUTURES" && item.status === "WAITING_FOR_ENTRY").map(item => item.strategy_key)} /> : null) : <ul className="strategy-start-list" aria-label="Option strategies">
-                {paperStrategies.filter(strategy => startFilter === "ALL" || STRATEGY_CATALOG_META[strategy.key]?.bias === startFilter).map((strategy) => {
+                {paperStrategies.filter(strategy => startFilter === "ALL" || STRATEGY_CATALOG_META[strategy.key]?.bias === startFilter).sort((left, right) => biasOrder(left.key) - biasOrder(right.key)).map((strategy) => {
                   const payoff = strategyPayoffs[strategy.key];
                   const finiteLoss = !!payoff && !payoff.maximum_loss_unbounded && Number(payoff.maximum_loss) > 0;
                   const waiting = paperDeployments.some((item) => item.status === "WAITING_FOR_ENTRY" && item.strategy_key === strategy.key && item.expiry === selectedExpiry);
                   const open = paperTrades.some((item) => item.status === "OPEN" && item.strategy_name === strategy.name);
-                  return <li key={strategy.key}>
+                  return <li className={`strategy-tile strategy-tile--${(STRATEGY_CATALOG_META[strategy.key]?.bias || "special").toLowerCase()}`} key={strategy.key}>
                     <div><strong>{strategy.name}</strong><small>{STRATEGY_CATALOG_META[strategy.key]?.label || "Paper template"}{finiteLoss ? `, max loss ₹${formatPrice(payoff.maximum_loss)}` : ""}</small></div>
                     {open ? <span>Open</span> : waiting ? <span>Waiting</span> : <div className="strategy-start-actions">
                       <button className="text-link" disabled={paperBusy || !finiteLoss} onClick={() => { const details = document.getElementById("paper-strategy-builder"); if (details instanceof HTMLDetailsElement) details.open = true; applyStrategyToPaperTicket(strategy, payoff); }} type="button">Edit rules</button>
-                      <button className="refresh-button strategy-start" disabled={paperBusy || !finiteLoss || !!paperAccount?.kill_switch_enabled} onClick={() => void startPaperStrategy(strategy.key)} type="button">Start in paper</button>
+                      <button aria-label={`Start ${strategy.name} in paper`} className="strategy-play" disabled={paperBusy || !finiteLoss || !!paperAccount?.kill_switch_enabled} onClick={() => void startPaperStrategy(strategy.key)} title="Start in paper" type="button">▶</button>
                     </div>}
                   </li>;
                 })}
@@ -3112,19 +3148,7 @@ export default function Home() {
             <section className="trade-more" aria-label="More">
               <h3 className="trade-block-title">More</h3>
               <details className="trade-more-item">
-                <summary>History<span>{closedPaperTrades.length + closedFuturesTrades.length} closed</span></summary>
-                {closedPaperTrades.length + closedFuturesTrades.length === 0 ? <p className="trade-empty">No closed trades yet.</p> : <ul className="running-list">
-                  {closedPaperTrades.map(trade => <li className="running-row" key={trade.id}>
-                    <div className="running-name"><strong>{trade.strategy_name}</strong><small>{trade.exit_reason ? trade.exit_reason.replaceAll("_", " ").toLowerCase() : "closed"}, expiry {trade.expiry}</small></div>
-                    <div className="running-pnl"><b className={changeClass(trade.realized_pnl)}>{signedRupees(trade.realized_pnl)}</b></div>
-                    <details className="running-details"><summary>Details</summary>{renderOptionCard(trade, token)}</details>
-                  </li>)}
-                  {closedFuturesTrades.map(trade => <li className="running-row" key={trade.id}>
-                    <div className="running-name"><strong>{futuresTradeName(trade)}</strong><small>{trade.exit_reason ? trade.exit_reason.replaceAll("_", " ").toLowerCase() : "closed"}, {trade.trading_symbol}</small></div>
-                    <div className="running-pnl"><b className={changeClass(trade.realized_pnl)}>{signedRupees(trade.realized_pnl)}</b></div>
-                    <details className="running-details"><summary>Details</summary><FuturesPositionCard apiUrl={API_URL} onChanged={() => void refreshPaperWorkspace()} token={token} trade={trade} /></details>
-                  </li>)}
-                </ul>}
+                <summary>Logs and past starts<span>{paperOrders.length} orders</span></summary>
                 {finishedDeployments.length > 0 ? <details className="trade-nested"><summary>Past starts<span>{finishedDeployments.length}</span></summary><div className="equity-deployments">{finishedDeployments.slice(0, 20).map(item => renderDeploymentCard(item, token))}</div></details> : null}
             <details className="workspace-disclosure"><summary>All positions · detailed table</summary>
             {paperTrades.length ? (
@@ -3586,6 +3610,8 @@ export default function Home() {
               </details>
             {selectedOptionIndex === "NIFTY" && token && <ExpiryTestControl key={token} token={token} apiUrl={API_URL} expiry={selectedExpiry} strike={selectedPaperStrike} disabled={paperBusy || !paperEntry.ready || !!paperAccount?.kill_switch_enabled} onApplied={() => setPaperRefreshCount(value => value + 1)} />}
             </section>
+            </div>
+            </div>
           </section>
 
           </> : null}

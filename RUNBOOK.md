@@ -79,7 +79,7 @@ Session open and close come from Upstox's scheduled exchange timings for that da
 
 ## Database problems
 
-- SQLite (local): the file is `work/nifty-local.db`. The nightly job makes a verified copy in `work/backups/` after each close and keeps the last 7. It holds a read lock for about 30 seconds, so it refuses to run before 16:30 IST. To back up by hand, stop the API, worker and recorder before copying the file. If it is corrupted, restore the latest copy; trades recorded after that copy are lost, so reconcile against the order log before resuming.
+- SQLite (local): the file is `work/nifty-local.db`. The nightly job makes a verified copy in `work/backups/` after each close and keeps the last 7. It refuses to run before 16:30 IST to keep the load off the machine during the session. To back up by hand, stop the API, worker and recorder before copying the file. If it is corrupted, restore the latest copy; trades recorded after that copy are lost, so reconcile against the order log before resuming.
 - Postgres (Docker): `docker compose ps` should show the database healthy before starting the API and worker.
 - Any database error during an entry rolls the transaction back; no partial trade is saved.
 

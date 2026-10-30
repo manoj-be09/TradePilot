@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     paper_max_trade_risk_pct: int = Field(default=2, gt=0, le=100)
     paper_max_portfolio_risk_pct: int = Field(default=10, gt=0, le=100)
     paper_daily_loss_limit_pct: int = Field(default=5, gt=0, le=100)
-    paper_max_open_trades: int = Field(default=10, gt=0, le=100)
+    paper_max_open_trades: int = Field(default=26, gt=0, le=100)
     paper_quote_max_age_seconds: int = Field(default=60, ge=1, le=300)
     paper_expiry_square_off_minutes_before_close: int = Field(default=20, ge=5, le=60)
     paper_allow_unverified_quotes: bool = False

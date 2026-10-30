@@ -54,3 +54,20 @@ def test_another_model_or_no_trades_is_not_used(tmp_path):
 def test_only_result_files_are_read(tmp_path):
     (tmp_path / "cal-long_put.json").write_text(json.dumps(_result()), encoding="utf-8")
     assert load_past_tests(tmp_path) == {}
+
+
+def test_a_replay_of_the_real_rules_replaces_the_walk_forward_result(tmp_path):
+    (tmp_path / "wf-long_put.json").write_text(json.dumps(_result()), encoding="utf-8")
+    assert load_past_tests(tmp_path)["long_put"].exact_rules is False
+    walk_forward = _result()
+    replay = {
+        "results_model": "nifty-history-template-rules-v1",
+        "config": walk_forward["base_config"],
+        "overall": {**walk_forward["out_of_sample"], "closed_trades": 90},
+        "expiries_skipped": 3,
+    }
+    (tmp_path / "rules-long_put.json").write_text(json.dumps(replay), encoding="utf-8")
+    test = load_past_tests(tmp_path)["long_put"]
+    assert test.exact_rules is True
+    assert test.trades == 90
+    assert test.expiries_skipped == 3

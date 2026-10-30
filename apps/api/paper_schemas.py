@@ -32,7 +32,9 @@ class OptionMarketConditionEvidenceResponse(BaseModel):
 
 
 class StrategyPastTestResponse(BaseModel):
+    exact_rules: bool
     trades: int
+    expiries_skipped: int
     win_rate_pct: Decimal
     net_pnl: Decimal
     average_net_pnl: Decimal

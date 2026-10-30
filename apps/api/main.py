@@ -1700,7 +1700,9 @@ def paper_strategies(
         if test is None or test.strategy_version != strategy.version:
             return None
         return StrategyPastTestResponse(
-            trades=test.trades, win_rate_pct=test.win_rate_pct, net_pnl=test.net_pnl,
+            exact_rules=test.exact_rules, trades=test.trades,
+            expiries_skipped=test.expiries_skipped,
+            win_rate_pct=test.win_rate_pct, net_pnl=test.net_pnl,
             average_net_pnl=test.average_net_pnl, drawdown=test.drawdown,
             first_exit=test.first_exit, last_exit=test.last_exit,
             half_spread_pct=test.half_spread_pct,

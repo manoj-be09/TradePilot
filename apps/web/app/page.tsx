@@ -179,11 +179,16 @@ const NAVIGATION: { section: SidebarSection; label: string; icon: string }[] = [
 ];
 
 type PastTest = {
+  exact_rules: boolean; expiries_skipped: number;
   trades: number; win_rate_pct: string; net_pnl: string; average_net_pnl: string;
   drawdown: string; first_exit: string; last_exit: string; half_spread_pct: string;
 };
 
 type StrategySort = "PROFIT" | "WIN_RATE" | "TYPE";
+
+// Below this, a strategy shows its past test but isn't ranked: a few lucky trades could top the list.
+const MIN_RANKED_TRADES = 30;
+const isRanked = (strategy: PaperStrategy) => (strategy.past_test?.trades ?? 0) >= MIN_RANKED_TRADES;
 
 function monthYear(isoDate: string): string {
   return new Intl.DateTimeFormat("en-IN", { month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${isoDate}T00:00:00Z`));
@@ -2396,8 +2401,8 @@ export default function Home() {
   function compareStrategies(left: PaperStrategy, right: PaperStrategy) {
     const byType = biasOrder(left.key) - biasOrder(right.key);
     if (strategySort === "TYPE") return byType;
-    // Strategies with no past test go last: unknown isn't the same as poor.
-    const value = (strategy: PaperStrategy) => strategy.past_test ? Number(strategySort === "PROFIT" ? strategy.past_test.average_net_pnl : strategy.past_test.win_rate_pct) : -Infinity;
+    // Strategies without enough past trades go last: unknown isn't the same as poor.
+    const value = (strategy: PaperStrategy) => strategy.past_test && isRanked(strategy) ? Number(strategySort === "PROFIT" ? strategy.past_test.average_net_pnl : strategy.past_test.win_rate_pct) : -Infinity;
     return (value(right) - value(left)) || byType;
   }
 
@@ -2424,7 +2429,7 @@ export default function Home() {
       </>}
       context={`NIFTY, expiry ${selectedExpiry || "not chosen"}, strike ${formatPrice(selectedPaperStrike)}, ${paperLots} lot${paperLots === 1 ? "" : "s"}. Simulated.`}
       evidence={pastTest ? {
-        lead: `Simulated on ${monthYear(pastTest.first_exit)} to ${monthYear(pastTest.last_exit)} NIFTY data, after charges, assuming a ${formatPrice(pastTest.half_spread_pct)}% cost each side to cross the spread. It used similar rules, not these exact ones: no target or trailing stop, with entry day and stop-loss re-picked on earlier data. With ${pastTest.trades} trades, the win rate could be off by about ${Math.round(196 * Math.sqrt(winShare * (1 - winShare) / pastTest.trades))} points either way. History is not a forecast.`,
+        lead: `Simulated on ${monthYear(pastTest.first_exit)} to ${monthYear(pastTest.last_exit)} NIFTY data, after charges, assuming a ${formatPrice(pastTest.half_spread_pct)}% cost each side to cross the spread. ${pastTest.exact_rules ? `It followed these entry and exit rules, one trade per weekly expiry, armed about a week before expiry and checked every 5 minutes. It couldn't replay real bid and ask, so the spread rule is assumed to pass, and the put/call ratio uses nearby strikes only.${pastTest.expiries_skipped ? ` ${pastTest.expiries_skipped} expiries had no trade, because the entry rules weren't met or the maximum loss was over the per-trade limit.` : ""}` : "It used similar rules, not these exact ones: no target or trailing stop, with entry day and stop-loss re-picked on earlier data."} With ${pastTest.trades} trades, the win rate could be off by about ${Math.round(196 * Math.sqrt(winShare * (1 - winShare) / pastTest.trades))} points either way. History is not a forecast.`,
         figures: [
           { label: "Average per trade", value: signedRupees(pastTest.average_net_pnl), tone: Number(pastTest.average_net_pnl) >= 0 ? "profit" : "loss" },
           { label: `Won, of ${pastTest.trades} trades`, value: `${Math.round(Number(pastTest.win_rate_pct))}%` },
@@ -3239,7 +3244,7 @@ export default function Home() {
                   <em>Sort by</em>
                   {([["PROFIT", "Average profit"], ["WIN_RATE", "Win rate"], ["TYPE", "Market view"]] as const).map(([key, label]) => <button aria-pressed={strategySort === key} key={key} onClick={() => setStrategySort(key)} type="button">{label}</button>)}
                 </div>
-                {strategySort !== "TYPE" && pastTestPeriod ? <p className="trade-note">Ranked by simulated results from {pastTestPeriod}, after charges. This is history, not a forecast, and it used similar rules rather than these exact ones.</p> : null}
+                {strategySort !== "TYPE" && pastTestPeriod ? <p className="trade-note">Ranked by simulated results from {pastTestPeriod}, after charges. {paperStrategies.every(strategy => !strategy.past_test || strategy.past_test.exact_rules) ? "They follow each strategy's own entry and exit rules. This is history, not a forecast." : "This is history, not a forecast, and it used similar rules rather than these exact ones."}</p> : null}
               </div> : null}
               {startFilter === "FUTURES" ? (selectedOptionIndex === "NIFTY" ? <FuturesPaper apiUrl={API_URL} entriesPaused={!paperAccount || paperAccount.kill_switch_enabled} onChanged={() => void refreshPaperWorkspace()} token={token} waitingKeys={paperDeployments.filter(item => item.instrument_kind === "FUTURES" && item.status === "WAITING_FOR_ENTRY").map(item => item.strategy_key)} /> : null) : <ul className="strategy-start-list" aria-label="Option strategies">
                 {paperStrategies.filter(strategy => startFilter === "ALL" || STRATEGY_CATALOG_META[strategy.key]?.bias === startFilter).sort(compareStrategies).map((strategy, position) => {
@@ -3249,9 +3254,9 @@ export default function Home() {
                   const open = paperTrades.some((item) => item.status === "OPEN" && item.strategy_name === strategy.name);
                   return <li className={`strategy-tile strategy-tile--${(STRATEGY_CATALOG_META[strategy.key]?.bias || "special").toLowerCase()}`} key={strategy.key}>
                     <button aria-label={`${strategy.name}: rules and details`} className="strategy-tile-open" onClick={() => setDetailStrategyKey(strategy.key)} type="button">
-                      <strong>{strategySort !== "TYPE" && strategy.past_test ? `${position + 1}. ` : ""}{strategy.name}</strong>
+                      <strong>{strategySort !== "TYPE" && isRanked(strategy) ? `${position + 1}. ` : ""}{strategy.name}</strong>
                       <small>{STRATEGY_CATALOG_META[strategy.key]?.label || "Paper template"}<u>Rules and details</u></small>
-                      {strategy.past_test ? <small className="strategy-tile-past">Past test: avg {signedRupees(strategy.past_test.average_net_pnl)} a trade, won {Math.round(Number(strategy.past_test.win_rate_pct))}%</small> : <small className="strategy-tile-past">No past test</small>}
+                      {strategy.past_test ? <small className="strategy-tile-past">Past test: avg {signedRupees(strategy.past_test.average_net_pnl)} a trade, won {Math.round(Number(strategy.past_test.win_rate_pct))}%, {strategy.past_test.trades} trades{isRanked(strategy) ? "" : " (too few to rank)"}</small> : <small className="strategy-tile-past">No past test</small>}
                       {finiteLoss ? <small className="strategy-tile-figures"><span className="detail-profit">Max profit {maximumProfitText(payoff)}</span><span className="detail-loss">Max loss ₹{formatPrice(payoff.maximum_loss)}</span></small> : null}
                     </button>
                     {open ? <span>Open</span> : waiting ? <span>Waiting</span> : <button aria-label={`Start ${strategy.name} in paper`} className="strategy-play" disabled={paperBusy || !finiteLoss || !!paperAccount?.kill_switch_enabled} onClick={() => void startPaperStrategy(strategy.key)} title="Start in paper" type="button">▶</button>}

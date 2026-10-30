@@ -22,7 +22,19 @@ powershell -File scripts/start-web-local.ps1
 DATABASE_URL="sqlite:///./work/nifty-local.db" PYTHONPATH=. .venv/Scripts/python.exe -u -m apps.recorder.main --data-dir work/recorder-data
 ```
 
-Keep the machine awake and on power for the whole session; a sleeping laptop stops all four.
+Keep the machine awake and on power for the whole session; a sleeping laptop stops all of them.
+
+Or start everything with one command. The supervisor runs the API, web app, worker, forward runner, recorder and alert relay, restarts any that crash (waiting 5 seconds, then longer, up to 5 minutes), and writes each one's log to `work/logs/`. Stop the separately started copies first, or the API and web app will find their ports in use.
+
+```bash
+powershell -File scripts/start-all-local.ps1
+```
+
+To have it start whenever you sign in, run this once yourself (add `-Remove` to undo):
+
+```bash
+powershell -File scripts/install-autostart.ps1
+```
 
 ## The exit worker is not running or shows warnings
 

@@ -3028,7 +3028,7 @@ export default function Home() {
                 <button aria-pressed={sideTab === "CLOSED"} onClick={() => setSideTab("CLOSED")} type="button">Closed <span>{closedPaperTrades.length + closedFuturesTrades.length}</span></button>
               </div>
               {sideTab === "RUNNING" ? <>
-              {runningCount === 0 ? <p className="trade-empty">Nothing is running. Start a strategy below and it will appear here.</p> : <ul className="running-list">
+              {runningCount === 0 ? <p className="trade-empty">Nothing is running. Press ▶ on a strategy and it will appear here.</p> : <ul className="running-list">
                 {paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").map(item => <li className="running-row" key={item.id}>
                   <div className="running-name"><strong>{deploymentName(item)}</strong><small><span className="running-state running-state--waiting">Waiting for entry</span> {waitingStatus(item.detail)}</small></div>
                   <div className="running-pnl"><small>Stop −₹{formatPrice(item.stop_loss_amount)}{item.target_profit_amount ? `, target +₹${formatPrice(item.target_profit_amount)}` : ""}</small></div>

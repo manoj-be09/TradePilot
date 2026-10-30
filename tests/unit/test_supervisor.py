@@ -116,7 +116,8 @@ def test_one_crash_does_not_touch_the_other_services():
 
 def test_the_local_set_includes_every_process_the_paper_period_needs():
     names = {service.name for service in local_services("python")}
-    assert names == {"api", "web", "worker", "forward-runner", "recorder", "alert-relay"}
+    assert names == {"api", "web", "worker", "forward-runner", "recorder", "alert-relay",
+                     "nightly"}
 
 
 def test_a_real_process_is_logged_to_its_own_file_and_its_exit_code_seen(tmp_path):

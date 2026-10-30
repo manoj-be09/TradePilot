@@ -24,7 +24,7 @@ DATABASE_URL="sqlite:///./work/nifty-local.db" PYTHONPATH=. .venv/Scripts/python
 
 Keep the machine awake and on power for the whole session; a sleeping laptop stops all of them.
 
-Or start everything with one command. The supervisor runs the API, web app, worker, forward runner, recorder and alert relay, restarts any that crash (waiting 5 seconds, then longer, up to 5 minutes), and writes each one's log to `work/logs/`. Stop the separately started copies first, or the API and web app will find their ports in use.
+Or start everything with one command. The supervisor runs the API, web app, worker, forward runner, recorder, alert relay and nightly job, restarts any that crash (waiting 5 seconds, then longer, up to 5 minutes), and writes each one's log to `work/logs/`. Stop the separately started copies first, or the API and web app will find their ports in use.
 
 ```bash
 powershell -File scripts/start-all-local.ps1
@@ -68,7 +68,7 @@ Session open and close come from Upstox's scheduled exchange timings for that da
 
 ## Database problems
 
-- SQLite (local): the file is `work/nifty-local.db`. Stop the API, worker and recorder before copying it for a backup. If it is corrupted, restore the latest copy; trades recorded after that copy are lost, so reconcile against the order log before resuming.
+- SQLite (local): the file is `work/nifty-local.db`. The nightly job makes a verified copy in `work/backups/` after each close and keeps the last 7. It holds a read lock for about 30 seconds, so it refuses to run before 16:30 IST. To back up by hand, stop the API, worker and recorder before copying the file. If it is corrupted, restore the latest copy; trades recorded after that copy are lost, so reconcile against the order log before resuming.
 - Postgres (Docker): `docker compose ps` should show the database healthy before starting the API and worker.
 - Any database error during an entry rolls the transaction back; no partial trade is saved.
 
@@ -102,3 +102,5 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-forward-ru
 ```
 
 Its log shows one line per cycle: `OK`, `CLOSED`, `PAUSED`, `NO_DATA` or `FINISHED`. Pausing entries stops it arming anything new.
+
+After each close the nightly job writes `work/forward-reports/<date>.md`: per-strategy armed, open, closed, won, realized P&L and worst drawdown for the frozen strategies only, plus the ledger status. Figures are simulated. Run it by hand with `DATABASE_URL="sqlite:///./work/nifty-local.db" PYTHONPATH=. .venv/Scripts/python.exe -m apps.nightly.main --once`.

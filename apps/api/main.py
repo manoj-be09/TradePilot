@@ -68,6 +68,7 @@ from apps.api.paper_schemas import (
     StrategyDemotionResponse,
     StrategyEligibilityEventResponse,
     StrategyLegDefinitionResponse,
+    StrategyPastTestResponse,
     UserNotificationResponse,
 )
 from apps.api.research_routes import router as research_router
@@ -97,6 +98,7 @@ from packages.backtesting.contracts import (
     ScheduledOptionsBacktestResult,
     ScheduledOptionsBacktestRunRecord,
 )
+from packages.backtesting.past_tests import load_past_tests
 from packages.backtesting.replay import (
     BacktestDataError,
     run_scheduled_expiry_replay,
@@ -1690,6 +1692,20 @@ def paper_strategies(
                     n + 1, condition_wins + int(realized_pnl > 0),
                     condition_net + realized_pnl, condition_r + realized_pnl / trade.max_loss,
                 )
+    past_tests = load_past_tests()
+
+    def past_test(strategy: StrategyDefinition) -> StrategyPastTestResponse | None:
+        # A result from an older template version says nothing about the current one.
+        test = past_tests.get(strategy.key)
+        if test is None or test.strategy_version != strategy.version:
+            return None
+        return StrategyPastTestResponse(
+            trades=test.trades, win_rate_pct=test.win_rate_pct, net_pnl=test.net_pnl,
+            average_net_pnl=test.average_net_pnl, drawdown=test.drawdown,
+            first_exit=test.first_exit, last_exit=test.last_exit,
+            half_spread_pct=test.half_spread_pct,
+        )
+
     return [
         StrategyDefinitionResponse(
             key=strategy.key,
@@ -1769,6 +1785,7 @@ def paper_strategies(
             if qualified.get(strategy.key, (0, 0, Decimal(0)))[0] >= 20
             and len(qualified_policy_variants.get(strategy.key, set())) == 1
             else None,
+            past_test=past_test(strategy),
         )
         for strategy in STRATEGIES
     ]

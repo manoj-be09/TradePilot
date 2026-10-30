@@ -31,6 +31,17 @@ class OptionMarketConditionEvidenceResponse(BaseModel):
     average_r: Decimal | None = None
 
 
+class StrategyPastTestResponse(BaseModel):
+    trades: int
+    win_rate_pct: Decimal
+    net_pnl: Decimal
+    average_net_pnl: Decimal
+    drawdown: Decimal
+    first_exit: date
+    last_exit: date
+    half_spread_pct: Decimal
+
+
 class StrategyDefinitionResponse(BaseModel):
     key: str
     name: str
@@ -52,6 +63,7 @@ class StrategyDefinitionResponse(BaseModel):
     estimated_win_probability_pct: Decimal | None = None
     average_net_pnl: Decimal | None = None
     expected_net_pnl: Decimal | None = None
+    past_test: StrategyPastTestResponse | None = None
 
 
 class PaperAccountResponse(BaseModel):

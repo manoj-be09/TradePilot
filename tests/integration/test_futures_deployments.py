@@ -275,18 +275,25 @@ def test_stop_target_and_trailing_exits_release_margin(client, setup):
     _arm(client, headers)
     _cycle(factory, provider)
     # Target is 240 points from the 25002 ask; exits price at the bid.
+    # A 98-point peak is below the 120-point trail, so the trail hasn't started yet.
     provider.bid, provider.ask = Decimal("25100"), Decimal("25102")
     _cycle(factory, provider)
     trade = _one_trade(factory)
     assert trade.status == "OPEN" and trade.peak_unrealized_pnl == Decimal("7350.00")
-    # The 120-point trail sits 22 points below entry from a 98-point peak.
     provider.bid, provider.ask = Decimal("24980"), Decimal("24982")
+    _cycle(factory, provider)
+    assert _one_trade(factory).status == "OPEN"
+    # A 148-point peak starts it, and 120 points below that still locks in a gain.
+    provider.bid, provider.ask = Decimal("25150"), Decimal("25152")
+    _cycle(factory, provider)
+    assert _one_trade(factory).status == "OPEN"
+    provider.bid, provider.ask = Decimal("25028"), Decimal("25030")
     _cycle(factory, provider)
     trade = _one_trade(factory)
     assert (trade.status, trade.exit_reason) == ("CLOSED", "TRAILING_STOP")
-    assert trade.realized_pnl == Decimal("-1650.00")
+    assert trade.realized_pnl == Decimal("1950.00")
     account = client.get("/paper/account", headers=headers).json()
-    assert Decimal(account["cash_balance"]) == Decimal("998350.00")
+    assert Decimal(account["cash_balance"]) == Decimal("1001950.00")
     assert account["open_trade_count"] == 0
     assert _ledger(client, headers) == "MATCHED"
 

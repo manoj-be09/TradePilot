@@ -2654,7 +2654,6 @@ export default function Home() {
           Entries {paperAccount.kill_switch_enabled ? "paused" : "on"}
           <button className="status-chip-action" disabled={paperBusy} onClick={() => void togglePaperKillSwitch()} type="button">{paperAccount.kill_switch_enabled ? "Resume" : "Pause"}</button>
         </span> : <span className="status-chip">Entries: unavailable</span>}
-        {paperError && activeSection !== "algo" ? <span className="status-chip status-chip--warn" role="alert">{paperError}</span> : null}
       </section>}
 
       {!token && <section className="intro">
@@ -2670,6 +2669,11 @@ export default function Home() {
             window.scrollTo({ top: 0, behavior: "smooth" });
             if (key) void startPaperStrategy(key);
           }} busy={paperBusy} />} /> : null}
+
+      {token && (paperError || paperTicketMessage) ? <div className="paper-toast" role={paperError ? "alert" : "status"}>
+        <p>{paperError || paperTicketMessage}</p>
+        <button aria-label="Dismiss message" className="inline-button" onClick={() => { setPaperError(""); setPaperTicketMessage(""); }} type="button">Dismiss</button>
+      </div> : null}
 
       {!authReady ? (
         <section className="panel loading-panel" aria-live="polite">Restoring your session…</section>
@@ -3001,6 +3005,18 @@ export default function Home() {
                 <button aria-describedby="batch-paper-safety" className="primary-button" disabled={!batchArmReady} onClick={() => void armAllPaperTemplates()} type="button">{paperBusy ? "Applying paper strategies…" : "Apply all eligible paper strategies"}</button>
               </div>
               <p className="features-note" id="batch-paper-safety">Apply all arms every template with a saved entry and exit policy ({savedBatchPolicyCount} saved for {paperLots} {paperLots === 1 ? "lot" : "lots"}). Nothing opens until a later snapshot passes its rules and risk limits.</p>
+            <ul className="strategy-start-list" aria-label="Start any strategy">
+              {paperStrategies.map((strategy) => {
+                const payoff = strategyPayoffs[strategy.key];
+                const finiteLoss = !!payoff && !payoff.maximum_loss_unbounded && Number(payoff.maximum_loss) > 0;
+                const waiting = paperDeployments.some((item) => item.status === "WAITING_FOR_ENTRY" && item.strategy_key === strategy.key && item.expiry === selectedExpiry);
+                const open = paperTrades.some((item) => item.status === "OPEN" && item.strategy_name === strategy.name);
+                return <li key={strategy.key}>
+                  <div><strong>{strategy.name}</strong><small>{STRATEGY_CATALOG_META[strategy.key]?.label || "Paper template"}{finiteLoss ? ` · max loss ₹${formatPrice(payoff.maximum_loss)}` : ""}</small></div>
+                  {open ? <span>Open</span> : waiting ? <span>Waiting</span> : <button className="inline-button" disabled={paperBusy || !finiteLoss || !!paperAccount?.kill_switch_enabled} onClick={() => void startPaperStrategy(strategy.key)} type="button">Start in paper</button>}
+                </li>;
+              })}
+            </ul>
             {savedBatchPolicyCount < paperStrategies.length && <p className="features-note">The batch cannot arm templates without saved entry and exit policies. Proposed rules are exploratory and need your review; saving does not arm a strategy. <button className="inline-button" onClick={reviewNextBatchPolicy} type="button">Review next missing policy</button> <button className="inline-button" disabled={selectedOptionIndex !== "NIFTY" || !chain || !selectedPaperStrike || selectedExpiry !== chain.expiry || selectedExpiry < indiaCalendarDate() || batchPolicyBusy || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={reviewAllBatchPolicies} type="button">Review all missing policies</button></p>}
             {batchPolicyReview && <details className="workspace-disclosure" open><summary>Review batch policy proposals · {batchPolicyReview.rows.filter((row) => row.policy).length} reviewable</summary>
               <p>Snapshot {new Date(batchPolicyReview.asOf).toLocaleString("en-IN")} · expiry {batchPolicyReview.expiry} · strike {formatPrice(batchPolicyReview.strike)} · {batchPolicyReview.lots} lot(s) · quote quality {batchPolicyReview.quality}. The entry filters and exits below are hypotheses derived from an indicative gross payoff, not validated trading rules or profit predictions. <a href="https://upstox.com/brokerage-charges/" rel="noreferrer" target="_blank">Upstox public-plan charges</a> are a separate scenario, not deducted from these gross risk values.</p>
@@ -3294,7 +3310,6 @@ export default function Home() {
                 {versionMessage ? <p className="preset-message" role="status">{versionMessage}</p> : null}
               </details>
               <p className="exit-rule-note" ref={paperTicketRef}>Rules apply to total position P&amp;L. The trailing stop starts after unrealized P&amp;L becomes positive. Checks run every 15 seconds while the independent worker is running.</p>
-              {paperTicketMessage ? <p className="paper-ticket-message" role="status">{paperTicketMessage}</p> : null}
               {deploymentPreparedKey === selectedStrategy ? <div className="deployment-ready"><strong>Ready to start in paper mode</strong><span>The worker will wait for a later qualifying market snapshot. Fresh entry rules, quotes, session and risk are checked before any paper fill. It then monitors the moving stop and exits.</span></div> : null}
               {selectedPaperStrategy ? <p className="strategy-description">{selectedPaperStrategy.description}</p> : isCustomStrategy ? <p className="strategy-description">Compose a same-expiry multi-leg structure. The payoff engine checks expiry loss before paper entry; unbounded loss is blocked.</p> : null}
               {strategyPreview ? (
@@ -3343,7 +3358,6 @@ export default function Home() {
               {chain?.quality?.status === "WARN" ? (
                 <p className="paper-warning">This snapshot has WARN quality. Check the report above; timestamps may not be exchange-verified.</p>
               ) : null}
-              {paperError ? <p className="error-banner paper-error" role="alert">{paperError}</p> : null}
               <button className="primary-button paper-submit" disabled={selectedOptionIndex !== "NIFTY" || paperBusy || !paperEntry.ready || !!paperEntry.pending || payoffEstimateBusy || !payoffEstimate || payoffEstimate.maximum_loss_unbounded || Number(payoffEstimate.maximum_loss) <= 0 || !entryRuleInputsValid || (isCustomStrategy && !entryConditionsSatisfied) || (!isCustomStrategy && (matchingWaitingPaperDeployment || deploymentPreparedKey !== selectedStrategy || !entryConditions.length || !stopLossInput || !trailingStopInput)) || (isCustomStrategy && hasDuplicateCustomContracts) || !paperAccount || paperAccount.kill_switch_enabled || !strategyPreview || !chain || chain.quality?.status === "FAIL"} onClick={() => void (isCustomStrategy ? openPaperTrade() : armPaperStrategy())} type="button">
                 {paperBusy ? "Processing paper strategy…" : isCustomStrategy ? "Open custom paper trade" : matchingWaitingPaperDeployment ? "Strategy waiting for entry" : deploymentPreparedKey === selectedStrategy ? "Start with these rules" : "Pick a strategy above"}
               </button>

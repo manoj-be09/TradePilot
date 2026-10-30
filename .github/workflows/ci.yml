@@ -36,8 +36,8 @@ jobs:
       - run: python -m pip check
       - run: python -m pytest -q
       - run: ruff check apps packages alembic tests
-      - run: mypy apps/api apps/paper_worker packages
-      - run: bandit -q -r apps/api apps/paper_worker packages
+      - run: mypy apps/api apps/paper_worker apps/forward_runner apps/nightly apps/supervisor packages
+      - run: bandit -q -r apps/api apps/paper_worker apps/forward_runner apps/nightly apps/supervisor packages
 
   frontend:
     runs-on: ubuntu-latest

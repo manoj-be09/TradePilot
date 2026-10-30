@@ -11,13 +11,19 @@ Each entry is also priced with the paper SPAN-style margin estimate, using volat
 implied from the entry bar closes. Capital used is the larger of that margin and the
 maximum loss, the same amount a paper entry must fit in free cash, so returns can be
 compared across strategies on the capital they tie up.
+
+With template_rules the replay follows a template's real paper rules: the strike is fixed
+when armed, entry waits for the entry conditions, and each trade's stop, target and trail are
+sized from its own entry quotes and judged by the paper exit function. Candles have no
+bid/ask, so the spread rule is judged on the half-spread model, and put/call ratio uses only
+the imported strikes.
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo
 
 from packages.backtesting.performance import PerformanceTrade, summarize
@@ -26,6 +32,7 @@ from packages.core.charges import order_charges, schedule_for
 from packages.options.models import PayoffLeg, PayoffRequest
 from packages.options.payoff import calculate_expiry_payoff
 from packages.options.pricing import _implied_volatility
+from packages.paper_trading.exits import evaluate_exit
 from packages.paper_trading.margin import (
     FALLBACK_VOLATILITY_PCT,
     MARGIN_MODEL_ID,
@@ -34,7 +41,9 @@ from packages.paper_trading.margin import (
     estimate_position_margin,
     years_to_expiry,
 )
+from packages.paper_trading.rules import EntryCondition, evaluate_entry_conditions
 from packages.paper_trading.strategies import StrategyDefinition
+from packages.paper_trading.template_policy import entry_conditions, template_policy
 
 MODEL_ID = "nifty-history-candle-replay-v1"
 FILL_MODEL = (
@@ -45,7 +54,7 @@ FILL_MODEL = (
 _IST = ZoneInfo("Asia/Kolkata")
 _CENT = Decimal("0.01")
 _TICK = Decimal("0.05")
-ExitReason = Literal["STOP_LOSS", "TARGET", "EXPIRY_SQUARE_OFF"]
+ExitReason = Literal["STOP_LOSS", "TARGET", "TRAILING_STOP", "EXPIRY_SQUARE_OFF"]
 OptionKind = Literal["CE", "PE"]
 
 
@@ -53,6 +62,7 @@ OptionKind = Literal["CE", "PE"]
 class Candle:
     start: datetime
     close: Decimal
+    open_interest: int | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +86,10 @@ class BacktestConfig:
     square_off_minutes_before_close: int = 20
     # When set, replaces the flat half-spread with recorded per-premium-band spreads.
     spread_model: SpreadModel | None = None
+    # Follow the template's real entry and exit rules instead of the fixed amounts above.
+    template_rules: bool = False
+    # Entries whose maximum loss exceeds this are skipped, as the account's per-trade limit would.
+    max_trade_risk: Decimal | None = None
     # The paper account's default PAPER_MARGIN_* settings.
     margin_parameters: MarginParameters = field(default_factory=lambda: MarginParameters(
         price_scan_pct=Decimal(9), volatility_scan_points=Decimal(4),
@@ -88,7 +102,10 @@ class BacktestConfig:
         return self.spread_model.half_spread_pct(price)
 
     def snapshot(self) -> dict[str, Any]:
+        template = {"template_rules": True, "max_trade_risk": str(self.max_trade_risk)} \
+            if self.template_rules else {}
         return {
+            **template,
             "strategy_key": self.strategy.key,
             "strategy_version": self.strategy.version,
             "lots": self.lots,
@@ -261,7 +278,7 @@ def _stats(trades: Sequence[BacktestTrade]) -> dict[str, Any]:
     )
     result["exit_reasons"] = {
         reason: sum(trade.exit_reason == reason for trade in trades)
-        for reason in ("STOP_LOSS", "TARGET", "EXPIRY_SQUARE_OFF")
+        for reason in ("STOP_LOSS", "TARGET", "TRAILING_STOP", "EXPIRY_SQUARE_OFF")
     }
     return result
 
@@ -303,6 +320,8 @@ def run_expiry(
         key: {_ist(candle.start): candle.close for candle in candles}
         for key, candles in history.bars.items()
     }
+    if config.template_rules:
+        return _run_template_expiry(history, config, closes, entry_day)
     entry_moments = sorted({
         moment for series in closes.values() for moment in series
         if moment.date() == entry_day and moment.time() >= config.entry_time
@@ -323,6 +342,72 @@ def run_expiry(
         if all(entry_at in closes.get((strike, kind), {}) for strike, kind, _, _ in legs):
             return _simulate(history, config, closes, legs, entry_at, spot, reference)
     return SkippedExpiry(history.expiry, "no common entry bar for every leg and parity pair")
+
+
+def _put_call_ratios(history: ExpiryHistory) -> dict[datetime, Decimal]:
+    """Ratio at each bar time; a strike with no bar in that interval keeps its last reading."""
+    events: dict[datetime, list[tuple[tuple[Decimal, OptionKind], int]]] = {}
+    for key, candles in history.bars.items():
+        for candle in candles:
+            if candle.open_interest is not None:
+                events.setdefault(_ist(candle.start), []).append((key, candle.open_interest))
+    latest: dict[tuple[Decimal, OptionKind], int] = {}
+    ratios: dict[datetime, Decimal] = {}
+    for moment in sorted(events):
+        latest.update(events[moment])
+        calls = sum(value for (_, kind), value in latest.items() if kind == "CE")
+        puts = sum(value for (_, kind), value in latest.items() if kind == "PE")
+        if calls > 0:
+            ratios[moment] = Decimal(puts) / Decimal(calls)
+    return ratios
+
+
+def _run_template_expiry(
+    history: ExpiryHistory,
+    config: BacktestConfig,
+    closes: dict[tuple[Decimal, OptionKind], dict[datetime, Decimal]],
+    entry_day: date,
+) -> BacktestTrade | SkippedExpiry:
+    conditions = [
+        EntryCondition(item["metric"], item["operator"], Decimal(item["threshold"]))
+        for item in entry_conditions(config.strategy.key)
+    ]
+    ratios = (
+        _put_call_ratios(history)
+        if any(item.metric == "put_call_ratio_oi" for item in conditions) else {}
+    )
+    close_dt = datetime.combine(history.expiry, time(15, 30), tzinfo=_IST)
+    cutoff = close_dt - timedelta(minutes=config.square_off_minutes_before_close)
+    first = datetime.combine(entry_day, config.entry_time, tzinfo=_IST)
+    moments = sorted({
+        moment for series in closes.values() for moment in series if first <= moment < cutoff
+    })
+    strikes = sorted({strike for strike, _ in history.bars})
+    legs = None
+    reference = Decimal(0)
+    for moment in moments:
+        calls = {s: series[moment] for (s, k), series in closes.items()
+                 if k == "CE" and moment in series}
+        puts = {s: series[moment] for (s, k), series in closes.items()
+                if k == "PE" and moment in series}
+        spot = synthetic_spot(calls, puts)
+        if spot is None:
+            continue
+        if legs is None:
+            # Arming fixes the strike; a later entry keeps it even if the index has moved.
+            reference = min(strikes, key=lambda strike: (abs(strike - spot), strike))
+            legs = _select_legs(config, strikes, reference)
+            if legs is None:
+                return SkippedExpiry(history.expiry, "strategy legs fall outside imported strikes")
+        if not all(moment in closes.get((strike, kind), {}) for strike, kind, _, _ in legs):
+            continue
+        results = evaluate_entry_conditions(conditions, {
+            "put_call_ratio_oi": ratios.get(moment),
+            "median_relative_spread_pct": config.half_spread_pct * 2,
+        })
+        if all(result.passed for result in results):
+            return _simulate(history, config, closes, legs, moment, spot, reference)
+    return SkippedExpiry(history.expiry, "entry rules did not pass before the entry cutoff")
 
 
 def _select_legs(
@@ -371,6 +456,21 @@ def _simulate(
     if payoff.maximum_loss_unbounded or payoff.maximum_loss is None or payoff.maximum_loss <= 0:
         return SkippedExpiry(history.expiry, "strategy has no bounded positive maximum loss")
     max_loss = _money(payoff.maximum_loss)
+    if config.max_trade_risk is not None and max_loss > config.max_trade_risk:
+        return SkippedExpiry(history.expiry, "maximum loss is over the per-trade risk limit")
+    stop, target, trail = config.stop_loss_amount, config.target_profit_amount, None
+    if config.template_rules:
+        spread_cost = sum((
+            2 * close * config.half_spread_for(close) / Decimal(100) * units
+            for _, _, _, units, close in margin_inputs
+        ), Decimal(0))
+        policy = template_policy(
+            config.strategy.key, max_loss,
+            None if payoff.maximum_profit_unbounded else payoff.maximum_profit, spread_cost,
+        )
+        if policy is None:
+            return SkippedExpiry(history.expiry, "no exit rules for this entry")
+        stop, target, trail = policy.stop_loss, policy.target_profit, policy.trailing_stop
 
     close_dt = datetime.combine(history.expiry, time(15, 30), tzinfo=_IST)
     square_off = close_dt - timedelta(minutes=config.square_off_minutes_before_close)
@@ -394,13 +494,15 @@ def _simulate(
 
     reason: ExitReason = "EXPIRY_SQUARE_OFF"
     exit_moment = moments[-1]
+    peak = Decimal(0)
     for moment in moments:
-        pnl = entry_cash + exit_at_moment(moment)[0]
-        if config.stop_loss_amount is not None and pnl <= -config.stop_loss_amount:
-            reason, exit_moment = "STOP_LOSS", moment
-            break
-        if config.target_profit_amount is not None and pnl >= config.target_profit_amount:
-            reason, exit_moment = "TARGET", moment
+        decision = evaluate_exit(
+            pnl=entry_cash + exit_at_moment(moment)[0], peak_pnl=peak,
+            stop_loss_amount=stop, target_profit_amount=target, trailing_stop_amount=trail,
+        )
+        peak = decision.peak_pnl
+        if decision.reason is not None:
+            reason, exit_moment = cast(ExitReason, decision.reason), moment
             break
     exit_cash, exit_prices = exit_at_moment(exit_moment)
 

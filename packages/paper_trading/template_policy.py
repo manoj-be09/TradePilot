@@ -32,7 +32,7 @@ def _condition(metric: str, operator: str, threshold: str) -> dict[str, Any]:
     return {"metric": metric, "operator": operator, "threshold": threshold}
 
 
-def _entry_conditions(strategy_key: str) -> list[dict[str, Any]]:
+def entry_conditions(strategy_key: str) -> list[dict[str, Any]]:
     conditions = []
     if strategy_key in _BULLISH:
         conditions.append(_condition("put_call_ratio_oi", "GTE", "1.00"))
@@ -68,7 +68,7 @@ def template_policy(
         target = max(_MINIMUM, stop * _UNBOUNDED_TARGET_MULTIPLE)
     trailing = max(_MINIMUM, target * _TRAIL_SHARE_OF_TARGET)
     return TemplatePolicy(
-        entry_conditions=_entry_conditions(strategy_key),
+        entry_conditions=entry_conditions(strategy_key),
         stop_loss=stop.quantize(_CENT, rounding=ROUND_HALF_UP),
         target_profit=target.quantize(_CENT, rounding=ROUND_HALF_UP),
         trailing_stop=trailing.quantize(_CENT, rounding=ROUND_HALF_UP),

@@ -42,6 +42,8 @@ def load_histories(
             HistoricalOptionBar.instrument_key.in_(list(keys)),
         ).order_by(HistoricalOptionBar.bar_start)):
             kind: OptionKind = "CE" if bar.option_type == "CE" else "PE"
-            bars[(bar.strike, kind)].append(Candle(start=bar.bar_start, close=bar.close))
+            bars[(bar.strike, kind)].append(Candle(
+                start=bar.bar_start, close=bar.close, open_interest=bar.open_interest,
+            ))
         histories.append(ExpiryHistory(expiry=expiry, lot_size=lot_sizes.pop(), bars=dict(bars)))
     return histories, rejected

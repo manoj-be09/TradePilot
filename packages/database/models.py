@@ -337,11 +337,18 @@ class PaperEntryCommand(Base):
 
 
 class PaperDeployment(Base):
-    """An armed options paper rule that waits for a future qualifying chain."""
+    """An armed paper rule that waits for a later qualifying market check.
+
+    Option fills link through trade_id; futures fills link through
+    PaperFuturesTrade.deployment_id.
+    """
 
     __tablename__ = "paper_deployments"
     __table_args__ = (
         UniqueConstraint("user_id", "command_key", name="uq_paper_deployment_command"),
+        CheckConstraint(
+            "instrument_kind IN ('OPTION', 'FUTURES')", name="ck_paper_deployment_instrument_kind"
+        ),
         Index("ix_paper_deployment_status", "status", "created_at"),
     )
 
@@ -350,6 +357,9 @@ class PaperDeployment(Base):
     command_key: Mapped[str] = mapped_column(String(128))
     request_hash: Mapped[str] = mapped_column(String(64))
     request_data: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    instrument_kind: Mapped[str] = mapped_column(
+        String(12), default="OPTION", server_default="OPTION"
+    )
     status: Mapped[str] = mapped_column(String(24))
     detail: Mapped[str] = mapped_column(String(256))
     trade_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("paper_trades.id"))

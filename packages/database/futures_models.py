@@ -31,6 +31,7 @@ class PaperFuturesTrade(Base):
     __tablename__ = "paper_futures_trades"
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key", name="uq_paper_futures_trade_command"),
+        UniqueConstraint("deployment_id", name="uq_paper_futures_deployment"),
         CheckConstraint("side IN ('LONG', 'SHORT')", name="ck_paper_futures_side"),
         CheckConstraint("status IN ('OPEN', 'CLOSED')", name="ck_paper_futures_status"),
         CheckConstraint("lots > 0", name="ck_paper_futures_lots_positive"),
@@ -47,6 +48,9 @@ class PaperFuturesTrade(Base):
     user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
     idempotency_key: Mapped[str] = mapped_column(String(128))
     request_hash: Mapped[str] = mapped_column(String(64))
+    # Set for armed template fills; manual tickets have neither.
+    strategy_key: Mapped[str | None] = mapped_column(String(64), index=True)
+    deployment_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("paper_deployments.id"))
     provider: Mapped[str] = mapped_column(String(32))
     instrument_key: Mapped[str] = mapped_column(String(160))
     trading_symbol: Mapped[str] = mapped_column(String(128))

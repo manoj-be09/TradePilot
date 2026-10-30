@@ -12,7 +12,18 @@ type OptionTrade = {
   opened_at: string;
   closed_at: string | null;
 };
-type OptionDeployment = { id: string; strategy_key: string; status: string; trade_id: string | null; created_at: string; detail?: string };
+type FuturesTrade = {
+  id: string;
+  strategy_name: string | null;
+  side: string;
+  expiry: string;
+  status: "OPEN" | "CLOSED";
+  realized_pnl: string | null;
+  unrealized_pnl: string | null;
+  opened_at: string;
+  closed_at: string | null;
+};
+type OptionDeployment = { id: string; strategy_key: string; strategy_name?: string | null; status: string; trade_id: string | null; created_at: string; detail?: string };
 export type HomeAccount = { cash_balance: string; daily_realized_pnl: string; open_trade_count: number; daily_risk_remaining: string };
 
 const money = (value: number | string | null | undefined) => value == null || !Number.isFinite(Number(value))
@@ -29,6 +40,17 @@ const pnlClass = (value: number | string | null | undefined) => {
 };
 const time = (value: string) => new Date(value).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
 const label = (value: string) => value.replaceAll("_", " ");
+const indiaDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+const fromFutures = (row: FuturesTrade): OptionTrade => ({
+  id: row.id,
+  strategy_name: row.strategy_name ?? `Manual futures ${row.side.toLowerCase()}`,
+  status: row.status,
+  realized_pnl: row.realized_pnl,
+  unrealized_pnl: row.unrealized_pnl,
+  valuation_warning: row.status === "OPEN" && row.expiry < indiaDate() ? "Expired · settlement pending" : null,
+  opened_at: row.opened_at,
+  closed_at: row.closed_at,
+});
 
 export function TradingDashboard({ token, apiUrl, account, suggestion, onOpenTrade }: {
   token: string;
@@ -52,11 +74,12 @@ export function TradingDashboard({ token, apiUrl, account, suggestion, onOpenTra
     }
     async function refresh() {
       try {
-        const [portfolio, waiting] = await Promise.all([
+        const [portfolio, futures, waiting] = await Promise.all([
           get<{ trades: OptionTrade[] }>("/paper/trades"),
+          get<FuturesTrade[]>("/paper/futures/trades"),
           get<OptionDeployment[]>("/paper/deployments"),
         ]);
-        if (!stopped) { setTrades(portfolio.trades); setDeployments(waiting); setError(""); }
+        if (!stopped) { setTrades([...portfolio.trades, ...futures.map(fromFutures)]); setDeployments(waiting); setError(""); }
       } catch (cause) {
         if (!stopped) setError(cause instanceof Error ? cause.message : "Home data unavailable");
       } finally {
@@ -70,7 +93,7 @@ export function TradingDashboard({ token, apiUrl, account, suggestion, onOpenTra
   const loaded = trades !== null && deployments !== null;
   const active = [
     ...(deployments ?? []).filter(row => row.status === "WAITING_FOR_ENTRY").map(row => ({
-      id: row.id, name: label(row.strategy_key), state: "Waiting for entry", mark: null as string | null, note: row.detail ?? null, at: row.created_at,
+      id: row.id, name: row.strategy_name ?? label(row.strategy_key), state: "Waiting for entry", mark: null as string | null, note: row.detail ?? null, at: row.created_at,
     })),
     ...(trades ?? []).filter(row => row.status === "OPEN").map(row => ({
       id: row.id, name: row.strategy_name, state: "Open", mark: row.valuation_warning ? null : row.unrealized_pnl, note: row.valuation_warning, at: row.opened_at,

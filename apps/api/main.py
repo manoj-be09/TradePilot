@@ -101,6 +101,7 @@ from packages.backtesting.replay import (
     run_single_expiry_replay,
 )
 from packages.core.risk import AccountRiskState, RiskLimits
+from packages.database.futures_models import PaperFuturesTrade
 from packages.database.models import (
     AuditEvent,
     AuthSession,
@@ -1296,6 +1297,7 @@ def analytics_options_summary(user: CurrentUser, body: OptionChain) -> OptionCha
 
 async def _completed_nifty_regime(
     chain: OptionChain, *, accept_timestamp_warnings: bool = False,
+    provider: MarketDataProvider | None = None,
 ) -> tuple[MarketRegimeResult | None, str | None, str | None, datetime | None]:
     """Classify the latest complete 250-bar 5-minute NIFTY window for a current chain.
 
@@ -1321,7 +1323,7 @@ async def _completed_nifty_regime(
         and quality_ok
     ):
         return None, None, None, None
-    provider = get_market_data_provider()
+    provider = provider or get_market_data_provider()
     try:
         bars = await provider.get_historical(
             "NSE_INDEX|Nifty 50", chain.as_of - timedelta(days=14), chain.as_of, "5m"
@@ -2062,7 +2064,10 @@ def paper_account(user: CurrentUser, session: SessionDep) -> PaperAccountRespons
     open_trades = session.scalars(
         select(PaperTrade).where(PaperTrade.account_id == account.id, PaperTrade.status == "OPEN")
     ).all()
-    open_risk = sum((trade.max_loss for trade in open_trades), Decimal(0))
+    open_futures = open_futures_trades(session, account.id)
+    open_risk = sum((trade.max_loss for trade in open_trades), Decimal(0)) + sum(
+        (trade.max_loss for trade in open_futures), Decimal(0)
+    )
     budget = daily_risk_budget(
         initial_cash=account.initial_cash,
         limit_pct=get_settings().paper_daily_loss_limit_pct,
@@ -2073,7 +2078,7 @@ def paper_account(user: CurrentUser, session: SessionDep) -> PaperAccountRespons
         initial_cash=account.initial_cash,
         cash_balance=account.cash_balance,
         kill_switch_enabled=account.kill_switch_enabled,
-        open_trade_count=len(open_trades),
+        open_trade_count=len(open_trades) + len(open_futures),
         open_max_loss=open_risk,
         daily_realized_pnl=budget.realized_pnl,
         daily_loss_limit=budget.loss_limit,
@@ -2192,7 +2197,9 @@ def list_paper_strategy_demotions(
     account = _get_paper_account(session, user)
     keys = sorted(set(session.scalars(
         select(PaperTrade.strategy_key).where(PaperTrade.user_id == user.id)
-    )) | set(session.scalars(
+    )) | {key for key in session.scalars(
+        select(PaperFuturesTrade.strategy_key).where(PaperFuturesTrade.user_id == user.id)
+    ) if key is not None} | set(session.scalars(
         select(StrategyDemotion.strategy_key).where(StrategyDemotion.user_id == user.id)
     )))
     return [_demotion_response(session, user, key, account.initial_cash) for key in keys]

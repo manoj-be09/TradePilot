@@ -50,6 +50,16 @@ Status row shows **Market data: not verified**; the worker logs quote or provide
 - Short options expiring today also carry the 2% additional exposure margin.
 - A position that could not be squared off shows **Expired paper positions needing settlement** on Trade. Preview the settlement against the official NSE index close, review the archive fingerprint, then record it. Nothing settles automatically.
 
+## Futures strategies
+
+Started from Trade → **NIFTY futures strategies**. Each uses the nearest contract more than 2 calendar days from expiry and checks the 5-minute regime, open-interest PCR and futures spread; missing data means it keeps waiting.
+
+- **Intraday** templates stop entering and square off `PAPER_EXPIRY_SQUARE_OFF_MINUTES_BEFORE_CLOSE` minutes before every close (`SESSION_SQUARE_OFF`).
+- **Positional** templates hold overnight. Inside the 2-day window the position closes (`ROLLOVER`) and the strategy waits again on the next contract. It re-enters only when its rules and all risk checks pass, so it can stay flat; the notification says whether it re-armed. Pausing entries does not stop a rollover exit.
+- **Margin** is blocked at fill and returned on exit. Overnight gaps can lose more than the stop-loss; the stop is the risk budget used for the limits, not a guarantee.
+- A contract lot-size change rejects a waiting strategy instead of rescaling its stop. Start it again.
+- A position that could not be squared off shows *Expired · settlement pending* in Your positions. Record the settlement there against the official NSE close; nothing settles automatically.
+
 ## Holidays and special sessions
 
 Session open and close come from Upstox's scheduled exchange timings for that day; there is no local holiday table. On a holiday no session is scheduled, so nothing enters or exits. For a special session (for example Muhurat trading), the worker follows whatever session Upstox publishes; check the first cycle after the session opens.

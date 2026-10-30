@@ -1058,6 +1058,10 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px
 }
 .specialist-empty { margin: 0; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; color: var(--ink-muted); font-size: 13px; }
 
+.futures-paper { margin: 24px 0; }
+.futures-lots { display: inline-grid; gap: 4px; margin: 4px 0 10px; font-size: 12px; }
+.futures-lots input { width: 96px; }
+.futures-strategy-list { display: grid; gap: 8px; margin-bottom: 8px; }
 .futures-paper .futures-controls { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .futures-quote { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 4px; font-variant-numeric: tabular-nums; }
 .futures-ack { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0; font-size: 0.9rem; }

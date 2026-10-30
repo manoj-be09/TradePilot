@@ -9,7 +9,7 @@ import { ExpiryTestControl } from "./ExpiryTestControl";
 import { OptionDeploymentDecisions } from "./OptionDeploymentDecisions";
 import { OptionTradeObservations } from "./OptionTradeObservations";
 import { StrategyRanking } from "./StrategyRanking";
-import { FuturesPaper } from "./FuturesPaper";
+import { FUTURES_RULE_LABELS, FuturesPaper, FuturesPositionCard, type FuturesTrade } from "./FuturesPaper";
 import { BuildUpdateNotice } from "./BuildUpdateNotice";
 import { TradingDashboard } from "./TradingDashboard";
 import { ChartWorkspace } from "./ChartWorkspace";
@@ -453,7 +453,9 @@ type PaperOfficialExpirySettlementPreview = {
 };
 
 type PaperDeployment = {
-  id: string; strategy_key: string; expiry: string; reference_strike: string; lots: number;
+  id: string; strategy_key: string; expiry: string; reference_strike: string | null; lots: number;
+  instrument_kind?: "OPTION" | "FUTURES"; strategy_name?: string | null; side?: "LONG" | "SHORT" | null; trading_symbol?: string | null;
+  intraday?: boolean; futures_conditions?: { metric: string; operator: string; threshold: string }[];
   entry_conditions: EntryConditionDraft[];
   stop_loss_amount: string | null; target_profit_amount: string | null; trailing_stop_amount: string | null;
   status: "WAITING_FOR_ENTRY" | "FILLED" | "EXPIRED" | "CANCELLED" | "REJECTED";
@@ -752,6 +754,7 @@ export default function Home() {
   const [presetMessage, setPresetMessage] = useState("");
   const [paperAccount, setPaperAccount] = useState<PaperAccount | null>(null);
   const [paperTrades, setPaperTrades] = useState<PaperTrade[]>([]);
+  const [futuresTrades, setFuturesTrades] = useState<FuturesTrade[]>([]);
   const [paperDeployments, setPaperDeployments] = useState<PaperDeployment[]>([]);
   const [paperOrders, setPaperOrders] = useState<PaperOrder[]>([]);
   const [paperLedger, setPaperLedger] = useState<PaperLedgerReconciliation | null>(null);
@@ -1032,8 +1035,13 @@ export default function Home() {
         cache: "no-store",
         signal: controller.signal,
       }).then(readJson<PaperDeployment[]>),
+      fetch(`${API_URL}/paper/futures/trades`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+        signal: controller.signal,
+      }).then(readJson<FuturesTrade[]>),
     ])
-      .then(([strategies, account, portfolio, orders, deployments]) => {
+      .then(([strategies, account, portfolio, orders, deployments, futures]) => {
         if (controller.signal.aborted) return;
         if (strategies.status === "fulfilled") setPaperStrategies(strategies.value);
         if (account.status === "fulfilled") setPaperAccount(account.value);
@@ -1042,7 +1050,8 @@ export default function Home() {
         }
         if (orders.status === "fulfilled") setPaperOrders(orders.value);
         if (deployments.status === "fulfilled") setPaperDeployments(deployments.value);
-        setPaperError([strategies, account, portfolio, orders, deployments].some(result => result.status === "rejected")
+        if (futures.status === "fulfilled") setFuturesTrades(futures.value);
+        setPaperError([strategies, account, portfolio, orders, deployments, futures].some(result => result.status === "rejected")
           ? "Some paper data could not refresh. Refresh quotes & paper status to retry." : "");
       })
       .catch((error: unknown) => {
@@ -1896,6 +1905,7 @@ export default function Home() {
     setPaperLedgerCheckedAt("");
     setPaperLedgerError("");
     setPaperTrades([]);
+    setFuturesTrades([]);
     setPaperDeployments([]);
     setSettlementTradeId("");
     setSettlementValue("");
@@ -2896,7 +2906,7 @@ export default function Home() {
             <p className="trade-readiness" aria-label="Entry readiness">Quote quality <b className={chain?.quality?.status === "PASS" ? "home-gain" : chain?.quality?.status === "FAIL" ? "home-loss" : ""}>{chain?.quality?.status || "waiting"}</b> · Account check <b className={paperEntry.ready ? "home-gain" : ""}>{paperEntry.ready ? "ready" : "waiting"}</b>{paperAccount ? <> · Cash <b>₹{formatPrice(paperAccount.cash_balance)}</b> · Risk left today <b>₹{formatPrice(paperAccount.daily_risk_remaining)}</b></> : null}</p>
             <details className="workspace-disclosure trade-how"><summary>How this works</summary>
               <p className="features-note">A strategy stays armed until a fresh qualifying snapshot passes its entry rules, risk limits, and quote checks. The server rechecks every condition before filling. Simulated buys use ask and sells use bid; no order is sent to a broker.</p>
-              <p className="features-note">One click checks the paper-supported NIFTY option templates for the selected expiry, strike and lot size. {savedBatchPolicyCount} matching saved {savedBatchPolicyCount === 1 ? "policy" : "policies"} for {paperLots} {paperLots === 1 ? "lot" : "lots"}. Up to 26 saved policies may wait in the shared paper account; the worker checks five per cycle. Actual entries remain subject to cash, daily-loss, per-trade, portfolio-risk and open-position limits. Futures strategies are not yet paper-enabled. Arming opens no position immediately; live orders remain disabled.</p>
+              <p className="features-note">One click checks the paper-supported NIFTY option templates for the selected expiry, strike and lot size. {savedBatchPolicyCount} matching saved {savedBatchPolicyCount === 1 ? "policy" : "policies"} for {paperLots} {paperLots === 1 ? "lot" : "lots"}. Up to 26 saved policies may wait in the shared paper account; the worker checks five per cycle. Actual entries remain subject to cash, daily-loss, per-trade, portfolio-risk and open-position limits. NIFTY futures strategies arm the same way from the futures section below and share these limits. Arming opens no position immediately; live orders remain disabled.</p>
             </details>
 
             {token && selectedOptionIndex === "NIFTY" ? (
@@ -2911,16 +2921,21 @@ export default function Home() {
             ) : null}
 
             <section className="trade-group" aria-label="Your strategies and positions">
-            {paperDeployments.length > 0 && <details className="equity-history" open={paperDeployments.some(item => item.status === "WAITING_FOR_ENTRY")}><summary>Armed F&amp;O strategies ({paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").length} waiting)</summary><div className="equity-deployments">{paperDeployments.slice(0, 10).map(item => <article key={item.id}><div className="equity-deployment-heading"><strong>{paperStrategies.find(strategy => strategy.key === item.strategy_key)?.name || item.strategy_key} · {item.expiry}</strong><span>{item.status.replaceAll("_", " ")}</span></div><p>{item.detail}</p><small>Reference strike {formatPrice(item.reference_strike)} · {item.lots} lot(s) · Armed {new Date(item.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}{item.updated_at !== item.created_at ? ` · Last update ${new Date(item.updated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}</small>
+            {paperDeployments.length > 0 && <details className="equity-history" open={paperDeployments.some(item => item.status === "WAITING_FOR_ENTRY")}><summary>Armed F&amp;O strategies ({paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").length} waiting)</summary><div className="equity-deployments">{paperDeployments.slice(0, 10).map(item => <article key={item.id}><div className="equity-deployment-heading"><strong>{item.strategy_name || paperStrategies.find(strategy => strategy.key === item.strategy_key)?.name || item.strategy_key} · {item.expiry}</strong><span>{item.status.replaceAll("_", " ")}</span></div><p>{item.detail}</p><small>{item.instrument_kind === "FUTURES" ? `${item.trading_symbol} · ${item.side === "LONG" ? "Long" : "Short"}` : `Reference strike ${formatPrice(item.reference_strike)}`} · {item.lots} lot(s) · Armed {new Date(item.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}{item.updated_at !== item.created_at ? ` · Last update ${new Date(item.updated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}</small>
               <details><summary>Saved entry &amp; exit rules</summary><div className="equity-deployment-rules">
+                {item.instrument_kind === "FUTURES" ? <>
+                <p><strong>Entry:</strong> A later open-market check must satisfy every saved condition: {(item.futures_conditions ?? []).map(condition => `${FUTURES_RULE_LABELS[condition.metric] || condition.metric} ${operatorLabel(condition.operator as RuleOperator)} ${condition.threshold}`).join(" · ")}. The futures quote, margin and paper risk checks must also pass. The contract is the nearest one outside the rollover window when it fills.</p>
+                <p><strong>Exit:</strong> Paper P&amp;L stop at −{formatPrice(item.stop_loss_amount)}; target at +{formatPrice(item.target_profit_amount)}; moving stop trails {formatPrice(item.trailing_stop_amount)} below peak P&amp;L. {item.intraday ? "Squared off before every close." : "Closes and re-arms before expiry; re-entry needs these rules to pass again."} A gap can lose more than the stop.</p>
+                </> : <>
                 <p><strong>Entry:</strong> A later open-market option-chain snapshot must satisfy every saved condition: {item.entry_conditions.map(condition => `${ENTRY_RULE_METRICS.find(metric => metric.key === condition.metric)?.label || condition.metric} ${operatorLabel(condition.operator)} ${condition.threshold}`).join(" · ") || "No saved conditions"}. The selected option legs, quote quality, expiry window and paper risk checks must also pass.</p>
                 <p><strong>Exit:</strong> Net paper P&amp;L stop at −{formatPrice(item.stop_loss_amount)}; {item.target_profit_amount ? `target at +${formatPrice(item.target_profit_amount)}` : "no profit target saved"}; moving stop trails {formatPrice(item.trailing_stop_amount)} below peak net P&amp;L after it turns positive. The expiry policy may close earlier.</p>
+                </>}
               </div></details>
               <OptionDeploymentDecisions deploymentId={item.id} apiUrl={API_URL} token={token} />{item.status === "WAITING_FOR_ENTRY" && <button className="inline-button" disabled={paperBusy} onClick={() => void cancelPaperDeployment(item.id)} type="button">Cancel waiting strategy</button>}</article>)}</div></details>}
             {paperWarnings.length ? <ul className="paper-warning-list">{paperWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
             <section className="position-overview" aria-label="Paper positions">
-              <div className="workspace-section-heading"><h3>Your positions</h3><span>{paperTrades.filter(trade => trade.status === "OPEN").length} unsettled · {expiredPaperTrades.length} expired awaiting review · {paperTrades.filter(trade => trade.status === "CLOSED").length} closed</span></div>
-              <div className="position-view-tabs" aria-label="Position view">{(["OPEN", "CLOSED", "ALL"] as const).map(view => <button key={view} type="button" aria-pressed={positionView === view} onClick={() => setPositionView(view)}>{view === "OPEN" ? "Open / unsettled" : view === "CLOSED" ? "Closed trades" : "All positions"} <span>{paperTrades.filter(trade => view === "ALL" || trade.status === view).length}</span></button>)}</div>
+              <div className="workspace-section-heading"><h3>Your positions</h3><span>{paperTrades.filter(trade => trade.status === "OPEN").length + futuresTrades.filter(trade => trade.status === "OPEN").length} unsettled · {expiredPaperTrades.length + futuresTrades.filter(trade => trade.status === "OPEN" && trade.expiry < indiaCalendarDate()).length} expired awaiting review · {paperTrades.filter(trade => trade.status === "CLOSED").length + futuresTrades.filter(trade => trade.status === "CLOSED").length} closed</span></div>
+              <div className="position-view-tabs" aria-label="Position view">{(["OPEN", "CLOSED", "ALL"] as const).map(view => <button key={view} type="button" aria-pressed={positionView === view} onClick={() => setPositionView(view)}>{view === "OPEN" ? "Open / unsettled" : view === "CLOSED" ? "Closed trades" : "All positions"} <span>{paperTrades.filter(trade => view === "ALL" || trade.status === view).length + futuresTrades.filter(trade => view === "ALL" || trade.status === view).length}</span></button>)}</div>
               <div className="position-card-grid">{paperTrades.filter(trade => positionView === "ALL" || trade.status === positionView).map(trade => <article className={`position-card position-card--${trade.status.toLowerCase()}`} key={trade.id}>
                 <div className="workspace-section-heading"><strong>{trade.strategy_name}</strong><span className={`trade-state trade-${trade.status === "OPEN" && trade.expiry < indiaCalendarDate() ? "expired" : trade.status.toLowerCase()}`}>{trade.status === "OPEN" && trade.expiry < indiaCalendarDate() ? "EXPIRED · SETTLEMENT PENDING" : trade.status}</span></div>
                 <small>{trade.underlying} · Expiry {trade.expiry} · {trade.lots} lot(s)</small>
@@ -2933,9 +2948,10 @@ export default function Home() {
                   {trade.entry_rule_snapshot.entry_market_context ? <EntryMarketEvidence context={trade.entry_rule_snapshot.entry_market_context} /> : <p>Entry market context was not saved for this older trade.</p>}
                   <OptionTradeObservations tradeId={trade.id} apiUrl={API_URL} token={token} /></details>
                 {trade.status === "OPEN" ? <button className="inline-button" disabled={paperBusy || (trade.expiry < indiaCalendarDate() && settlementBusy)} onClick={() => { if (trade.expiry < indiaCalendarDate()) { setSettlementTradeId(trade.id); setSettlementValue(""); setSettlementSource(""); setSettlementPreview(null); setIndexCloseReference(null); setOfficialIndexCloseReference(null); setSettlementError(""); } else { void closePaperTrade(trade.id); } }} type="button">{trade.expiry < indiaCalendarDate() ? "Review expiry settlement" : "Close paper position"}</button> : null}
-              </article>)}</div>
-              {!paperTrades.length ? <p className="workspace-empty">No positions yet. Add a strategy to begin monitoring.</p> : null}
-              {paperTrades.length > 0 && !paperTrades.some(trade => positionView === "ALL" || trade.status === positionView) ? <p className="workspace-empty">No {positionView === "OPEN" ? "open positions" : "closed trades"}. Use the tabs to review your other results.</p> : null}
+              </article>)}
+              {token ? futuresTrades.filter(trade => positionView === "ALL" || trade.status === positionView).map(trade => <FuturesPositionCard apiUrl={API_URL} key={trade.id} onChanged={() => void refreshPaperWorkspace()} token={token} trade={trade} />) : null}</div>
+              {!paperTrades.length && !futuresTrades.length ? <p className="workspace-empty">No positions yet. Add a strategy to begin monitoring.</p> : null}
+              {paperTrades.length + futuresTrades.length > 0 && ![...paperTrades, ...futuresTrades].some(trade => positionView === "ALL" || trade.status === positionView) ? <p className="workspace-empty">No {positionView === "OPEN" ? "open positions" : "closed trades"}. Use the tabs to review your other results.</p> : null}
             </section>
             <details className="workspace-disclosure"><summary>All positions · detailed table</summary>
             {paperTrades.length ? (
@@ -3368,7 +3384,7 @@ export default function Home() {
 
             </details>
 
-            {token && selectedOptionIndex === "NIFTY" ? <FuturesPaper apiUrl={API_URL} token={token} /> : null}
+            {token && selectedOptionIndex === "NIFTY" ? <FuturesPaper apiUrl={API_URL} entriesPaused={!paperAccount || paperAccount.kill_switch_enabled} onChanged={() => void refreshPaperWorkspace()} token={token} waitingKeys={paperDeployments.filter(item => item.instrument_kind === "FUTURES" && item.status === "WAITING_FOR_ENTRY").map(item => item.strategy_key)} /> : null}
 
             {selectedOptionIndex === "NIFTY" && token && <ExpiryTestControl key={token} token={token} apiUrl={API_URL} expiry={selectedExpiry} strike={selectedPaperStrike} disabled={paperBusy || !paperEntry.ready || !!paperAccount?.kill_switch_enabled} onApplied={() => setPaperRefreshCount(value => value + 1)} />}
             {expiredPaperTrades.length > 0 ? <details className="equity-history expiry-settlement" open>

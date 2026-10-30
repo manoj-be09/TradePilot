@@ -18,6 +18,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from packages.database.futures_models import PaperFuturesTrade
 from packages.database.models import (
     AuditEvent,
     PaperTrade,
@@ -193,9 +194,22 @@ def check_strategy(
         trade for trade in session.scalars(query.order_by(PaperTrade.closed_at, PaperTrade.id))
         if trade.entry_rule_snapshot.get("testing_only") is not True
     ]
+    futures_query = select(PaperFuturesTrade).where(
+        PaperFuturesTrade.user_id == user_id,
+        PaperFuturesTrade.strategy_key == strategy_key,
+        PaperFuturesTrade.status == "CLOSED",
+        PaperFuturesTrade.realized_pnl.is_not(None),
+        PaperFuturesTrade.closed_at.is_not(None),
+    )
+    if since is not None:
+        futures_query = futures_query.where(PaperFuturesTrade.closed_at > since)
+    closed = sorted(
+        [*trades, *session.scalars(futures_query)],
+        key=lambda trade: (trade.closed_at, str(trade.id)),
+    )
     baseline = drawdown_baseline(session, strategy_key)
     return evaluate_demotion(
-        [Decimal(trade.realized_pnl or 0) / trade.lots for trade in trades],
+        [Decimal(trade.realized_pnl or 0) / trade.lots for trade in closed],
         limits,
         baseline.max_drawdown_per_lot if baseline is not None else None,
     )

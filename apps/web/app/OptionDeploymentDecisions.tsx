@@ -15,6 +15,7 @@ type Snapshot = {
   provider: string;
   quality: { status: string; issues?: Array<{ code: string; message: string }> };
   entry_rule_snapshot?: { results: ConditionResult[] };
+  futures_quote?: { bid: string | null; ask: string | null; timestamp_basis: string };
   leg_quotes?: {
     status: string;
     legs: Array<{
@@ -44,6 +45,7 @@ const label: Record<string, string> = {
   "paper.deployment.expired": "Waiting strategy expired",
   "paper.deployment.rejected": "Waiting strategy rejected",
   "paper.deployment.entry_blocked": "Paper entry blocked",
+  "paper.deployment.contract_rolled": "Waiting strategy moved to the next futures contract",
 };
 
 function localTime(value: string) {
@@ -96,7 +98,7 @@ export function OptionDeploymentDecisions({
           {snapshot.quality.issues?.length ? <p className="paper-warning">Data checks: {snapshot.quality.issues.map(issue => issue.message).join(" · ")}</p> : null}
           {snapshot.leg_quotes?.legs.length ? <><p>Selected-leg quotes ({snapshot.leg_quotes.status.toLowerCase()}); observations only, not verified paper fills:</p><ul>{snapshot.leg_quotes.legs.map((leg, index) => <li key={`${leg.option_type}-${leg.strike}-${index}`}>
             {leg.side} {leg.option_type} {leg.strike} · bid {leg.bid ?? "unavailable"} / ask {leg.ask ?? "unavailable"} · selected side {leg.selected_side_quote ?? "unavailable"}{leg.quote_timestamp ? ` · quote ${localTime(leg.quote_timestamp)}` : ""} · book {leg.book_timestamp_basis === "exchange" && leg.book_as_of ? localTime(leg.book_as_of) : "exchange time unverified"}
-          </li>)}</ul></> : <p>No selected-leg quote was available for this check.</p>}
+          </li>)}</ul></> : snapshot.futures_quote ? <p>Futures quote · bid {snapshot.futures_quote.bid ?? "unavailable"} / ask {snapshot.futures_quote.ask ?? "unavailable"} · {snapshot.futures_quote.timestamp_basis === "exchange" ? "exchange time" : "exchange time unverified"}; an observation, not a verified paper fill.</p> : <p>No selected-leg quote was available for this check.</p>}
         </details>}
         {row.details.reason && <span> · {row.details.reason}</span>}
       </li>;

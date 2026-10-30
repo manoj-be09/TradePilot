@@ -8,6 +8,7 @@ Scope: NIFTY 50 futures and options, **paper trading only**. Live orders are for
 
 **Paper trading**
 - Defined-risk NIFTY option strategies (26 templates plus custom legs) and NIFTY futures, entered from live Upstox quotes into a simulated account.
+- Four NIFTY futures templates (intraday and positional, long and short) start with one click from Trade, wait for their rules and are exit-managed by the worker. No evidence of an edge yet; forward paper results will be the first test.
 - Risk limits enforced under the account row lock: 2% of starting capital per trade, 10% aggregate open maximum loss, daily loss budget, kill switch (pause entries) on every page.
 - Strategies can be armed to wait for entry conditions; the independent paper worker checks entries and exits (stop, target, trailing stop, expiry square-off) under a lease with fencing.
 - SPAN-style margin estimate with exposure and expiry-day margin; within ±5% of Upstox's margin calculator on seven sample positions (29 Oct 2026).

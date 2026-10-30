@@ -229,10 +229,16 @@ class PaperTradeCreateRequest(BaseModel):
 
 class PaperDeploymentResponse(BaseModel):
     id: UUID
+    instrument_kind: Literal["OPTION", "FUTURES"] = "OPTION"
     strategy_key: str
+    strategy_name: str | None = None
+    side: Literal["LONG", "SHORT"] | None = None
+    trading_symbol: str | None = None
+    intraday: bool | None = None
+    futures_conditions: list[dict[str, str]] = Field(default_factory=list)
     underlying: str = "NIFTY"
     expiry: date
-    reference_strike: Decimal
+    reference_strike: Decimal | None
     lots: int
     entry_conditions: list[PaperEntryConditionRequest]
     stop_loss_amount: Decimal | None
@@ -246,6 +252,8 @@ class PaperDeploymentResponse(BaseModel):
 
     @classmethod
     def from_model(cls, model: Any) -> "PaperDeploymentResponse":
+        if model.instrument_kind == "FUTURES":
+            return cls._from_futures_model(model)
         body = PaperTradeCreateRequest.model_validate(model.request_data)
         if body.reference_strike is None:
             raise ValueError("Saved deployment has no reference strike")
@@ -263,6 +271,35 @@ class PaperDeploymentResponse(BaseModel):
             status=model.status,
             detail=model.detail,
             trade_id=model.trade_id,
+            created_at=model.created_at.replace(tzinfo=timezone.utc)
+            if model.created_at.tzinfo is None else model.created_at,
+            updated_at=model.updated_at.replace(tzinfo=timezone.utc)
+            if model.updated_at.tzinfo is None else model.updated_at,
+        )
+
+    @classmethod
+    def _from_futures_model(cls, model: Any) -> "PaperDeploymentResponse":
+        data = model.request_data
+        contract = data["armed_contract"]
+        return cls(
+            id=model.id,
+            instrument_kind="FUTURES",
+            strategy_key=data["strategy_key"],
+            strategy_name=data["strategy_name"],
+            side=data["side"],
+            trading_symbol=contract["trading_symbol"],
+            intraday=data["exit_policy"]["intraday"],
+            futures_conditions=data["strategy_definition"]["conditions"],
+            expiry=contract["expiry"],
+            reference_strike=None,
+            lots=data["lots"],
+            entry_conditions=[],
+            stop_loss_amount=data["stop_loss_amount"],
+            target_profit_amount=data["target_profit_amount"],
+            trailing_stop_amount=data["trailing_stop_amount"],
+            status=model.status,
+            detail=model.detail,
+            trade_id=None,
             created_at=model.created_at.replace(tzinfo=timezone.utc)
             if model.created_at.tzinfo is None else model.created_at,
             updated_at=model.updated_at.replace(tzinfo=timezone.utc)

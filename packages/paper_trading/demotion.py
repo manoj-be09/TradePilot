@@ -21,13 +21,14 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from packages.database.clock import monotonic_utc_now
+from packages.database.futures_models import PaperFuturesTrade
 from packages.database.models import (
     AuditEvent,
     PaperTrade,
@@ -216,8 +217,8 @@ def record_drawdown_baseline(
 
 def _closed_trades(
     session: Session, user_id: UUID, strategy_key: str, since: datetime | None
-) -> tuple[list[PaperTrade], int]:
-    """Closed non-test trades in the window, and how many of them lack usable P&L.
+) -> tuple[list[PaperTrade | PaperFuturesTrade], int]:
+    """Closed non-test option and futures trades in the window, and how many lack usable P&L.
 
     A trade with no close time cannot be placed outside any window, so it always counts.
     """
@@ -228,22 +229,37 @@ def _closed_trades(
     )
     if since is not None:
         query = query.where(or_(PaperTrade.closed_at > since, PaperTrade.closed_at.is_(None)))
-    usable: list[PaperTrade] = []
+    usable: list[PaperTrade | PaperFuturesTrade] = []
     missing = 0
-    for trade in session.scalars(query.order_by(PaperTrade.closed_at, PaperTrade.id)):
+    for trade in session.scalars(query):
         if trade.entry_rule_snapshot.get("testing_only") is True:
             continue
         if trade.realized_pnl is None or trade.closed_at is None:
             missing += 1
         else:
             usable.append(trade)
+    futures_query = select(PaperFuturesTrade).where(
+        PaperFuturesTrade.user_id == user_id,
+        PaperFuturesTrade.strategy_key == strategy_key,
+        PaperFuturesTrade.status == "CLOSED",
+    )
+    if since is not None:
+        futures_query = futures_query.where(
+            or_(PaperFuturesTrade.closed_at > since, PaperFuturesTrade.closed_at.is_(None))
+        )
+    for future in session.scalars(futures_query):
+        if future.realized_pnl is None or future.closed_at is None:
+            missing += 1
+        else:
+            usable.append(future)
+    usable.sort(key=lambda trade: (as_utc(cast(datetime, trade.closed_at)), str(trade.id)))
     return usable, missing
 
 
 def _check_window(
     session: Session, user_id: UUID, strategy_key: str, limits: DemotionLimits,
     since: datetime | None,
-) -> tuple[DemotionCheck, list[PaperTrade]]:
+) -> tuple[DemotionCheck, list[PaperTrade | PaperFuturesTrade]]:
     trades, missing = _closed_trades(session, user_id, strategy_key, since)
     baseline = drawdown_baseline(session, strategy_key)
     check = evaluate_demotion(

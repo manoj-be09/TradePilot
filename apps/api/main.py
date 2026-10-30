@@ -83,7 +83,7 @@ from apps.api.schemas import (
 )
 from apps.api.services.futures_paper import monitor_futures_exits
 from apps.api.services.paper_monitor import monitor_exits
-from apps.api.services.strategy_eligibility import StrategyNotEligible
+from apps.api.services.strategy_eligibility import StrategyNotEligible, eligibility_refusal
 from apps.api.settings import get_settings
 from apps.api.strategy_schemas import (
     StrategyDefinitionSnapshot,
@@ -103,6 +103,7 @@ from packages.backtesting.replay import (
     run_single_expiry_replay,
 )
 from packages.core.risk import AccountRiskState, RiskLimits
+from packages.database.futures_models import PaperFuturesTrade
 from packages.database.models import (
     AuditEvent,
     AuthSession,
@@ -174,8 +175,6 @@ from packages.options.upstox_cost_benchmark import upstox_option_cost_scenario
 from packages.paper_trading.costs import cost_snapshot, summarize_costs
 from packages.paper_trading.daily_risk import daily_realized_pnl, daily_risk_budget
 from packages.paper_trading.demotion import (
-    PROBATION_MAX_LOTS,
-    apply_strategy_eligibility,
     as_utc,
     assess_strategy,
     eligibility_history,
@@ -332,39 +331,11 @@ def _require_strategy_eligible(
 
     Only new entries are gated; exits never come through here.
     """
-    settings = get_settings()
-    eligibility = apply_strategy_eligibility(
-        session, user_id, strategy_key, settings.paper_demotion_limits(initial_cash),
-        settings.paper_promotion_policy,
+    refusal = eligibility_refusal(
+        session, user_id, strategy_key, initial_cash, lots, get_settings(), arming=arming,
     )
-    refusal: str | None = None
-    if eligibility.stage == "DEMOTED":
-        refusal = (
-            f"Strategy {strategy_key}: {eligibility.block_reason} "
-            "Existing positions keep their exits."
-        )
-    elif eligibility.stage == "PROBATION":
-        if lots > PROBATION_MAX_LOTS:
-            refusal = f"Strategy {strategy_key} is on probation: at most 1 lot at a time."
-        elif session.scalar(select(PaperTrade.id).where(
-            PaperTrade.user_id == user_id,
-            PaperTrade.strategy_key == strategy_key,
-            PaperTrade.status == "OPEN",
-        ).limit(1)) is not None or (arming and any(
-            row.request_data.get("strategy_key") == strategy_key
-            for row in session.scalars(select(PaperDeployment).where(
-                PaperDeployment.user_id == user_id,
-                PaperDeployment.status == "WAITING_FOR_ENTRY",
-            ))
-        )):
-            refusal = (
-                f"Strategy {strategy_key} is on probation: one position or armed entry at a time."
-            )
-    if refusal is None:
-        return
-    # Keep a newly staged step and its audit event even though this entry is refused.
-    session.commit()
-    raise StrategyNotEligible(refusal)
+    if refusal is not None:
+        raise StrategyNotEligible(refusal)
 
 
 def _demotion_response(
@@ -394,7 +365,9 @@ def _demotion_response(
 def _strategy_keys_with_records(session: SessionDep, user_id: UUID) -> list[str]:
     return sorted(set(session.scalars(
         select(PaperTrade.strategy_key).where(PaperTrade.user_id == user_id)
-    )) | set(session.scalars(
+    )) | {key for key in session.scalars(
+        select(PaperFuturesTrade.strategy_key).where(PaperFuturesTrade.user_id == user_id)
+    ) if key is not None} | set(session.scalars(
         select(StrategyDemotion.strategy_key).where(StrategyDemotion.user_id == user_id)
     )))
 
@@ -1338,6 +1311,7 @@ def analytics_options_summary(user: CurrentUser, body: OptionChain) -> OptionCha
 
 async def _completed_nifty_regime(
     chain: OptionChain, *, accept_timestamp_warnings: bool = False,
+    provider: MarketDataProvider | None = None,
 ) -> tuple[MarketRegimeResult | None, str | None, str | None, datetime | None]:
     """Classify the latest complete 250-bar 5-minute NIFTY window for a current chain.
 
@@ -1363,7 +1337,7 @@ async def _completed_nifty_regime(
         and quality_ok
     ):
         return None, None, None, None
-    provider = get_market_data_provider()
+    provider = provider or get_market_data_provider()
     try:
         bars = await provider.get_historical(
             "NSE_INDEX|Nifty 50", chain.as_of - timedelta(days=14), chain.as_of, "5m"
@@ -2114,7 +2088,10 @@ def paper_account(user: CurrentUser, session: SessionDep) -> PaperAccountRespons
     open_trades = session.scalars(
         select(PaperTrade).where(PaperTrade.account_id == account.id, PaperTrade.status == "OPEN")
     ).all()
-    open_risk = sum((trade.max_loss for trade in open_trades), Decimal(0))
+    open_futures = open_futures_trades(session, account.id)
+    open_risk = sum((trade.max_loss for trade in open_trades), Decimal(0)) + sum(
+        (trade.max_loss for trade in open_futures), Decimal(0)
+    )
     budget = daily_risk_budget(
         initial_cash=account.initial_cash,
         limit_pct=get_settings().paper_daily_loss_limit_pct,
@@ -2125,7 +2102,7 @@ def paper_account(user: CurrentUser, session: SessionDep) -> PaperAccountRespons
         initial_cash=account.initial_cash,
         cash_balance=account.cash_balance,
         kill_switch_enabled=account.kill_switch_enabled,
-        open_trade_count=len(open_trades),
+        open_trade_count=len(open_trades) + len(open_futures),
         open_max_loss=open_risk,
         daily_realized_pnl=budget.realized_pnl,
         daily_loss_limit=budget.loss_limit,

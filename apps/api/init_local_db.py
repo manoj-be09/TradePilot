@@ -57,6 +57,34 @@ def main() -> None:
         for column, definition in local_upgrades.items():
             if column not in paper_trade_columns:
                 connection.execute(text(definition))
+        deployment_columns = {
+            column["name"] for column in inspect(connection).get_columns("paper_deployments")
+        }
+        if "instrument_kind" not in deployment_columns:
+            connection.execute(text(
+                "ALTER TABLE paper_deployments ADD COLUMN instrument_kind "
+                "VARCHAR(12) NOT NULL DEFAULT 'OPTION'"
+            ))
+        futures_trade_columns = {
+            column["name"] for column in inspect(connection).get_columns("paper_futures_trades")
+        }
+        if "strategy_key" not in futures_trade_columns:
+            connection.execute(text(
+                "ALTER TABLE paper_futures_trades ADD COLUMN strategy_key VARCHAR(64)"
+            ))
+            connection.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_paper_futures_trades_strategy_key "
+                "ON paper_futures_trades (strategy_key)"
+            ))
+        if "deployment_id" not in futures_trade_columns:
+            connection.execute(text(
+                "ALTER TABLE paper_futures_trades ADD COLUMN deployment_id CHAR(32) "
+                "REFERENCES paper_deployments (id)"
+            ))
+            connection.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_paper_futures_deployment "
+                "ON paper_futures_trades (deployment_id)"
+            ))
         equity_account_columns = {
             column["name"] for column in inspect(connection).get_columns("equity_accounts")
         }

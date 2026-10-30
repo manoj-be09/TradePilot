@@ -138,7 +138,10 @@ async def process_option_deployments(
     with factory() as session:
         waiting = list(session.scalars(
             select(PaperDeployment)
-            .where(PaperDeployment.status == "WAITING_FOR_ENTRY")
+            .where(
+                PaperDeployment.status == "WAITING_FOR_ENTRY",
+                PaperDeployment.instrument_kind == "OPTION",
+            )
             .order_by(PaperDeployment.updated_at, PaperDeployment.created_at, PaperDeployment.id)
             .limit(20)
         ))

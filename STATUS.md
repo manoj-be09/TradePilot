@@ -1,6 +1,6 @@
 # TradePilot status
 
-Short current state. The forward plan is `PLATFORM_ROADMAP.md`; dated history is `BUILD_PROGRESS.md`; how live trading would be added is `LIVE_TRADING.md`. Updated 29 October 2026.
+Short current state. The forward plan is `PLATFORM_ROADMAP.md`; dated history is `BUILD_PROGRESS.md`; how live trading would be added is `LIVE_TRADING.md`. Updated 30 October 2026.
 
 Scope: NIFTY 50 futures and options, **paper trading only**. Live orders are forced off.
 
@@ -30,13 +30,17 @@ Scope: NIFTY 50 futures and options, **paper trading only**. Live orders are for
 
 ## What's next
 
-1. Calibrate backtest spreads from the first full recorded session and rerun all 26 strategies with drawdown baselines.
-2. Phase 0 cleanup: remove backend equity routes and services; drop the `Equity*` tables only after the owner decides whether to export them.
-3. Walk-forward evaluation by expiry (roadmap Phase 4) so strategies are judged on unseen periods.
-4. Unattended paper operations (Phase 6): scheduler, alerts (Telegram needs `TELEGRAM_BOT_TOKEN` from the owner), runbooks and fault-injection tests.
-5. Six weeks of forward paper trading, then a decision on a 1-lot live pilot (`LIVE_TRADING.md`).
+1. Forward paper period: all 26 option templates frozen, 2 November to 14 December 2026. The first period (30 October) was stopped the same day because exits fired within minutes; the exit rules were fixed and it restarts on 2 November.
+2. Calibrate backtest spreads from recorded sessions and save drawdown baselines. Promotion stays on hold until baselines exist.
+3. After the period: a decision on a 1-lot live pilot (`LIVE_TRADING.md`).
+4. Deferred until after that decision: removing backend equity code and tables, and splitting `main.py` and `page.tsx`.
+5. Owner steps: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` and `TELEGRAM_ALERT_USER_EMAIL` for alerts; `scripts/install-autostart.ps1` to start at sign-in.
 
 ## Known limits
+
+- Local services stop if the machine sleeps or the process that started the supervisor ends.
+- Proposed exit rules are exploratory rules of thumb, and their rupee amounts stay fixed for a whole forward period.
+- Not every strategy can be started with one click from Trade: only those the ranking shows. The rest go through the strategy builder.
 
 - Backtests use 5-minute candle closes with a modelled spread, not historical bid/ask; exits are checked on bar closes, so stops can be overshot.
 - Two years of history, hold-to-expiry rules and one entry time per strategy: too few independent samples to claim an edge. On that history most strategies lose after costs (simulated).

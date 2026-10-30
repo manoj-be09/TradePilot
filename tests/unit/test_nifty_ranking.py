@@ -101,6 +101,17 @@ def test_uptrend_selects_a_bullish_template_and_never_states_pop():
     assert len(result.candidates) == len(STRATEGY_REGISTRY.list())
 
 
+def test_a_strategy_blocked_by_paper_results_ranks_blocked_with_its_reason():
+    now = _now()
+    top = rank_nifty_strategies(_inputs(now)).selected_strategy_key
+    assert top is not None
+    result = rank_nifty_strategies(_inputs(now, strategy_blocks={top: "Paused after losses."}))
+    assert result.selected_strategy_key != top
+    blocked = next(item for item in result.candidates if item.strategy_key == top)
+    assert blocked.status == "BLOCKED"
+    assert "Paused after losses." in blocked.reasons
+
+
 def test_ranking_is_deterministic():
     now = _now()
     first = rank_nifty_strategies(_inputs(now))

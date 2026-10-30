@@ -5,7 +5,7 @@ from typing import Self
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from packages.paper_trading.demotion import DemotionLimits
+from packages.paper_trading.demotion import DemotionLimits, PromotionPolicy
 from packages.paper_trading.margin import MarginParameters
 
 
@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     paper_demotion_loss_streak: int = Field(default=5, ge=2, le=20)
     paper_demotion_drawdown_multiple: int = Field(default=2, ge=1, le=5)
     paper_demotion_fallback_drawdown_pct: int = Field(default=6, ge=1, le=20)
+    # Way back after a pause: cooling-off days, then one-lot probation trades needed for
+    # promotion, and the consecutive losses that fail probation.
+    paper_promotion_cooldown_days: int = Field(default=7, ge=1, le=60)
+    paper_promotion_min_trades: int = Field(default=5, ge=3, le=50)
+    paper_promotion_loss_streak: int = Field(default=3, ge=2, le=10)
     paper_worker_interval_seconds: int = Field(default=15, ge=1, le=60)
     paper_worker_lease_seconds: int = Field(default=120, ge=30, le=600)
     access_token_minutes: int = Field(default=30, gt=0, le=1440)
@@ -93,6 +98,14 @@ class Settings(BaseSettings):
             fallback_drawdown_per_lot=(
                 initial_cash * Decimal(self.paper_demotion_fallback_drawdown_pct) / Decimal(100)
             ).quantize(Decimal("0.01")),
+        )
+
+    @property
+    def paper_promotion_policy(self) -> PromotionPolicy:
+        return PromotionPolicy(
+            cooldown_days=self.paper_promotion_cooldown_days,
+            min_trades=self.paper_promotion_min_trades,
+            loss_streak=self.paper_promotion_loss_streak,
         )
 
     @property

@@ -13,7 +13,8 @@ Scope: NIFTY 50 futures and options, **paper trading only**. Live orders are for
 - Strategies can be armed to wait for entry conditions; the independent paper worker checks entries and exits (stop, target, trailing stop, expiry square-off) under a lease with fencing.
 - SPAN-style margin estimate with exposure and expiry-day margin; within ±5% of Upstox's margin calculator on seven sample positions (29 Oct 2026).
 - Versioned charge model (brokerage, STT, exchange, SEBI, stamp duty, GST) applied to fills.
-- Automatic demotion: a strategy's new entries pause when its closed paper drawdown passes 2× its backtest baseline (6% of capital per lot without one).
+- Automatic demotion: a strategy's new entries pause on 5 consecutive closed paper losses, when its closed paper drawdown passes 2× its backtest baseline (6% of capital per lot without one), or when a closed trade has no usable P&L. It then ranks as blocked and can't be armed.
+- Rule-based promotion: after 7 days a paused strategy goes on one-lot probation; 5 closed probation trades with a positive total, inside tighter limits and with a saved baseline, make it eligible again. Every step is listed on Research. The forward runner skips a paused strategy and keeps arming the others.
 - Ledger reconciliation check; a mismatch pauses new paper cash actions.
 - Supervisor: one command starts all local paper processes and restarts any that crash (`scripts/start-all-local.ps1`).
 - Forward paper runner: keeps a frozen set of saved strategy versions armed once per expiry for a fixed period, through the same checks as the web app (`scripts/start-forward-runner-local.ps1`).

@@ -37,6 +37,7 @@ from apps.api.services.option_deployments import (
     _mark_entry_attempt,
     _record_retryable_block,
 )
+from apps.api.services.strategy_eligibility import eligibility_refusal
 from apps.api.settings import Settings
 from packages.database.models import AuditEvent, PaperDeployment, User
 from packages.features.options import calculate_option_features
@@ -47,7 +48,6 @@ from packages.market_data.contracts import (
     OptionChain,
 )
 from packages.market_data.quality import assess_option_chain
-from packages.paper_trading.demotion import enforce_strategy_demotion
 from packages.paper_trading.futures import FuturesSide, money, quote_evidence
 from packages.paper_trading.futures_strategies import (
     RESEARCH_NOTE,
@@ -186,18 +186,15 @@ async def arm_futures_deployment(
             assert_consistent_ledger(session, account)
         except PaperLedgerMismatchError as error:
             raise FuturesError(409, str(error)) from error
-        demotion = enforce_strategy_demotion(
-            session, user_id, template.key, settings.paper_demotion_limits(account.initial_cash),
-        )
-        if demotion is not None:
-            session.commit()
-            raise FuturesError(
-                423, f"Strategy {template.key} is paused; reinstate it to allow new paper entries"
-            )
         existing = replay()
         if existing is not None:
             session.rollback()
             return existing
+        refusal = eligibility_refusal(
+            session, user_id, template.key, account.initial_cash, body.lots, settings, arming=True,
+        )
+        if refusal is not None:
+            raise FuturesError(423, refusal)
         limit = _per_trade_limit(account.initial_cash, settings)
         if stop > limit:
             raise FuturesError(

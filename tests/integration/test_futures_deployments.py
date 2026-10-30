@@ -15,7 +15,12 @@ from apps.api.services.futures_deployments import process_futures_deployments
 from apps.api.settings import get_settings
 from apps.paper_worker.main import run_cycle
 from packages.database.futures_models import PaperFuturesOrder, PaperFuturesTrade
-from packages.database.models import AuditEvent, PaperDeployment
+from packages.database.models import (
+    AuditEvent,
+    PaperDeployment,
+    StrategyDemotion,
+    StrategyEligibilityEvent,
+)
 from packages.market_data.contracts import (
     DiscoveredInstrument,
     MarketDataUnavailable,
@@ -489,7 +494,7 @@ def test_closed_futures_count_toward_strategy_demotion(client, setup, monkeypatc
         _cycle(factory, provider)
     provider.bid, provider.ask = Decimal("25000"), Decimal("25002")
     refused = _arm(client, headers)
-    assert refused.status_code == 423 and "paused" in refused.json()["detail"]
+    assert refused.status_code == 423 and "Paused after" in refused.json()["detail"]
     rows = client.get("/paper/strategies/demotions", headers=headers).json()
     assert any(row["strategy_key"] == POSITIONAL_LONG and row["paused"] for row in rows)
 
@@ -504,6 +509,81 @@ def test_regime_input_uses_the_worker_provider_and_stays_unknown_without_bars(cl
     chain = asyncio.run(provider.get_option_chain("NIFTY", provider.expiry))
     chain = chain.model_copy(update={"quality": assess_option_chain(chain)})
     assert asyncio.run(REAL_REGIME_BIAS(provider, chain, get_settings())) is None
+
+
+def _demote_then_cool_off(client, headers, factory, provider):
+    """Two stopped trades pause the template; moving the pause back ends its cooling-off."""
+    for _ in range(2):
+        provider.bid, provider.ask = Decimal("25000"), Decimal("25002")
+        assert _arm(client, headers).status_code == 201
+        _cycle(factory, provider)
+        provider.bid, provider.ask = Decimal("24870"), Decimal("24872")
+        _cycle(factory, provider)
+    provider.bid, provider.ask = Decimal("25000"), Decimal("25002")
+    assert _arm(client, headers).status_code == 423
+    with factory() as session:
+        demotion = session.scalars(select(StrategyDemotion)).one()
+        assert demotion.strategy_key == POSITIONAL_LONG
+        demotion.demoted_at = demotion.demoted_at - timedelta(days=30)
+        session.commit()
+
+
+def test_worker_sweep_records_a_futures_pause_without_an_entry_attempt(client, setup, monkeypatch):
+    provider, headers, factory = setup
+    monkeypatch.setattr(get_settings(), "paper_demotion_loss_streak", 2)
+    for _ in range(2):
+        provider.bid, provider.ask = Decimal("25000"), Decimal("25002")
+        assert _arm(client, headers).status_code == 201
+        _cycle(factory, provider)
+        provider.bid, provider.ask = Decimal("24870"), Decimal("24872")
+        _cycle(factory, provider)
+    # Nothing tried to enter since the second stop; only the sweep can have recorded it.
+    _cycle(factory, provider)
+    with factory() as session:
+        assert session.scalars(select(StrategyDemotion)).one().status == "ACTIVE"
+
+
+def test_probation_limits_futures_to_one_lot_and_one_position(client, setup, monkeypatch):
+    provider, headers, factory = setup
+    monkeypatch.setattr(get_settings(), "paper_demotion_loss_streak", 2)
+    _demote_then_cool_off(client, headers, factory, provider)
+
+    too_big = _arm(client, headers, lots=2)
+    assert too_big.status_code == 423 and "at most 1 lot" in too_big.json()["detail"]
+    armed = _arm(client, headers)
+    assert armed.status_code == 201, armed.text
+    second = _arm(client, headers)
+    assert second.status_code == 423 and "one position or armed entry" in second.json()["detail"]
+
+    _cycle(factory, provider)
+    assert _deployment(factory, armed.json()["id"]).status == "FILLED"
+    held = _arm(client, headers)
+    assert held.status_code == 423 and "one position or armed entry" in held.json()["detail"]
+    with factory() as session:
+        history = list(session.scalars(select(StrategyEligibilityEvent)))
+    assert "PROBATION_STARTED" in {event.event_type for event in history}
+
+
+def test_probation_blocks_a_saved_two_lot_fill_and_keeps_it_waiting(client, setup, monkeypatch):
+    provider, headers, factory = setup
+    monkeypatch.setattr(get_settings(), "paper_demotion_loss_streak", 2)
+    provider.bias = "NEUTRAL"
+    waiting = _arm(client, headers, lots=2).json()
+    provider.bias = "UP"
+    with factory() as session:
+        row = session.get(PaperDeployment, UUID(waiting["id"]))
+        user_id = row.user_id
+        session.add(StrategyDemotion(
+            user_id=user_id, strategy_key=POSITIONAL_LONG, status="ACTIVE", reason="LOSS_STREAK",
+            details={"summary": "test losses"},
+            demoted_at=datetime.now(timezone.utc) - timedelta(days=30),
+        ))
+        session.commit()
+    _cycle(factory, provider)
+    with factory() as session:
+        assert session.scalars(select(PaperFuturesTrade)).first() is None
+    row = _deployment(factory, waiting["id"])
+    assert row.status == "WAITING_FOR_ENTRY" and "at most 1 lot" in row.detail
 
 
 def test_expired_position_warns_then_settles_once_at_the_reviewed_close(client, setup):

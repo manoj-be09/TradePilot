@@ -714,3 +714,28 @@ class StrategyDemotion(Base):
     details: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
     demoted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     reinstated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class StrategyEligibilityEvent(Base):
+    """Append-only log of every demotion, probation step and promotion of a strategy."""
+
+    __tablename__ = "strategy_eligibility_events"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('DEMOTED', 'PROBATION_STARTED', 'PROBATION_FAILED', 'PROMOTED', "
+            "'REINSTATED')",
+            name="ck_strategy_eligibility_event_type",
+        ),
+        Index("ix_strategy_eligibility_events_user_time", "user_id", "occurred_at"),
+        Index("ix_strategy_eligibility_events_demotion", "demotion_id", "occurred_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"))
+    strategy_key: Mapped[str] = mapped_column(String(64))
+    demotion_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("strategy_demotions.id"))
+    event_type: Mapped[str] = mapped_column(String(24))
+    reason: Mapped[str] = mapped_column(String(32))
+    summary: Mapped[str] = mapped_column(String(256))
+    details: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

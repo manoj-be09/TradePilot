@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from apps.api.paper_schemas import PaperExpirySettlementRequest
+from apps.api.services.strategy_eligibility import eligibility_refusal
 from apps.api.settings import Settings
 from packages.database.futures_models import PaperFuturesOrder, PaperFuturesTrade
 from packages.database.models import (
@@ -35,7 +36,6 @@ from packages.market_data.contracts import (
     Quote,
 )
 from packages.paper_trading.daily_risk import daily_realized_pnl, daily_risk_budget
-from packages.paper_trading.demotion import enforce_strategy_demotion
 from packages.paper_trading.exits import ExitDecision, evaluate_exit
 from packages.paper_trading.futures import (
     GAP_RISK_NOTE,
@@ -371,7 +371,9 @@ async def open_trade(
             raise FuturesError(423, "Paper kill switch is active; new trades are paused")
         deployment = None
         if armed is not None:
-            deployment = _require_armed_for_fill(session, user_id, account, armed, settings)
+            deployment = _require_armed_for_fill(
+                session, user_id, account, armed, body.lots, settings,
+            )
         open_options = list(session.scalars(select(PaperTrade).where(
             PaperTrade.account_id == account.id, PaperTrade.status == "OPEN",
         )))
@@ -511,9 +513,10 @@ async def open_trade(
 
 
 def _require_armed_for_fill(
-    session: Session, user_id: UUID, account: PaperAccount, armed: ArmedEntry, settings: Settings,
+    session: Session, user_id: UUID, account: PaperAccount, armed: ArmedEntry, lots: int,
+    settings: Settings,
 ) -> PaperDeployment:
-    """Fence the fill to the lease holder, a still-armed row and a strategy not paused."""
+    """Fence the fill to the lease holder, a still-armed row and an eligible strategy."""
     if not assert_owned(session, armed.lease):
         raise FuturesError(409, "Paper worker lease expired; no futures fill was recorded")
     deployment = session.scalar(select(PaperDeployment).where(
@@ -523,18 +526,11 @@ def _require_armed_for_fill(
     ).with_for_update().execution_options(populate_existing=True))
     if deployment is None or deployment.status != "WAITING_FOR_ENTRY":
         raise FuturesError(409, "Paper deployment is no longer armed")
-    demotion = enforce_strategy_demotion(
-        session, user_id, armed.strategy_key, settings.paper_demotion_limits(account.initial_cash),
+    refusal = eligibility_refusal(
+        session, user_id, armed.strategy_key, account.initial_cash, lots, settings,
     )
-    if demotion is not None:
-        summary = str(demotion.details.get("summary") or demotion.reason)
-        # Keep a newly staged pause and its audit event even though this entry is refused.
-        session.commit()
-        raise FuturesError(
-            423,
-            f"Strategy {armed.strategy_key} is paused after {summary}; existing positions keep "
-            "their exits. Reinstate it to allow new paper entries.",
-        )
+    if refusal is not None:
+        raise FuturesError(423, refusal)
     return deployment
 
 

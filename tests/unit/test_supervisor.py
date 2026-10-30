@@ -1,5 +1,6 @@
 """The supervisor restarts crashed processes with growing waits and leaves clean exits alone."""
 
+import logging
 import subprocess
 import sys
 
@@ -10,6 +11,7 @@ from apps.supervisor.main import (
     Service,
     Supervisor,
     _spawn_with_log,
+    configure_logging,
     local_services,
 )
 
@@ -126,3 +128,19 @@ def test_a_real_process_is_logged_to_its_own_file_and_its_exit_code_seen(tmp_pat
     assert isinstance(process, subprocess.Popen)
     assert process.wait(timeout=30) == 3
     assert "hello" in (tmp_path / "work" / "logs" / "demo.log").read_text()
+
+
+def test_the_supervisor_logs_to_stdout_and_its_own_file_never_stderr(tmp_path, capfd):
+    previous = list(logging.getLogger().handlers)
+    try:
+        configure_logging(tmp_path)
+        logging.getLogger("supervisor").info("started")
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+        captured = capfd.readouterr()
+        assert "started" not in captured.err
+        assert "started" in (tmp_path / "work" / "logs" / "supervisor.log").read_text()
+    finally:
+        for handler in logging.getLogger().handlers:
+            handler.close()
+        logging.getLogger().handlers[:] = previous

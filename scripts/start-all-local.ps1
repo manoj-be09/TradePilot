@@ -6,6 +6,5 @@ if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
 }
 Set-Location $repoRoot
 $null = New-Item -ItemType Directory -Force -Path (Join-Path $repoRoot "work\logs")
-$logStream = Join-Path $repoRoot "work\logs\supervisor.log"
-& $pythonExe -u -m apps.supervisor.main *>> $logStream
+& $pythonExe -u -m apps.supervisor.main
 exit $LASTEXITCODE

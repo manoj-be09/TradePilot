@@ -1,8 +1,8 @@
 """Verified backups of the local SQLite database.
 
-The copy holds a read lock for as long as it takes (about 30 seconds at 900 MB), and writers
-fail with "database is locked" during that time, so run it after market hours. Copying in
-small steps doesn't help: SQLite restarts the copy whenever another process writes.
+The copy reads one consistent snapshot. In write-ahead-log mode (see session.py) other
+processes keep writing while it runs; it still runs after market hours to keep the load off
+the machine during the session.
 """
 
 import sqlite3

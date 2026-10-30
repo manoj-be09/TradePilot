@@ -57,7 +57,7 @@ const money = (value: string | null) =>
   value === null ? "Unavailable" : `₹${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 export function StrategyRanking({
-  token, apiUrl, chain, referenceStrike, onUse, compact = false,
+  token, apiUrl, chain, referenceStrike, onUse, compact = false, busy = false,
 }: {
   token: string;
   apiUrl: string;
@@ -66,6 +66,8 @@ export function StrategyRanking({
   onUse: (strategyKey: string) => void;
   /** One-line summary for Home: the selected strategy or "No trade" and why. */
   compact?: boolean;
+  /** True while a paper action is in flight; disables the start buttons. */
+  busy?: boolean;
 }) {
   const [result, setResult] = useState<RankingResult | null>(null);
   const [error, setError] = useState("");
@@ -106,7 +108,7 @@ export function StrategyRanking({
           <strong>{headline}</strong>
           {reason ? <small>{reason}</small> : null}
         </div>
-        <button className="refresh-button" onClick={() => onUse(pick?.strategy_key ?? "")} type="button">{pick ? "Review in Trade" : "Open Trade"}</button>
+        <button className="refresh-button" disabled={busy} onClick={() => onUse(pick?.strategy_key ?? "")} type="button">{pick ? "Start in paper" : "Open Trade"}</button>
       </section>
     );
   }
@@ -166,7 +168,7 @@ export function StrategyRanking({
                   <div><dt>Expiry breakeven</dt><dd>{item.breakevens.length ? item.breakevens.map((value) => Number(value).toFixed(2)).join(" / ") : "Unavailable"}</dd></div>
                 </dl>
                 {item.reasons.length ? <small className="specialist-blocked">{item.reasons.join(" ")}</small> : null}
-                <button className="inline-button" disabled={item.status !== "ELIGIBLE"} onClick={() => onUse(item.strategy_key)} type="button">Use in paper ticket</button>
+                <button className="inline-button" disabled={busy || item.status !== "ELIGIBLE"} onClick={() => onUse(item.strategy_key)} type="button">Start in paper</button>
               </article>
             ))}
           </div>

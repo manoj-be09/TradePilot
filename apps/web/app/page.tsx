@@ -2320,6 +2320,75 @@ export default function Home() {
     }
   }
 
+  // One click: generate the template's entry and exit policy from the current modeled risk and arm it.
+  // The server still rechecks rules, quotes, session and every risk limit before any paper fill.
+  async function startPaperStrategy(strategyKey: string) {
+    const strategy = paperStrategies.find(item => item.key === strategyKey);
+    const payoff = strategyPayoffs[strategyKey];
+    const ready = !!token && selectedOptionIndex === "NIFTY" && !!chain && chain.quality?.status !== "FAIL"
+      && !!selectedExpiry && chain.expiry === selectedExpiry && !!selectedPaperStrike
+      && strategyPayoffKey === `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`;
+    const policy = strategy && payoff && ready ? paperTemplatePolicy(strategyKey, payoff) : null;
+    if (!strategy || !policy) {
+      setSelectedStrategy(strategyKey); setDeploymentPreparedKey("");
+      setPaperTicketMessage("This strategy can't start yet: its quotes or maximum loss are still loading. Try again in a moment.");
+      window.setTimeout(() => paperTicketRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+      return;
+    }
+    if (paperBusy || !paperEntry.ready || paperEntry.pending) return;
+    if (!paperAccount || paperAccount.kill_switch_enabled) {
+      setPaperError("Entries are paused. Resume entries in the status bar to start a strategy.");
+      return;
+    }
+    if (paperDeployments.some(item => item.status === "WAITING_FOR_ENTRY" && item.strategy_key === strategyKey
+      && item.expiry === selectedExpiry && Number(item.reference_strike) === Number(selectedPaperStrike))) {
+      setPaperTicketMessage(`${strategy.name} is already waiting for entry.`);
+      return;
+    }
+    setSelectedStrategy(strategyKey);
+    setEntryConditions(policy.conditions);
+    setStopLossInput(policy.stopLoss.toFixed(2));
+    setTargetProfitInput(policy.targetProfit.toFixed(2));
+    setTrailingStopInput(policy.trailingStop.toFixed(2));
+    setDeploymentPreparedKey(strategyKey);
+    setSelectedVersionId("");
+    setPaperError("");
+    setPaperBusy(true);
+    const payload = JSON.stringify({
+      strategy_key: strategyKey,
+      strategy_version_id: null,
+      expected_template_version: strategy.version,
+      expiry: selectedExpiry,
+      reference_strike: selectedPaperStrike,
+      lots: paperLots,
+      entry_conditions: policy.conditions,
+      stop_loss_amount: Number(policy.stopLoss.toFixed(2)),
+      target_profit_amount: Number(policy.targetProfit.toFixed(2)),
+      trailing_stop_amount: Number(policy.trailingStop.toFixed(2)),
+    });
+    if (deploymentCommand.current?.payload !== payload) {
+      deploymentCommand.current = { payload, key: `arm_${crypto.randomUUID().replaceAll("-", "")}` };
+    }
+    try {
+      const armed = await readJson<PaperDeployment>(await fetch(`${API_URL}/paper/deployments`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`, "Content-Type": "application/json",
+          "Idempotency-Key": deploymentCommand.current.key,
+        },
+        body: payload,
+      }));
+      setPaperDeployments((current) => [armed, ...current.filter((item) => item.id !== armed.id)]);
+      deploymentCommand.current = null;
+      setPaperTicketMessage(`${strategy.name} started in paper mode: stop −₹${policy.stopLoss.toFixed(2)}, target +₹${policy.targetProfit.toFixed(2)}, trailing ₹${policy.trailingStop.toFixed(2)}. It waits for its entry rules and risk checks before opening a simulated trade. Cancel it any time under Your positions.`);
+      await refreshPaperWorkspace();
+    } catch (error) {
+      setPaperError(userFacingError(error, `Could not start ${strategy.name}`));
+    } finally {
+      setPaperBusy(false);
+    }
+  }
+
   async function cancelPaperDeployment(id: string) {
     if (!token || paperBusy) return;
     setPaperError("");
@@ -2581,13 +2650,9 @@ export default function Home() {
         suggestion={<StrategyRanking apiUrl={API_URL} chain={chain} compact referenceStrike={selectedPaperStrike} token={token}
           onUse={(key) => {
             setActiveSection("algo");
-            if (!key) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
-            setSelectedStrategy(key); setDeploymentPreparedKey(""); setPaperTicketMessage("");
-            window.setTimeout(() => {
-              const builder = document.getElementById("paper-strategy-builder");
-              if (builder instanceof HTMLDetailsElement) { builder.open = true; builder.scrollIntoView({ behavior: "smooth", block: "start" }); }
-            }, 0);
-          }} />} /> : null}
+            window.scrollTo({ top: 0, behavior: "smooth" });
+            if (key) void startPaperStrategy(key);
+          }} busy={paperBusy} />} /> : null}
 
       {!authReady ? (
         <section className="panel loading-panel" aria-live="polite">Restoring your session…</section>
@@ -2840,11 +2905,8 @@ export default function Home() {
               <StrategyRanking
                 apiUrl={API_URL}
                 chain={chain}
-                onUse={(key) => {
-                  setSelectedStrategy(key); setDeploymentPreparedKey(""); setPaperTicketMessage("");
-                  const builder = document.getElementById("paper-strategy-builder");
-                  if (builder instanceof HTMLDetailsElement) { builder.open = true; builder.scrollIntoView({ behavior: "smooth", block: "start" }); }
-                }}
+                busy={paperBusy}
+                onUse={(key) => void startPaperStrategy(key)}
                 referenceStrike={selectedPaperStrike}
                 token={token}
               />
@@ -3008,9 +3070,10 @@ export default function Home() {
                     <small>{candidate.legs.length ? candidate.legs.map((leg) => `${leg.side} ${leg.quantity} ${formatPrice(leg.strike)} ${leg.option_type} @ ${formatPrice(leg.entry_quote)}`).join(" · ") : "Complete quote-backed basket unavailable"}</small>
                     <small>{candidate.reasons.join(" ") || "Quote-backed exposure matches the descriptive regime; entry remains unqualified."}</small>
                     <details><summary>Entry and exit research recipe</summary><p>{candidate.entry_policy}</p><p>{candidate.exit_policy}</p><p>Expiry maximum profit/loss above is before costs and assumes intact legs. Stops are triggers, not maximum losses.</p></details>
-                    <button className="strategy-apply" disabled={paperBusy || !chain || chain.quality?.status === "FAIL" || !payoff || payoff.maximum_loss_unbounded || payoff.maximum_loss === null} onClick={() => applyStrategyToPaperTicket(strategy, payoff)} type="button">
-                      {deploymentPreparedKey === strategy.key ? "Paper ticket prepared" : "Inspect paper ticket"}
+                    <button className="strategy-apply" disabled={paperBusy || !chain || chain.quality?.status === "FAIL" || !payoff || payoff.maximum_loss_unbounded || payoff.maximum_loss === null} onClick={() => void startPaperStrategy(strategy.key)} type="button">
+                      Start in paper
                     </button>
+                    <button className="inline-button" disabled={paperBusy || !payoff || payoff.maximum_loss_unbounded || payoff.maximum_loss === null} onClick={() => applyStrategyToPaperTicket(strategy, payoff)} type="button">Edit rules first</button>
                   </article>
                 ))}
               </section>
@@ -3259,7 +3322,7 @@ export default function Home() {
               ) : null}
               {paperError ? <p className="error-banner paper-error" role="alert">{paperError}</p> : null}
               <button className="primary-button paper-submit" disabled={selectedOptionIndex !== "NIFTY" || paperBusy || !paperEntry.ready || !!paperEntry.pending || payoffEstimateBusy || !payoffEstimate || payoffEstimate.maximum_loss_unbounded || Number(payoffEstimate.maximum_loss) <= 0 || !entryRuleInputsValid || (isCustomStrategy && !entryConditionsSatisfied) || (!isCustomStrategy && (matchingWaitingPaperDeployment || deploymentPreparedKey !== selectedStrategy || !entryConditions.length || !stopLossInput || !trailingStopInput)) || (isCustomStrategy && hasDuplicateCustomContracts) || !paperAccount || paperAccount.kill_switch_enabled || !strategyPreview || !chain || chain.quality?.status === "FAIL"} onClick={() => void (isCustomStrategy ? openPaperTrade() : armPaperStrategy())} type="button">
-                {paperBusy ? "Processing paper strategy…" : isCustomStrategy ? "Open custom paper trade" : matchingWaitingPaperDeployment ? "Strategy waiting for entry" : deploymentPreparedKey === selectedStrategy ? "Arm automatic paper entry" : "Apply a strategy above"}
+                {paperBusy ? "Processing paper strategy…" : isCustomStrategy ? "Open custom paper trade" : matchingWaitingPaperDeployment ? "Strategy waiting for entry" : deploymentPreparedKey === selectedStrategy ? "Start with these rules" : "Pick a strategy above"}
               </button>
               <p className="paper-footnote">Arming a template does not reserve funds or enter now. At entry, risk caps are rechecked: up to 2% of starting capital per position and 10% across open positions. Simulated fills do not model queue priority, partial fills, charges, or slippage.</p>
             </details>

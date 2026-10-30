@@ -63,7 +63,7 @@ def run_once(
     results: dict[str, str] = {}
     try:
         if now.astimezone(IST).time() < RUN_AFTER:
-            # Its read lock would block the worker's writes while positions need managing.
+            # Heavy disk work; keep it away from the session.
             results["backup"] = "SKIPPED_BEFORE_CLOSE"
         else:
             results["backup"] = backup_database(database, backups, now.astimezone(IST)).name

@@ -9,7 +9,7 @@ import { ExpiryTestControl } from "./ExpiryTestControl";
 import { OptionDeploymentDecisions } from "./OptionDeploymentDecisions";
 import { OptionTradeObservations } from "./OptionTradeObservations";
 import { StrategyRanking } from "./StrategyRanking";
-import { FUTURES_RULE_LABELS, FuturesPaper, FuturesPositionCard, type FuturesTrade } from "./FuturesPaper";
+import { FUTURES_RULE_LABELS, FuturesPaper, FuturesPositionCard, futuresTradeName, type FuturesTrade } from "./FuturesPaper";
 import { BuildUpdateNotice } from "./BuildUpdateNotice";
 import { TradingDashboard } from "./TradingDashboard";
 import { ChartWorkspace } from "./ChartWorkspace";
@@ -740,7 +740,8 @@ export default function Home() {
   const [connectionError, setConnectionError] = useState("");
   const [refreshCount, setRefreshCount] = useState(0);
   const [paperRefreshCount, setPaperRefreshCount] = useState(0);
-  const [positionView, setPositionView] = useState<"OPEN" | "CLOSED" | "ALL">("OPEN");
+  const [startFilter, setStartFilter] = useState<StrategyMarketBias | "ALL" | "FUTURES">("ALL");
+  const [rankingOpen, setRankingOpen] = useState(false);
   const [paperStrategies, setPaperStrategies] = useState<PaperStrategy[]>([]);
   useEffect(() => { setPaperStrategies([]); }, [selectedOptionIndex]);
   const [paperPresets, setPaperPresets] = useState<PaperStrategyPreset[]>([]);
@@ -819,6 +820,7 @@ export default function Home() {
   const [payoffEstimateBusy, setPayoffEstimateBusy] = useState(false);
   const [strategyPayoffs, setStrategyPayoffs] = useState<Record<string, PayoffEstimate>>({});
   const [strategyPayoffKey, setStrategyPayoffKey] = useState("");
+  const payoffSelection = useRef("");
   const [batchComparison, setBatchComparison] = useState<{
     asOf: string; expiry: string; strike: string; lots: number;
     rows: { key: string; name: string; version: string; status: string; maximumProfit: string; maximumLoss: string; costScenario: string | null }[];
@@ -1407,8 +1409,14 @@ export default function Home() {
   useEffect(() => {
     if (!token || !chain || !strategyTilePreviews.length) { setStrategyPayoffs({}); setStrategyPayoffKey(""); return; }
     const controller = new AbortController();
-    setStrategyPayoffs({});
-    setStrategyPayoffKey("");
+    // A quote refresh keeps the last figures on screen, so buttons don't flicker off every
+    // few seconds; a different expiry, strike or lot size has to clear them.
+    const selection = `${chain.expiry}|${selectedPaperStrike}|${paperLots}`;
+    if (payoffSelection.current !== selection) {
+      setStrategyPayoffs({});
+      setStrategyPayoffKey("");
+    }
+    payoffSelection.current = selection;
     const snapshotKey = `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`;
     const spot = Number(chain.underlying_spot || 1);
     Promise.all(strategyTilePreviews.map(async ({ strategy, legs }) => {
@@ -1465,6 +1473,21 @@ export default function Home() {
     && !!version.definition.trailing_stop_amount,
   ).sort((left, right) => right.created_at.localeCompare(left.created_at))[0];
   const savedBatchPolicyCount = paperStrategies.filter((strategy) => !!matchingBatchVersion(strategy)).length;
+  const tradeMessages = [...new Set(paperWarnings.map(warning => /session is closed|closed or unverified/i.test(warning) ? "Market closed. Live P&L and entry checks resume at the open." : warning))];
+  const openPaperTrades = paperTrades.filter(trade => trade.status === "OPEN");
+  const closedPaperTrades = paperTrades.filter(trade => trade.status === "CLOSED");
+  const openFuturesTrades = futuresTrades.filter(trade => trade.status === "OPEN");
+  const closedFuturesTrades = futuresTrades.filter(trade => trade.status === "CLOSED");
+  const finishedDeployments = paperDeployments.filter(item => item.status !== "WAITING_FOR_ENTRY");
+  const runningCount = paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").length + openPaperTrades.length + openFuturesTrades.length;
+  const startFilters: { key: StrategyMarketBias | "ALL" | "FUTURES"; label: string; count: number }[] = [
+    { key: "ALL", label: "All options", count: paperStrategies.length },
+    ...(["BULLISH", "BEARISH", "SIDEWAYS", "VOLATILITY"] as const).map(bias => ({
+      key: bias, label: bias.charAt(0) + bias.slice(1).toLowerCase(),
+      count: paperStrategies.filter(strategy => STRATEGY_CATALOG_META[strategy.key]?.bias === bias).length,
+    })),
+    { key: "FUTURES", label: "Futures", count: 4 },
+  ];
   const batchArmReady = savedBatchPolicyCount > 0 && !!token && selectedOptionIndex === "NIFTY" && paperEntry.ready
     && !paperEntry.pending && !!paperAccount && !paperAccount.kill_switch_enabled
     && !paperBusy && !batchPolicyBusy && !!chain && chain.quality?.status !== "FAIL"
@@ -2344,7 +2367,7 @@ export default function Home() {
     const payoff = strategyPayoffs[strategyKey];
     const ready = !!token && selectedOptionIndex === "NIFTY" && !!chain && chain.quality?.status !== "FAIL"
       && !!selectedExpiry && chain.expiry === selectedExpiry && !!selectedPaperStrike
-      && strategyPayoffKey === `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`;
+      && strategyPayoffKey.endsWith(`|${chain.expiry}|${selectedPaperStrike}|${paperLots}`);
     const policy = strategy && payoff && ready ? paperTemplatePolicy(strategyKey, payoff) : null;
     if (!strategy || !policy) {
       setSelectedStrategy(strategyKey); setDeploymentPreparedKey("");
@@ -2404,6 +2427,67 @@ export default function Home() {
     } finally {
       setPaperBusy(false);
     }
+  }
+
+  function openSettlement(tradeId: string) {
+    setSettlementTradeId(tradeId); setSettlementValue(""); setSettlementSource(""); setSettlementPreview(null);
+    setIndexCloseReference(null); setOfficialIndexCloseReference(null); setSettlementError("");
+  }
+
+  async function closeFuturesTrade(id: string) {
+    if (!token || paperBusy) return;
+    setPaperError("");
+    setPaperBusy(true);
+    try {
+      await readJson<unknown>(await fetch(`${API_URL}/paper/futures/trades/${id}/close`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}` },
+      }));
+      await refreshPaperWorkspace();
+    } catch (error) {
+      setPaperError(userFacingError(error, "Could not close this paper position"));
+    } finally {
+      setPaperBusy(false);
+    }
+  }
+
+  const signedRupees = (value: string | number | null | undefined) => {
+    const amount = Number(value);
+    if (value === null || value === undefined || !Number.isFinite(amount)) return "Unavailable";
+    return `${amount > 0 ? "+" : amount < 0 ? "−" : ""}₹${formatPrice(String(Math.abs(amount)))}`;
+  };
+  const waitingStatus = (detail: string) => /session is closed|closed or unverified/i.test(detail) ? "Market closed. Checks resume at the open."
+    : /entry conditions are not satisfied/i.test(detail) ? "Entry rules not met yet."
+    : /^Armed;/.test(detail) ? "Checks start with the next quote."
+    : detail;
+  const deploymentName = (item: PaperDeployment) => item.strategy_name || paperStrategies.find(strategy => strategy.key === item.strategy_key)?.name || item.strategy_key;
+
+  function renderDeploymentCard(item: PaperDeployment, authToken: string) {
+    return <article key={item.id}><div className="equity-deployment-heading"><strong>{item.strategy_name || paperStrategies.find(strategy => strategy.key === item.strategy_key)?.name || item.strategy_key} · {item.expiry}</strong><span>{item.status.replaceAll("_", " ")}</span></div><p>{item.detail}</p><small>{item.instrument_kind === "FUTURES" ? `${item.trading_symbol} · ${item.side === "LONG" ? "Long" : "Short"}` : `Reference strike ${formatPrice(item.reference_strike)}`} · {item.lots} lot(s) · Armed {new Date(item.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}{item.updated_at !== item.created_at ? ` · Last update ${new Date(item.updated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}</small>
+              <details><summary>Saved entry &amp; exit rules</summary><div className="equity-deployment-rules">
+                {item.instrument_kind === "FUTURES" ? <>
+                <p><strong>Entry:</strong> A later open-market check must satisfy every saved condition: {(item.futures_conditions ?? []).map(condition => `${FUTURES_RULE_LABELS[condition.metric] || condition.metric} ${operatorLabel(condition.operator as RuleOperator)} ${condition.threshold}`).join(" · ")}. The futures quote, margin and paper risk checks must also pass. The contract is the nearest one outside the rollover window when it fills.</p>
+                <p><strong>Exit:</strong> Paper P&amp;L stop at −{formatPrice(item.stop_loss_amount)}; target at +{formatPrice(item.target_profit_amount)}; moving stop trails {formatPrice(item.trailing_stop_amount)} below peak P&amp;L. {item.intraday ? "Squared off before every close." : "Closes and re-arms before expiry; re-entry needs these rules to pass again."} A gap can lose more than the stop.</p>
+                </> : <>
+                <p><strong>Entry:</strong> A later open-market option-chain snapshot must satisfy every saved condition: {item.entry_conditions.map(condition => `${ENTRY_RULE_METRICS.find(metric => metric.key === condition.metric)?.label || condition.metric} ${operatorLabel(condition.operator)} ${condition.threshold}`).join(" · ") || "No saved conditions"}. The selected option legs, quote quality, expiry window and paper risk checks must also pass.</p>
+                <p><strong>Exit:</strong> Net paper P&amp;L stop at −{formatPrice(item.stop_loss_amount)}; {item.target_profit_amount ? `target at +${formatPrice(item.target_profit_amount)}` : "no profit target saved"}; moving stop trails {formatPrice(item.trailing_stop_amount)} below peak net P&amp;L once the peak gain reaches that amount. The expiry policy may close earlier.</p>
+                </>}
+              </div></details>
+              <OptionDeploymentDecisions deploymentId={item.id} apiUrl={API_URL} token={authToken} /></article>;
+  }
+
+  function renderOptionCard(trade: PaperTrade, authToken: string) {
+    return <article className={`position-card position-card--${trade.status.toLowerCase()}`} key={trade.id}>
+                <div className="workspace-section-heading"><strong>{trade.strategy_name}</strong><span className={`trade-state trade-${trade.status === "OPEN" && trade.expiry < indiaCalendarDate() ? "expired" : trade.status.toLowerCase()}`}>{trade.status === "OPEN" && trade.expiry < indiaCalendarDate() ? "EXPIRED · SETTLEMENT PENDING" : trade.status}</span></div>
+                <small>{trade.underlying} · Expiry {trade.expiry} · {trade.lots} lot(s)</small>
+                <div className="position-contracts" aria-label="Position contracts">{trade.legs.map(leg => <span key={`${leg.side}-${leg.strike}-${leg.option_type}`}>{leg.side} {formatPrice(leg.strike)} {leg.option_type}</span>)}</div>
+                <div className="position-card-metrics"><div><span>{Number(trade.entry_cash_flow) < 0 ? "Entry debit" : "Entry credit"}</span><strong>₹{formatPrice(String(Math.abs(Number(trade.entry_cash_flow))))}</strong></div><div><span>{trade.status === "OPEN" ? trade.expiry < indiaCalendarDate() ? "Settlement P&L pending" : "Marked P&L" : "Realized P&L"}</span><strong className={changeClass(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}>{formatSignedPrice(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}</strong></div><div className="position-metric--risk"><span>Max modeled loss</span><strong>₹{formatPrice(trade.max_loss)}</strong></div><PositionMaximumProfit trade={trade} token={authToken} /></div><small className="position-model-note">Expiry model · entry fills · before costs; not a profit forecast.</small><div className="position-probability"><span>Entry win / loss probability</span><strong>Not recorded</strong><small>{trade.status === "CLOSED" ? "No forecast was saved at entry; closed trades are not scored retrospectively." : "No validated forecast was saved at entry. Current estimates are withheld: insufficient evidence."}</small></div>
+                {trade.valuation_warning ? <p className="table-warning">{trade.valuation_warning}</p> : null}
+                {trade.execution_warnings.length ? <p className="table-warning">{trade.execution_warnings.join(" · ")}</p> : null}
+                {trade.exit_reason ? <small>{trade.exit_reason.replaceAll("_", " ")}</small> : null}
+                <details><summary>Legs, stops &amp; evidence</summary><p>{trade.legs.map(leg => `${leg.side} ${formatPrice(leg.strike)} ${leg.option_type} ×${formatCount(leg.quantity_units / trade.lot_size)} lots`).join(" / ")}</p><p>Stop {trade.stop_loss_amount ? `₹${formatPrice(trade.stop_loss_amount)}` : "Off"} · Target {trade.target_profit_amount ? `₹${formatPrice(trade.target_profit_amount)}` : "Off"} · Trail {trade.trailing_stop_amount ? `₹${formatPrice(trade.trailing_stop_amount)}` : "Off"}</p>
+                  {trade.entry_rule_snapshot.entry_market_context ? <EntryMarketEvidence context={trade.entry_rule_snapshot.entry_market_context} /> : <p>Entry market context was not saved for this older trade.</p>}
+                  <OptionTradeObservations tradeId={trade.id} apiUrl={API_URL} token={authToken} /></details>
+              </article>;
   }
 
   async function cancelPaperDeployment(id: string) {
@@ -2907,65 +2991,141 @@ export default function Home() {
           </> : null}
           {activeSection === "algo" ? <>
           <section className="paper-workspace" aria-label="Paper trading workspace">
-            <div className="paper-heading">
+            <div className="trade-head">
               <div>
                 <h2>Trade</h2>
-                <p className="muted">Paper orders only. Every entry is rechecked against your cash, loss limits and live quotes before it fills.</p>
+                <p className="muted">Simulated with live quotes. No real orders are sent.</p>
               </div>
-              <div className="paper-actions">
-                <button className="refresh-button" type="button" disabled={chainBusy || paperBusy} onClick={() => void refreshPaperWorkspace()}>↻ Refresh</button>
-              </div>
+              {paperAccount ? <dl className="trade-stats">
+                <div><dt>Cash</dt><dd>₹{formatPrice(paperAccount.cash_balance)}</dd></div>
+                <div><dt>Today</dt><dd className={changeClass(paperAccount.daily_realized_pnl)}>{signedRupees(paperAccount.daily_realized_pnl)}</dd></div>
+                <div><dt>Risk left today</dt><dd>₹{formatPrice(paperAccount.daily_risk_remaining)}</dd></div>
+              </dl> : null}
+              <button className="refresh-button" type="button" disabled={chainBusy || paperBusy} onClick={() => void refreshPaperWorkspace()}>↻ Refresh</button>
             </div>
-            <p className="trade-readiness" aria-label="Entry readiness">Quote quality <b className={chain?.quality?.status === "PASS" ? "home-gain" : chain?.quality?.status === "FAIL" ? "home-loss" : ""}>{chain?.quality?.status || "waiting"}</b> · Account check <b className={paperEntry.ready ? "home-gain" : ""}>{paperEntry.ready ? "ready" : "waiting"}</b>{paperAccount ? <> · Cash <b>₹{formatPrice(paperAccount.cash_balance)}</b> · Risk left today <b>₹{formatPrice(paperAccount.daily_risk_remaining)}</b></> : null}</p>
-            <details className="workspace-disclosure trade-how"><summary>How this works</summary>
-              <p className="features-note">A strategy stays armed until a fresh qualifying snapshot passes its entry rules, risk limits, and quote checks. The server rechecks every condition before filling. Simulated buys use ask and sells use bid; no order is sent to a broker.</p>
-              <p className="features-note">One click checks the paper-supported NIFTY option templates for the selected expiry, strike and lot size. {savedBatchPolicyCount} matching saved {savedBatchPolicyCount === 1 ? "policy" : "policies"} for {paperLots} {paperLots === 1 ? "lot" : "lots"}. Up to 26 saved policies may wait in the shared paper account; the worker checks five per cycle. Actual entries remain subject to cash, daily-loss, per-trade, portfolio-risk and open-position limits. NIFTY futures strategies arm the same way from the futures section below and share these limits. Arming opens no position immediately; live orders remain disabled.</p>
-            </details>
+            {tradeMessages.length ? <ul className="paper-warning-list">{tradeMessages.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
+            {!tradeMessages.length && chain?.quality && chain.quality.status !== "PASS" ? <p className="trade-note">Quote check: {chain.quality.status}. Each entry is rechecked against live quotes before it fills.</p> : null}
 
-            {token && selectedOptionIndex === "NIFTY" ? (
-              <StrategyRanking
-                apiUrl={API_URL}
-                chain={chain}
-                busy={paperBusy}
-                onUse={(key) => void startPaperStrategy(key)}
-                referenceStrike={selectedPaperStrike}
-                token={token}
-              />
-            ) : null}
-
-            <section className="trade-group" aria-label="Your strategies and positions">
-            {paperDeployments.length > 0 && <details className="equity-history" open={paperDeployments.some(item => item.status === "WAITING_FOR_ENTRY")}><summary>Started strategies ({paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").length} waiting)</summary><div className="equity-deployments">{paperDeployments.slice(0, 10).map(item => <article key={item.id}><div className="equity-deployment-heading"><strong>{item.strategy_name || paperStrategies.find(strategy => strategy.key === item.strategy_key)?.name || item.strategy_key} · {item.expiry}</strong><span>{item.status.replaceAll("_", " ")}</span></div><p>{item.detail}</p><small>{item.instrument_kind === "FUTURES" ? `${item.trading_symbol} · ${item.side === "LONG" ? "Long" : "Short"}` : `Reference strike ${formatPrice(item.reference_strike)}`} · {item.lots} lot(s) · Armed {new Date(item.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}{item.updated_at !== item.created_at ? ` · Last update ${new Date(item.updated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}</small>
-              <details><summary>Saved entry &amp; exit rules</summary><div className="equity-deployment-rules">
-                {item.instrument_kind === "FUTURES" ? <>
-                <p><strong>Entry:</strong> A later open-market check must satisfy every saved condition: {(item.futures_conditions ?? []).map(condition => `${FUTURES_RULE_LABELS[condition.metric] || condition.metric} ${operatorLabel(condition.operator as RuleOperator)} ${condition.threshold}`).join(" · ")}. The futures quote, margin and paper risk checks must also pass. The contract is the nearest one outside the rollover window when it fills.</p>
-                <p><strong>Exit:</strong> Paper P&amp;L stop at −{formatPrice(item.stop_loss_amount)}; target at +{formatPrice(item.target_profit_amount)}; moving stop trails {formatPrice(item.trailing_stop_amount)} below peak P&amp;L. {item.intraday ? "Squared off before every close." : "Closes and re-arms before expiry; re-entry needs these rules to pass again."} A gap can lose more than the stop.</p>
-                </> : <>
-                <p><strong>Entry:</strong> A later open-market option-chain snapshot must satisfy every saved condition: {item.entry_conditions.map(condition => `${ENTRY_RULE_METRICS.find(metric => metric.key === condition.metric)?.label || condition.metric} ${operatorLabel(condition.operator)} ${condition.threshold}`).join(" · ") || "No saved conditions"}. The selected option legs, quote quality, expiry window and paper risk checks must also pass.</p>
-                <p><strong>Exit:</strong> Net paper P&amp;L stop at −{formatPrice(item.stop_loss_amount)}; {item.target_profit_amount ? `target at +${formatPrice(item.target_profit_amount)}` : "no profit target saved"}; moving stop trails {formatPrice(item.trailing_stop_amount)} below peak net P&amp;L once the peak gain reaches that amount. The expiry policy may close earlier.</p>
-                </>}
-              </div></details>
-              <OptionDeploymentDecisions deploymentId={item.id} apiUrl={API_URL} token={token} />{item.status === "WAITING_FOR_ENTRY" && <button className="inline-button" disabled={paperBusy} onClick={() => void cancelPaperDeployment(item.id)} type="button">Cancel waiting strategy</button>}</article>)}</div></details>}
-            {paperWarnings.length ? <ul className="paper-warning-list">{paperWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
-            <section className="position-overview" aria-label="Paper positions">
-              <div className="workspace-section-heading"><h3>Your positions</h3><span>{paperTrades.filter(trade => trade.status === "OPEN").length + futuresTrades.filter(trade => trade.status === "OPEN").length} unsettled · {expiredPaperTrades.length + futuresTrades.filter(trade => trade.status === "OPEN" && trade.expiry < indiaCalendarDate()).length} expired awaiting review · {paperTrades.filter(trade => trade.status === "CLOSED").length + futuresTrades.filter(trade => trade.status === "CLOSED").length} closed</span></div>
-              <div className="position-view-tabs" aria-label="Position view">{(["OPEN", "CLOSED", "ALL"] as const).map(view => <button key={view} type="button" aria-pressed={positionView === view} onClick={() => setPositionView(view)}>{view === "OPEN" ? "Open / unsettled" : view === "CLOSED" ? "Closed trades" : "All positions"} <span>{paperTrades.filter(trade => view === "ALL" || trade.status === view).length + futuresTrades.filter(trade => view === "ALL" || trade.status === view).length}</span></button>)}</div>
-              <div className="position-card-grid">{paperTrades.filter(trade => positionView === "ALL" || trade.status === positionView).map(trade => <article className={`position-card position-card--${trade.status.toLowerCase()}`} key={trade.id}>
-                <div className="workspace-section-heading"><strong>{trade.strategy_name}</strong><span className={`trade-state trade-${trade.status === "OPEN" && trade.expiry < indiaCalendarDate() ? "expired" : trade.status.toLowerCase()}`}>{trade.status === "OPEN" && trade.expiry < indiaCalendarDate() ? "EXPIRED · SETTLEMENT PENDING" : trade.status}</span></div>
-                <small>{trade.underlying} · Expiry {trade.expiry} · {trade.lots} lot(s)</small>
-                <div className="position-contracts" aria-label="Position contracts">{trade.legs.map(leg => <span key={`${leg.side}-${leg.strike}-${leg.option_type}`}>{leg.side} {formatPrice(leg.strike)} {leg.option_type}</span>)}</div>
-                <div className="position-card-metrics"><div><span>{Number(trade.entry_cash_flow) < 0 ? "Entry debit" : "Entry credit"}</span><strong>₹{formatPrice(String(Math.abs(Number(trade.entry_cash_flow))))}</strong></div><div><span>{trade.status === "OPEN" ? trade.expiry < indiaCalendarDate() ? "Settlement P&L pending" : "Marked P&L" : "Realized P&L"}</span><strong className={changeClass(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}>{formatSignedPrice(trade.status === "OPEN" ? trade.unrealized_pnl : trade.realized_pnl)}</strong></div><div className="position-metric--risk"><span>Max modeled loss</span><strong>₹{formatPrice(trade.max_loss)}</strong></div><PositionMaximumProfit trade={trade} token={token} /></div><small className="position-model-note">Expiry model · entry fills · before costs; not a profit forecast.</small><div className="position-probability"><span>Entry win / loss probability</span><strong>Not recorded</strong><small>{trade.status === "CLOSED" ? "No forecast was saved at entry; closed trades are not scored retrospectively." : "No validated forecast was saved at entry. Current estimates are withheld: insufficient evidence."}</small></div>
-                {trade.valuation_warning ? <p className="table-warning">{trade.valuation_warning}</p> : null}
-                {trade.execution_warnings.length ? <p className="table-warning">{trade.execution_warnings.join(" · ")}</p> : null}
-                {trade.exit_reason ? <small>{trade.exit_reason.replaceAll("_", " ")}</small> : null}
-                <details><summary>Legs, stops &amp; evidence</summary><p>{trade.legs.map(leg => `${leg.side} ${formatPrice(leg.strike)} ${leg.option_type} ×${formatCount(leg.quantity_units / trade.lot_size)} lots`).join(" / ")}</p><p>Stop {trade.stop_loss_amount ? `₹${formatPrice(trade.stop_loss_amount)}` : "Off"} · Target {trade.target_profit_amount ? `₹${formatPrice(trade.target_profit_amount)}` : "Off"} · Trail {trade.trailing_stop_amount ? `₹${formatPrice(trade.trailing_stop_amount)}` : "Off"}</p>
-                  {trade.entry_rule_snapshot.entry_market_context ? <EntryMarketEvidence context={trade.entry_rule_snapshot.entry_market_context} /> : <p>Entry market context was not saved for this older trade.</p>}
-                  <OptionTradeObservations tradeId={trade.id} apiUrl={API_URL} token={token} /></details>
-                {trade.status === "OPEN" ? <button className="inline-button" disabled={paperBusy || (trade.expiry < indiaCalendarDate() && settlementBusy)} onClick={() => { if (trade.expiry < indiaCalendarDate()) { setSettlementTradeId(trade.id); setSettlementValue(""); setSettlementSource(""); setSettlementPreview(null); setIndexCloseReference(null); setOfficialIndexCloseReference(null); setSettlementError(""); } else { void closePaperTrade(trade.id); } }} type="button">{trade.expiry < indiaCalendarDate() ? "Review expiry settlement" : "Close paper position"}</button> : null}
-              </article>)}
-              {token ? futuresTrades.filter(trade => positionView === "ALL" || trade.status === positionView).map(trade => <FuturesPositionCard apiUrl={API_URL} key={trade.id} onChanged={() => void refreshPaperWorkspace()} token={token} trade={trade} />) : null}</div>
-              {!paperTrades.length && !futuresTrades.length ? <p className="workspace-empty">No positions yet. Add a strategy to begin monitoring.</p> : null}
-              {paperTrades.length + futuresTrades.length > 0 && ![...paperTrades, ...futuresTrades].some(trade => positionView === "ALL" || trade.status === positionView) ? <p className="workspace-empty">No {positionView === "OPEN" ? "open positions" : "closed trades"}. Use the tabs to review your other results.</p> : null}
+            <section className="trade-block" aria-label="Running">
+              <h3 className="trade-block-title">Running{runningCount ? <span>{runningCount}</span> : null}</h3>
+              {runningCount === 0 ? <p className="trade-empty">Nothing is running. Start a strategy below and it will appear here.</p> : <ul className="running-list">
+                {paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").map(item => <li className="running-row" key={item.id}>
+                  <div className="running-name"><strong>{deploymentName(item)}</strong><small><span className="running-state running-state--waiting">Waiting for entry</span> {waitingStatus(item.detail)}</small></div>
+                  <div className="running-pnl"><small>Stop −₹{formatPrice(item.stop_loss_amount)}{item.target_profit_amount ? `, target +₹${formatPrice(item.target_profit_amount)}` : ""}</small></div>
+                  <button className="inline-button" disabled={paperBusy} onClick={() => void cancelPaperDeployment(item.id)} type="button">Cancel</button>
+                  <details className="running-details"><summary>Details</summary>{renderDeploymentCard(item, token)}</details>
+                </li>)}
+                {openPaperTrades.map(trade => {
+                  const expired = trade.expiry < indiaCalendarDate();
+                  return <li className="running-row" key={trade.id}>
+                    <div className="running-name"><strong>{trade.strategy_name}</strong><small><span className={`running-state ${expired ? "running-state--alert" : "running-state--open"}`}>{expired ? "Needs settlement" : "Open"}</span> Expires {trade.expiry}</small></div>
+                    <div className="running-pnl">{expired || trade.unrealized_pnl === null ? <em>{expired ? "Pending" : "No live price"}</em> : <b className={changeClass(trade.unrealized_pnl)}>{signedRupees(trade.unrealized_pnl)}</b>}<small>Stop −₹{formatPrice(trade.stop_loss_amount)}{trade.target_profit_amount ? `, target +₹${formatPrice(trade.target_profit_amount)}` : ""}</small></div>
+                    {expired ? <button className="inline-button" disabled={settlementBusy} onClick={() => openSettlement(trade.id)} type="button">Review settlement</button> : <button className="inline-button" disabled={paperBusy} onClick={() => void closePaperTrade(trade.id)} type="button">Close</button>}
+                    <details className="running-details"><summary>Details</summary>{renderOptionCard(trade, token)}</details>
+                  </li>;
+                })}
+                {openFuturesTrades.map(trade => {
+                  const expired = trade.expiry < indiaCalendarDate();
+                  return <li className="running-row" key={trade.id}>
+                    <div className="running-name"><strong>{futuresTradeName(trade)}</strong><small><span className={`running-state ${expired ? "running-state--alert" : "running-state--open"}`}>{expired ? "Needs settlement" : "Open"}</span> {trade.trading_symbol}</small></div>
+                    <div className="running-pnl">{expired || trade.unrealized_pnl === null ? <em>{expired ? "Pending" : "No live price"}</em> : <b className={changeClass(trade.unrealized_pnl)}>{signedRupees(trade.unrealized_pnl)}</b>}<small>Stop −₹{formatPrice(trade.stop_loss_amount)}{trade.target_profit_amount ? `, target +₹${formatPrice(trade.target_profit_amount)}` : ""}</small></div>
+                    {expired ? <span className="running-action-note">Settle in details</span> : <button className="inline-button" disabled={paperBusy} onClick={() => void closeFuturesTrade(trade.id)} type="button">Close</button>}
+                    <details className="running-details" open={expired}><summary>Details</summary><FuturesPositionCard apiUrl={API_URL} onChanged={() => void refreshPaperWorkspace()} token={token} trade={trade} /></details>
+                  </li>;
+                })}
+              </ul>}
             </section>
+            {expiredPaperTrades.length > 0 ? <details className="equity-history expiry-settlement" open>
+              <summary>Expired paper positions needing settlement ({expiredPaperTrades.length})</summary>
+              <p className="paper-warning">Expired options need settlement evidence instead of a current quote. Review the selected index’s official close and corrections. Fetching a reference never closes the position.</p>
+              {settlementTrade && !settlementSupported ? <p className="paper-warning">Settlement for {settlementTrade.underlying} is not supported yet. This position stays open until its official settlement route is available.</p> : null}
+              <div className="settlement-reference-actions">
+                <button className="inline-button" disabled={!settlementSupported || indexCloseBusy} onClick={() => void checkOfficialIndexCloseReference()} type="button">{indexCloseBusy ? "Checking…" : "Check NSE daily close"}</button>
+                <button className="inline-button" disabled={settlementTrade?.underlying !== "NIFTY" || indexCloseBusy} onClick={() => void checkIndexCloseReference()} type="button">Check broker candle (NIFTY only)</button>
+              </div>
+              {officialIndexCloseReference && officialIndexCloseReference.trade_id === settlementTrade?.id && officialIndexCloseReference.status === "available" ? <div className="settlement-reference-result" role="status">
+                <p>NSE daily {settlementTrade?.underlying} close for {officialIndexCloseReference.expiry}: <strong>{formatPrice(officialIndexCloseReference.preview?.final_index_value)}</strong>. <a href={officialIndexCloseReference.source_url ?? undefined} rel="noreferrer" target="_blank">Open archive ↗</a></p>
+                <p className="features-note">{officialIndexCloseReference.warning}</p>
+                <p className="features-note">If you record this NSE-based candidate, the server checks the archive fingerprint and close again. A changed archive stops the record so you can review it.</p>
+                <details className="features-note"><summary>Archive fingerprint</summary><code>{officialIndexCloseReference.archive_sha256}</code></details>
+                <button className="inline-button" disabled={settlementBusy || !officialIndexCloseReference.preview} onClick={() => { const preview = officialIndexCloseReference.preview; if (!preview || preview.trade_id !== settlementTrade?.id) return; setSettlementValue(preview.final_index_value); setSettlementSource(preview.source_reference); setSettlementPreview(preview); }} type="button">Preview using NSE close</button>
+              </div> : null}
+              {officialIndexCloseReference && officialIndexCloseReference.trade_id === settlementTrade?.id && officialIndexCloseReference.status === "unavailable" ? <p className="features-note" role="status">NSE archive unavailable: {officialIndexCloseReference.reason}</p> : null}
+              {indexCloseReference && indexCloseReference.trade_id === settlementTrade?.id && indexCloseReference.status === "available" ? <p className="features-note" role="status">{indexCloseReference.provider} daily candle for {indexCloseReference.candle_date}: {formatPrice(indexCloseReference.daily_close)}. {indexCloseReference.warning}</p> : null}
+              {settlementCloseDifference !== null && Number.isFinite(settlementCloseDifference) ? <p className={settlementCloseDifference > 0.01 ? "paper-warning" : "features-note"} role="status">{settlementCloseDifference > 0.01 ? `NSE archive and broker daily candle differ by ${formatPrice(String(settlementCloseDifference))}. Review exchange corrections before recording.` : "NSE archive and broker daily candle agree on the index close. Check for later corrections before recording."}</p> : null}
+              {indexCloseReference && indexCloseReference.trade_id === settlementTrade?.id && indexCloseReference.status === "unavailable" ? <p className="features-note" role="status">Broker candle cross-check unavailable: {indexCloseReference.reason}</p> : null}
+              <form onSubmit={(event) => void previewExpirySettlement(event)}>
+                <div className="exit-rule-controls expiry-settlement-controls">
+                  <label>Expired position
+                    <select disabled={settlementBusy} onChange={(event) => { setSettlementTradeId(event.target.value); setSettlementValue(""); setSettlementSource(""); setSettlementPreview(null); setIndexCloseReference(null); setOfficialIndexCloseReference(null); setSettlementError(""); }} value={settlementTradeId}>
+                      <option value="">Choose a position</option>
+                      {expiredPaperTrades.map((trade) => <option key={trade.id} value={trade.id}>{trade.underlying} · {trade.strategy_name} · {trade.expiry} · {trade.id.slice(0, 8)}</option>)}
+                    </select>
+                  </label>
+                  <label>Final {settlementTrade?.underlying ?? "selected index"} value
+                    <input disabled={settlementBusy} min="0.01" onChange={(event) => { setSettlementValue(event.target.value); setSettlementPreview(null); }} placeholder="e.g. 25000.00" required step="0.01" type="number" value={settlementValue} />
+                  </label>
+                  <label>Official source reference
+                    <input disabled={settlementBusy} maxLength={500} minLength={8} onChange={(event) => { setSettlementSource(event.target.value); setSettlementPreview(null); }} placeholder="NSE report URL or report identifier" required type="text" value={settlementSource} />
+                  </label>
+                </div>
+                <button className="refresh-button" disabled={settlementBusy || !settlementSupported} type="submit">{settlementBusy ? "Checking…" : "Preview paper settlement"}</button>
+              </form>
+              {settlementError ? <p className="error-banner paper-error" role="alert">{settlementError}</p> : null}
+              {settlementPreview ? <div className="strategy-preview expiry-settlement-preview">
+                <div><small>{settlementPreview.settlement_date} · final index value {formatPrice(settlementPreview.final_index_value)}</small><strong>Paper P&amp;L {formatSignedPrice(settlementPreview.realized_pnl)}</strong><small>Expiry cash flow {formatSignedPrice(settlementPreview.settlement_cash_flow)} · source: {settlementPreview.source_reference}</small></div>
+                <div><ul>{settlementPreview.legs.map((leg) => <li key={leg.instrument_key}>{leg.side} {leg.option_type} {formatPrice(leg.strike)} ×{leg.quantity_units}: intrinsic {formatPrice(leg.intrinsic_value)} · cash {formatSignedPrice(leg.cash_flow)}</li>)}</ul></div>
+                {officialIndexCloseReference?.status === "available"
+                  && officialIndexCloseReference.trade_id === settlementTrade?.id
+                  && officialIndexCloseReference.preview?.final_index_value === settlementPreview.final_index_value
+                  && officialIndexCloseReference.source_url === settlementPreview.source_reference
+                  ? <p className="features-note">NSE archive preview: the server rechecks this archive fingerprint before recording paper cash. Review any later exchange correction yourself.</p>
+                  : <p className="paper-warning">Manual source: the app cannot independently verify this final value or source. Check the published settlement and corrections before recording.</p>}
+                <p className="paper-warning">{settlementPreview.warning}</p>
+                <button className="primary-button" disabled={settlementBusy} onClick={() => void recordExpirySettlement()} type="button">Record reviewed paper settlement</button>
+              </div> : null}
+            </details> : null}
+
+            <section className="trade-block" aria-label="Start a strategy">
+              <h3 className="trade-block-title">Start a strategy</h3>
+              {selectedOptionIndex === "NIFTY" ? <StrategyRanking apiUrl={API_URL} busy={paperBusy} chain={chain} compact hideLinkWithoutPick onUse={(key) => { if (key) void startPaperStrategy(key); }} referenceStrike={selectedPaperStrike} token={token} /> : null}
+              <div className="position-view-tabs trade-filter" aria-label="Filter strategies">
+                {startFilters.map(filter => <button aria-pressed={startFilter === filter.key} key={filter.key} onClick={() => setStartFilter(filter.key)} type="button">{filter.label} <span>{filter.count}</span></button>)}
+              </div>
+              {startFilter === "FUTURES" ? (selectedOptionIndex === "NIFTY" ? <FuturesPaper apiUrl={API_URL} entriesPaused={!paperAccount || paperAccount.kill_switch_enabled} onChanged={() => void refreshPaperWorkspace()} token={token} waitingKeys={paperDeployments.filter(item => item.instrument_kind === "FUTURES" && item.status === "WAITING_FOR_ENTRY").map(item => item.strategy_key)} /> : null) : <ul className="strategy-start-list" aria-label="Option strategies">
+                {paperStrategies.filter(strategy => startFilter === "ALL" || STRATEGY_CATALOG_META[strategy.key]?.bias === startFilter).map((strategy) => {
+                  const payoff = strategyPayoffs[strategy.key];
+                  const finiteLoss = !!payoff && !payoff.maximum_loss_unbounded && Number(payoff.maximum_loss) > 0;
+                  const waiting = paperDeployments.some((item) => item.status === "WAITING_FOR_ENTRY" && item.strategy_key === strategy.key && item.expiry === selectedExpiry);
+                  const open = paperTrades.some((item) => item.status === "OPEN" && item.strategy_name === strategy.name);
+                  return <li key={strategy.key}>
+                    <div><strong>{strategy.name}</strong><small>{STRATEGY_CATALOG_META[strategy.key]?.label || "Paper template"}{finiteLoss ? `, max loss ₹${formatPrice(payoff.maximum_loss)}` : ""}</small></div>
+                    {open ? <span>Open</span> : waiting ? <span>Waiting</span> : <div className="strategy-start-actions">
+                      <button className="text-link" disabled={paperBusy || !finiteLoss} onClick={() => { const details = document.getElementById("paper-strategy-builder"); if (details instanceof HTMLDetailsElement) details.open = true; applyStrategyToPaperTicket(strategy, payoff); }} type="button">Edit rules</button>
+                      <button className="refresh-button strategy-start" disabled={paperBusy || !finiteLoss || !!paperAccount?.kill_switch_enabled} onClick={() => void startPaperStrategy(strategy.key)} type="button">Start in paper</button>
+                    </div>}
+                  </li>;
+                })}
+              </ul>}
+            </section>
+
+            <section className="trade-more" aria-label="More">
+              <h3 className="trade-block-title">More</h3>
+              <details className="trade-more-item">
+                <summary>History<span>{closedPaperTrades.length + closedFuturesTrades.length} closed</span></summary>
+                {closedPaperTrades.length + closedFuturesTrades.length === 0 ? <p className="trade-empty">No closed trades yet.</p> : <ul className="running-list">
+                  {closedPaperTrades.map(trade => <li className="running-row" key={trade.id}>
+                    <div className="running-name"><strong>{trade.strategy_name}</strong><small>{trade.exit_reason ? trade.exit_reason.replaceAll("_", " ").toLowerCase() : "closed"}, expiry {trade.expiry}</small></div>
+                    <div className="running-pnl"><b className={changeClass(trade.realized_pnl)}>{signedRupees(trade.realized_pnl)}</b></div>
+                    <details className="running-details"><summary>Details</summary>{renderOptionCard(trade, token)}</details>
+                  </li>)}
+                  {closedFuturesTrades.map(trade => <li className="running-row" key={trade.id}>
+                    <div className="running-name"><strong>{futuresTradeName(trade)}</strong><small>{trade.exit_reason ? trade.exit_reason.replaceAll("_", " ").toLowerCase() : "closed"}, {trade.trading_symbol}</small></div>
+                    <div className="running-pnl"><b className={changeClass(trade.realized_pnl)}>{signedRupees(trade.realized_pnl)}</b></div>
+                    <details className="running-details"><summary>Details</summary><FuturesPositionCard apiUrl={API_URL} onChanged={() => void refreshPaperWorkspace()} token={token} trade={trade} /></details>
+                  </li>)}
+                </ul>}
+                {finishedDeployments.length > 0 ? <details className="trade-nested"><summary>Past starts<span>{finishedDeployments.length}</span></summary><div className="equity-deployments">{finishedDeployments.slice(0, 20).map(item => renderDeploymentCard(item, token))}</div></details> : null}
             <details className="workspace-disclosure"><summary>All positions · detailed table</summary>
             {paperTrades.length ? (
               <div className="paper-table-scroll">
@@ -2997,40 +3157,39 @@ export default function Home() {
             ) : <p className="features-note">No paper trades yet. Add a strategy below to start your simulated portfolio.</p>}
 
             </details>
-
-            </section>
-
-            <section className="trade-group" aria-label="Add a strategy">
-              <div className="trade-group-heading"><h3 className="trade-group-title">Add a strategy</h3>
-                <button aria-describedby="batch-paper-safety" className="primary-button" disabled={!batchArmReady} onClick={() => void armAllPaperTemplates()} type="button">{paperBusy ? "Applying paper strategies…" : "Apply all eligible paper strategies"}</button>
-              </div>
-              <p className="features-note" id="batch-paper-safety">Apply all arms every template with a saved entry and exit policy ({savedBatchPolicyCount} saved for {paperLots} {paperLots === 1 ? "lot" : "lots"}). Nothing opens until a later snapshot passes its rules and risk limits.</p>
-            <ul className="strategy-start-list" aria-label="Start any strategy">
-              {paperStrategies.map((strategy) => {
-                const payoff = strategyPayoffs[strategy.key];
-                const finiteLoss = !!payoff && !payoff.maximum_loss_unbounded && Number(payoff.maximum_loss) > 0;
-                const waiting = paperDeployments.some((item) => item.status === "WAITING_FOR_ENTRY" && item.strategy_key === strategy.key && item.expiry === selectedExpiry);
-                const open = paperTrades.some((item) => item.status === "OPEN" && item.strategy_name === strategy.name);
-                return <li key={strategy.key}>
-                  <div><strong>{strategy.name}</strong><small>{STRATEGY_CATALOG_META[strategy.key]?.label || "Paper template"}{finiteLoss ? ` · max loss ₹${formatPrice(payoff.maximum_loss)}` : ""}</small></div>
-                  {open ? <span>Open</span> : waiting ? <span>Waiting</span> : <button className="inline-button" disabled={paperBusy || !finiteLoss || !!paperAccount?.kill_switch_enabled} onClick={() => void startPaperStrategy(strategy.key)} type="button">Start in paper</button>}
-                </li>;
-              })}
-            </ul>
-            {savedBatchPolicyCount < paperStrategies.length && <p className="features-note">The batch cannot arm templates without saved entry and exit policies. Proposed rules are exploratory and need your review; saving does not arm a strategy. <button className="inline-button" onClick={reviewNextBatchPolicy} type="button">Review next missing policy</button> <button className="inline-button" disabled={selectedOptionIndex !== "NIFTY" || !chain || !selectedPaperStrike || selectedExpiry !== chain.expiry || selectedExpiry < indiaCalendarDate() || batchPolicyBusy || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={reviewAllBatchPolicies} type="button">Review all missing policies</button></p>}
-            {batchPolicyReview && <details className="workspace-disclosure" open><summary>Review batch policy proposals · {batchPolicyReview.rows.filter((row) => row.policy).length} reviewable</summary>
-              <p>Snapshot {new Date(batchPolicyReview.asOf).toLocaleString("en-IN")} · expiry {batchPolicyReview.expiry} · strike {formatPrice(batchPolicyReview.strike)} · {batchPolicyReview.lots} lot(s) · quote quality {batchPolicyReview.quality}. The entry filters and exits below are hypotheses derived from an indicative gross payoff, not validated trading rules or profit predictions. <a href="https://upstox.com/brokerage-charges/" rel="noreferrer" target="_blank">Upstox public-plan charges</a> are a separate scenario, not deducted from these gross risk values.</p>
-              <div className="paper-table-scroll"><table className="paper-table"><thead><tr><th>Strategy</th><th>Review status</th><th>Entry and exit proposal</th><th>Gross max loss</th><th>Round-trip cost scenario</th></tr></thead><tbody>
-                {batchPolicyReview.rows.map((row) => <tr key={row.key}><td>{row.name} · {row.version}</td><td>{row.status}</td><td>{row.policy ? <>{row.policy.conditions.map((condition) => `${ENTRY_RULE_METRICS.find((metric) => metric.key === condition.metric)?.label || condition.metric} ${operatorLabel(condition.operator)} ${condition.threshold}`).join(" · ")}<br />Stop ₹{formatPrice(String(row.policy.stopLoss))} · target ₹{formatPrice(String(row.policy.targetProfit))} · trail ₹{formatPrice(String(row.policy.trailingStop))}</> : "—"}</td><td>{row.maximumLoss === null ? "Unavailable" : `₹${formatPrice(row.maximumLoss)}`}</td><td>{row.costScenario === null ? "Unavailable" : `₹${formatPrice(row.costScenario)}`}</td></tr>)}
-              </tbody></table></div>
-              <p>Review these exploratory entry/exit rules before applying. The button saves immutable account-scoped versions and queues every eligible strategy in one action. It opens no position immediately; later entries still require a qualifying paper snapshot and pass the cash, daily-loss, per-trade, portfolio-risk and open-position checks. Strategies without a finite quote-backed loss or with failed quote quality are excluded. These rules are not validated trading rules or profit predictions.</p>
-              <div><button className="refresh-button" disabled={!token || batchPolicyBusy || paperBusy || selectedOptionIndex !== "NIFTY" || selectedExpiry !== batchPolicyReview.expiry || selectedExpiry < indiaCalendarDate() || !batchPolicyReview.rows.some((row) => row.policy) || batchPolicyReview.snapshot !== strategyPayoffKey || batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={() => void saveReviewedBatchPolicies()} type="button">{batchPolicyBusy ? "Saving and applying reviewed strategies…" : `Save and apply ${batchPolicyReview.rows.filter((row) => row.policy).length} reviewed strategies`}</button></div>
-              {batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}` && <p role="status">The selected snapshot changed. Review the policies again before saving.</p>}
-              {batchPolicyResults.length > 0 && <ul role="status">{batchPolicyResults.map((item) => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul>}
-            </details>}
-            {batchArmResults.length > 0 && <details className="workspace-disclosure" open><summary>Batch paper application · {batchArmResults.filter(item => item.result.startsWith("Armed")).length} armed, {batchArmResults.length} checked</summary><p>{batchArmContext}</p><ul>{batchArmResults.map(item => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul></details>}
-
-            <details className="strategy-builder strategy-composer" id="paper-strategy-builder"><summary>Choose or build one strategy</summary>
+            <details className="paper-orders trade-nested">
+              <summary>Order and fill log <span>{paperOrders.length} records</span></summary>
+              {paperOrders.length ? (
+                <div className="paper-table-scroll">
+                  <table className="paper-table">
+                    <thead><tr><th>Time</th><th>Action</th><th>Fill quality</th><th>Net cash flow</th><th>Simulation method</th></tr></thead>
+                    <tbody>{paperOrders.map((order) => (
+                      <tr key={order.id}>
+                        <td>{formatTime(order.created_at)}</td><td>{order.action}</td><td>{order.fill_snapshot.quality_status}</td>
+                        <td className={changeClass(order.net_cash_flow)}>{formatSignedPrice(order.net_cash_flow)}</td><td>{order.fill_snapshot.method}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              ) : <p className="features-note">Simulated fills will appear here.</p>}
+            </details>
+              </details>
+              <details className="trade-more-item" onToggle={(event) => setRankingOpen(event.currentTarget.open)}>
+                <summary>Why this suggestion</summary>
+                {rankingOpen ? <>
+            {token && selectedOptionIndex === "NIFTY" ? (
+              <StrategyRanking
+                apiUrl={API_URL}
+                chain={chain}
+                busy={paperBusy}
+                onUse={(key) => void startPaperStrategy(key)}
+                referenceStrike={selectedPaperStrike}
+                token={token}
+              />
+            ) : null}
+                </> : null}
+              </details>
+            <details className="strategy-builder strategy-composer" id="paper-strategy-builder"><summary>Customize a strategy</summary>
               <div className={`strategy-controls ${isCustomStrategy ? "custom-strategy-controls" : ""}`}>
                 <label>
                   Strategy
@@ -3363,10 +3522,24 @@ export default function Home() {
               </button>
               <p className="paper-footnote">Starting a template does not reserve funds or enter now. At entry, risk caps are rechecked: up to 2% of starting capital per position and 10% across open positions. Simulated fills do not model queue priority, partial fills, charges, or slippage.</p>
             </details>
-
-            </section>
-
-            <details className="trade-group trade-account"><summary>Account, risk and ledger</summary>
+              <details className="trade-more-item">
+                <summary>Start all strategies</summary>
+                <p className="features-note" id="batch-paper-safety">Starts every strategy that has saved rules ({savedBatchPolicyCount} saved for {paperLots} {paperLots === 1 ? "lot" : "lots"}). Each one still waits for its entry rules and risk limits.</p>
+                <button aria-describedby="batch-paper-safety" className="refresh-button" disabled={!batchArmReady} onClick={() => void armAllPaperTemplates()} type="button">{paperBusy ? "Starting strategies…" : "Start all with saved rules"}</button>
+            {savedBatchPolicyCount < paperStrategies.length && <p className="features-note">The batch cannot arm templates without saved entry and exit policies. Proposed rules are exploratory and need your review; saving does not arm a strategy. <button className="inline-button" onClick={reviewNextBatchPolicy} type="button">Review next missing policy</button> <button className="inline-button" disabled={selectedOptionIndex !== "NIFTY" || !chain || !selectedPaperStrike || selectedExpiry !== chain.expiry || selectedExpiry < indiaCalendarDate() || batchPolicyBusy || strategyPayoffKey !== `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={reviewAllBatchPolicies} type="button">Review all missing policies</button></p>}
+            {batchPolicyReview && <details className="workspace-disclosure" open><summary>Review batch policy proposals · {batchPolicyReview.rows.filter((row) => row.policy).length} reviewable</summary>
+              <p>Snapshot {new Date(batchPolicyReview.asOf).toLocaleString("en-IN")} · expiry {batchPolicyReview.expiry} · strike {formatPrice(batchPolicyReview.strike)} · {batchPolicyReview.lots} lot(s) · quote quality {batchPolicyReview.quality}. The entry filters and exits below are hypotheses derived from an indicative gross payoff, not validated trading rules or profit predictions. <a href="https://upstox.com/brokerage-charges/" rel="noreferrer" target="_blank">Upstox public-plan charges</a> are a separate scenario, not deducted from these gross risk values.</p>
+              <div className="paper-table-scroll"><table className="paper-table"><thead><tr><th>Strategy</th><th>Review status</th><th>Entry and exit proposal</th><th>Gross max loss</th><th>Round-trip cost scenario</th></tr></thead><tbody>
+                {batchPolicyReview.rows.map((row) => <tr key={row.key}><td>{row.name} · {row.version}</td><td>{row.status}</td><td>{row.policy ? <>{row.policy.conditions.map((condition) => `${ENTRY_RULE_METRICS.find((metric) => metric.key === condition.metric)?.label || condition.metric} ${operatorLabel(condition.operator)} ${condition.threshold}`).join(" · ")}<br />Stop ₹{formatPrice(String(row.policy.stopLoss))} · target ₹{formatPrice(String(row.policy.targetProfit))} · trail ₹{formatPrice(String(row.policy.trailingStop))}</> : "—"}</td><td>{row.maximumLoss === null ? "Unavailable" : `₹${formatPrice(row.maximumLoss)}`}</td><td>{row.costScenario === null ? "Unavailable" : `₹${formatPrice(row.costScenario)}`}</td></tr>)}
+              </tbody></table></div>
+              <p>Review these exploratory entry/exit rules before applying. The button saves immutable account-scoped versions and queues every eligible strategy in one action. It opens no position immediately; later entries still require a qualifying paper snapshot and pass the cash, daily-loss, per-trade, portfolio-risk and open-position checks. Strategies without a finite quote-backed loss or with failed quote quality are excluded. These rules are not validated trading rules or profit predictions.</p>
+              <div><button className="refresh-button" disabled={!token || batchPolicyBusy || paperBusy || selectedOptionIndex !== "NIFTY" || selectedExpiry !== batchPolicyReview.expiry || selectedExpiry < indiaCalendarDate() || !batchPolicyReview.rows.some((row) => row.policy) || batchPolicyReview.snapshot !== strategyPayoffKey || batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}`} onClick={() => void saveReviewedBatchPolicies()} type="button">{batchPolicyBusy ? "Saving and applying reviewed strategies…" : `Save and apply ${batchPolicyReview.rows.filter((row) => row.policy).length} reviewed strategies`}</button></div>
+              {batchPolicyReview.snapshot !== `${chain?.as_of}|${chain?.expiry}|${selectedPaperStrike}|${paperLots}` && <p role="status">The selected snapshot changed. Review the policies again before saving.</p>}
+              {batchPolicyResults.length > 0 && <ul role="status">{batchPolicyResults.map((item) => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul>}
+            </details>}
+            {batchArmResults.length > 0 && <details className="workspace-disclosure" open><summary>Batch paper application · {batchArmResults.filter(item => item.result.startsWith("Armed")).length} armed, {batchArmResults.length} checked</summary><p>{batchArmContext}</p><ul>{batchArmResults.map(item => <li key={item.name}><strong>{item.name}:</strong> {item.result}</li>)}</ul></details>}
+              </details>
+            <details className="trade-more-item trade-account"><summary>Account and risk</summary>
             {paperAccount ? (
               <>
               <div className="paper-stats" aria-label="Paper account summary">
@@ -3406,77 +3579,13 @@ export default function Home() {
             </details>
 
             </details>
-
-            {token && selectedOptionIndex === "NIFTY" ? <FuturesPaper apiUrl={API_URL} entriesPaused={!paperAccount || paperAccount.kill_switch_enabled} onChanged={() => void refreshPaperWorkspace()} token={token} waitingKeys={paperDeployments.filter(item => item.instrument_kind === "FUTURES" && item.status === "WAITING_FOR_ENTRY").map(item => item.strategy_key)} /> : null}
-
+              <details className="trade-more-item">
+                <summary>How this works</summary>
+                <p className="features-note">Start in paper sets entry and exit rules from the strategy&apos;s current risk, then waits. A trade opens only when a later quote passes those entry rules, the quote checks and your risk limits. Buys fill at the ask and sells at the bid. Nothing is sent to a broker.</p>
+                <p className="features-note">A trade closes at its stop, target or trailing stop, or before expiry. The trailing stop starts once the gain reaches the trailing amount. Up to 26 strategies can wait at once, and the worker checks five per cycle. These rules are starting points with no proven edge; results are simulated and are not advice.</p>
+              </details>
             {selectedOptionIndex === "NIFTY" && token && <ExpiryTestControl key={token} token={token} apiUrl={API_URL} expiry={selectedExpiry} strike={selectedPaperStrike} disabled={paperBusy || !paperEntry.ready || !!paperAccount?.kill_switch_enabled} onApplied={() => setPaperRefreshCount(value => value + 1)} />}
-            {expiredPaperTrades.length > 0 ? <details className="equity-history expiry-settlement" open>
-              <summary>Expired paper positions needing settlement ({expiredPaperTrades.length})</summary>
-              <p className="paper-warning">Expired options need settlement evidence instead of a current quote. Review the selected index’s official close and corrections. Fetching a reference never closes the position.</p>
-              {settlementTrade && !settlementSupported ? <p className="paper-warning">Settlement for {settlementTrade.underlying} is not supported yet. This position stays open until its official settlement route is available.</p> : null}
-              <div className="settlement-reference-actions">
-                <button className="inline-button" disabled={!settlementSupported || indexCloseBusy} onClick={() => void checkOfficialIndexCloseReference()} type="button">{indexCloseBusy ? "Checking…" : "Check NSE daily close"}</button>
-                <button className="inline-button" disabled={settlementTrade?.underlying !== "NIFTY" || indexCloseBusy} onClick={() => void checkIndexCloseReference()} type="button">Check broker candle (NIFTY only)</button>
-              </div>
-              {officialIndexCloseReference && officialIndexCloseReference.trade_id === settlementTrade?.id && officialIndexCloseReference.status === "available" ? <div className="settlement-reference-result" role="status">
-                <p>NSE daily {settlementTrade?.underlying} close for {officialIndexCloseReference.expiry}: <strong>{formatPrice(officialIndexCloseReference.preview?.final_index_value)}</strong>. <a href={officialIndexCloseReference.source_url ?? undefined} rel="noreferrer" target="_blank">Open archive ↗</a></p>
-                <p className="features-note">{officialIndexCloseReference.warning}</p>
-                <p className="features-note">If you record this NSE-based candidate, the server checks the archive fingerprint and close again. A changed archive stops the record so you can review it.</p>
-                <details className="features-note"><summary>Archive fingerprint</summary><code>{officialIndexCloseReference.archive_sha256}</code></details>
-                <button className="inline-button" disabled={settlementBusy || !officialIndexCloseReference.preview} onClick={() => { const preview = officialIndexCloseReference.preview; if (!preview || preview.trade_id !== settlementTrade?.id) return; setSettlementValue(preview.final_index_value); setSettlementSource(preview.source_reference); setSettlementPreview(preview); }} type="button">Preview using NSE close</button>
-              </div> : null}
-              {officialIndexCloseReference && officialIndexCloseReference.trade_id === settlementTrade?.id && officialIndexCloseReference.status === "unavailable" ? <p className="features-note" role="status">NSE archive unavailable: {officialIndexCloseReference.reason}</p> : null}
-              {indexCloseReference && indexCloseReference.trade_id === settlementTrade?.id && indexCloseReference.status === "available" ? <p className="features-note" role="status">{indexCloseReference.provider} daily candle for {indexCloseReference.candle_date}: {formatPrice(indexCloseReference.daily_close)}. {indexCloseReference.warning}</p> : null}
-              {settlementCloseDifference !== null && Number.isFinite(settlementCloseDifference) ? <p className={settlementCloseDifference > 0.01 ? "paper-warning" : "features-note"} role="status">{settlementCloseDifference > 0.01 ? `NSE archive and broker daily candle differ by ${formatPrice(String(settlementCloseDifference))}. Review exchange corrections before recording.` : "NSE archive and broker daily candle agree on the index close. Check for later corrections before recording."}</p> : null}
-              {indexCloseReference && indexCloseReference.trade_id === settlementTrade?.id && indexCloseReference.status === "unavailable" ? <p className="features-note" role="status">Broker candle cross-check unavailable: {indexCloseReference.reason}</p> : null}
-              <form onSubmit={(event) => void previewExpirySettlement(event)}>
-                <div className="exit-rule-controls expiry-settlement-controls">
-                  <label>Expired position
-                    <select disabled={settlementBusy} onChange={(event) => { setSettlementTradeId(event.target.value); setSettlementValue(""); setSettlementSource(""); setSettlementPreview(null); setIndexCloseReference(null); setOfficialIndexCloseReference(null); setSettlementError(""); }} value={settlementTradeId}>
-                      <option value="">Choose a position</option>
-                      {expiredPaperTrades.map((trade) => <option key={trade.id} value={trade.id}>{trade.underlying} · {trade.strategy_name} · {trade.expiry} · {trade.id.slice(0, 8)}</option>)}
-                    </select>
-                  </label>
-                  <label>Final {settlementTrade?.underlying ?? "selected index"} value
-                    <input disabled={settlementBusy} min="0.01" onChange={(event) => { setSettlementValue(event.target.value); setSettlementPreview(null); }} placeholder="e.g. 25000.00" required step="0.01" type="number" value={settlementValue} />
-                  </label>
-                  <label>Official source reference
-                    <input disabled={settlementBusy} maxLength={500} minLength={8} onChange={(event) => { setSettlementSource(event.target.value); setSettlementPreview(null); }} placeholder="NSE report URL or report identifier" required type="text" value={settlementSource} />
-                  </label>
-                </div>
-                <button className="refresh-button" disabled={settlementBusy || !settlementSupported} type="submit">{settlementBusy ? "Checking…" : "Preview paper settlement"}</button>
-              </form>
-              {settlementError ? <p className="error-banner paper-error" role="alert">{settlementError}</p> : null}
-              {settlementPreview ? <div className="strategy-preview expiry-settlement-preview">
-                <div><small>{settlementPreview.settlement_date} · final index value {formatPrice(settlementPreview.final_index_value)}</small><strong>Paper P&amp;L {formatSignedPrice(settlementPreview.realized_pnl)}</strong><small>Expiry cash flow {formatSignedPrice(settlementPreview.settlement_cash_flow)} · source: {settlementPreview.source_reference}</small></div>
-                <div><ul>{settlementPreview.legs.map((leg) => <li key={leg.instrument_key}>{leg.side} {leg.option_type} {formatPrice(leg.strike)} ×{leg.quantity_units}: intrinsic {formatPrice(leg.intrinsic_value)} · cash {formatSignedPrice(leg.cash_flow)}</li>)}</ul></div>
-                {officialIndexCloseReference?.status === "available"
-                  && officialIndexCloseReference.trade_id === settlementTrade?.id
-                  && officialIndexCloseReference.preview?.final_index_value === settlementPreview.final_index_value
-                  && officialIndexCloseReference.source_url === settlementPreview.source_reference
-                  ? <p className="features-note">NSE archive preview: the server rechecks this archive fingerprint before recording paper cash. Review any later exchange correction yourself.</p>
-                  : <p className="paper-warning">Manual source: the app cannot independently verify this final value or source. Check the published settlement and corrections before recording.</p>}
-                <p className="paper-warning">{settlementPreview.warning}</p>
-                <button className="primary-button" disabled={settlementBusy} onClick={() => void recordExpirySettlement()} type="button">Record reviewed paper settlement</button>
-              </div> : null}
-            </details> : null}
-
-            <details className="paper-orders">
-              <summary>Order and fill log <span>{paperOrders.length} records</span></summary>
-              {paperOrders.length ? (
-                <div className="paper-table-scroll">
-                  <table className="paper-table">
-                    <thead><tr><th>Time</th><th>Action</th><th>Fill quality</th><th>Net cash flow</th><th>Simulation method</th></tr></thead>
-                    <tbody>{paperOrders.map((order) => (
-                      <tr key={order.id}>
-                        <td>{formatTime(order.created_at)}</td><td>{order.action}</td><td>{order.fill_snapshot.quality_status}</td>
-                        <td className={changeClass(order.net_cash_flow)}>{formatSignedPrice(order.net_cash_flow)}</td><td>{order.fill_snapshot.method}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              ) : <p className="features-note">Simulated fills will appear here.</p>}
-            </details>
+            </section>
           </section>
 
           </> : null}

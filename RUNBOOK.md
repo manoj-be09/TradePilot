@@ -8,7 +8,7 @@ What to do when something goes wrong during unattended NIFTY paper trading (road
 |---|---|
 | Before 09:15 | Status row: **Exit worker: running**, **Market data: connected**, **Entries on** (or deliberately paused). The recorder log says it is waiting for or recording the session. |
 | During the session | Home shows open positions and today's P&L; the exit worker chip stays green. |
-| After 15:30 | Trade → **Account, risk and ledger** → **Check ledger now** shows "Saved ledger matches". No position shows *Expired · settlement pending* unless it is an expiry day. |
+| After 15:30 | Trade → More → **Account and risk** → **Check ledger now** shows "Saved ledger matches". No position shows *Expired · settlement pending* unless it is an expiry day. |
 
 Local processes (Windows, from the repo root), each in its own terminal:
 
@@ -71,7 +71,7 @@ Started from Trade → **NIFTY futures strategies**. Each uses the nearest contr
 - **Margin** is blocked at fill and returned on exit. Overnight gaps can lose more than the stop-loss; the stop is the risk budget used for the limits, not a guarantee.
 - A contract lot-size change rejects a waiting strategy instead of rescaling its stop. Start it again.
 - Demotion and probation apply to futures templates as they do to options. There is no futures backtest baseline yet, so a futures template cannot finish probation on its own; it stays on one lot until you reinstate it after review.
-- A position that could not be squared off shows *Expired · settlement pending* in Your positions. Record the settlement there against the official NSE close; nothing settles automatically.
+- A position that could not be squared off shows **Needs settlement** under Running on Trade. Record the settlement there against the official NSE close; nothing settles automatically.
 
 ## Holidays and special sessions
 

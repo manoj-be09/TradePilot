@@ -57,7 +57,7 @@ const money = (value: string | null) =>
   value === null ? "Unavailable" : `₹${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 export function StrategyRanking({
-  token, apiUrl, chain, referenceStrike, onUse, compact = false, busy = false,
+  token, apiUrl, chain, referenceStrike, onUse, compact = false, busy = false, hideLinkWithoutPick = false,
 }: {
   token: string;
   apiUrl: string;
@@ -68,6 +68,8 @@ export function StrategyRanking({
   compact?: boolean;
   /** True while a paper action is in flight; disables the start buttons. */
   busy?: boolean;
+  /** On Trade itself the "Open Trade" fallback would go nowhere. */
+  hideLinkWithoutPick?: boolean;
 }) {
   const [result, setResult] = useState<RankingResult | null>(null);
   const [error, setError] = useState("");
@@ -101,6 +103,9 @@ export function StrategyRanking({
       : error || !result ? "Unavailable" : pick ? pick.name : "No trade";
     const reason = !chain ? "Waiting for the NIFTY option chain."
       : error ? error : result?.reasons[0] ?? "";
+    if (hideLinkWithoutPick && !pick) {
+      return <p className="trade-note" aria-live="polite">Today&apos;s suggestion: {headline === "No trade" ? "no trade" : headline.toLowerCase()}.{reason ? ` ${reason}` : ""} Simulated, not advice.</p>;
+    }
     return (
       <section className="home-suggestion" aria-label="Today's suggestion" aria-live="polite">
         <div>
@@ -108,7 +113,7 @@ export function StrategyRanking({
           <strong>{headline}</strong>
           {reason ? <small>{reason}</small> : null}
         </div>
-        <button className="refresh-button" disabled={busy} onClick={() => onUse(pick?.strategy_key ?? "")} type="button">{pick ? "Start in paper" : "Open Trade"}</button>
+        {pick || !hideLinkWithoutPick ? <button className="refresh-button" disabled={busy} onClick={() => onUse(pick?.strategy_key ?? "")} type="button">{pick ? "Start in paper" : "Open Trade"}</button> : null}
       </section>
     );
   }

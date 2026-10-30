@@ -111,10 +111,10 @@ A pause for missing P&L means a saved trade is incomplete. Treat it like a ledge
 
 The runner arms each frozen strategy version once per expiry, for the nearest expiry after today, at the strike nearest the index. It goes through the same checks as the web app, and the worker rechecks entry rules and risk limits before any simulated fill. A strategy you cancel stays cancelled for that expiry.
 
-Freeze a period once (this refuses to overwrite `work/forward-paper.json`; the file is private and not committed):
+Save fresh 1-lot rules from current quotes with `--propose` (during market hours; this arms nothing), then freeze a period once (this refuses to overwrite `work/forward-paper.json`; the file is private and not committed). A restart means archiving that file and freezing again:
 
 ```bash
-DATABASE_URL="sqlite:///./work/nifty-local.db" PYTHONPATH=. .venv/Scripts/python.exe -m apps.forward_runner.main --freeze --user-email <account email> --start 2026-10-30 --weeks 6
+DATABASE_URL="sqlite:///./work/nifty-local.db" PYTHONPATH=. .venv/Scripts/python.exe -m apps.forward_runner.main --freeze --user-email <account email> --start 2026-11-02 --weeks 6
 ```
 
 Then keep it running alongside the worker:
@@ -123,6 +123,6 @@ Then keep it running alongside the worker:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-forward-runner-local.ps1
 ```
 
-Its log shows one line per cycle: `OK`, `CLOSED`, `PAUSED`, `NO_DATA` or `FINISHED`. Pausing entries stops it arming anything new. A strategy that is paused automatically is skipped and retried each cycle, while the others are still armed.
+Its log shows one line per cycle: `OK`, `NOT_STARTED`, `CLOSED`, `PAUSED`, `NO_DATA` or `FINISHED`. Pausing entries stops it arming anything new. A strategy that is paused automatically is skipped and retried each cycle, while the others are still armed.
 
 After each close the nightly job writes `work/forward-reports/<date>.md`: per-strategy armed, open, closed, won, realized P&L and worst drawdown for the frozen strategies only, plus the ledger status. Figures are simulated. Run it by hand with `DATABASE_URL="sqlite:///./work/nifty-local.db" PYTHONPATH=. .venv/Scripts/python.exe -m apps.nightly.main --once`.

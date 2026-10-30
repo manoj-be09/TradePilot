@@ -73,7 +73,7 @@ class _Provider:
 
 def _version(user_id, key: str, number: int = 1, name: str | None = None, lots: int = 1):
     return StrategyVersion(
-        user_id=user_id, name=name or f"Batch study · {key} · 2.0.0 · {lots}L",
+        user_id=user_id, name=name or f"Forward · {key} · 2.0.0 · {lots}L",
         version_number=number, definition=_definition(key, lots), definition_hash="x",
     )
 
@@ -128,7 +128,10 @@ def test_a_strategy_already_attempted_for_that_expiry_is_not_armed_again(world, 
         session.add(PaperDeployment(
             user_id=user_id, command_key="earlier-key", request_hash="h", status=status,
             detail="d", created_at=NOW, updated_at=NOW,
-            request_data={"strategy_key": "bear_call_spread", "expiry": EXPIRY.isoformat()},
+            request_data={
+                "strategy_key": "bear_call_spread", "expiry": EXPIRY.isoformat(),
+                "strategy_version_id": str(plan.version_ids[0]),
+            },
         ))
         session.commit()
     calls = []
@@ -201,6 +204,30 @@ def test_the_rebuilt_request_matches_the_frozen_definition_the_endpoint_compares
         trailing_stop_amount=saved["trailing_stop_amount"],
     )
     assert _strategy_version_definition(rebuilt, strategy) == saved
+
+
+def test_a_deployment_outside_the_plan_does_not_use_up_the_expiry(world):
+    factory, plan = world
+    with factory() as session:
+        user_id = session.get(StrategyVersion, plan.version_ids[0]).user_id
+        session.add(PaperDeployment(
+            user_id=user_id, command_key="older-rules", request_hash="h", status="CANCELLED",
+            detail="d", created_at=NOW, updated_at=NOW,
+            request_data={"strategy_key": "bear_call_spread", "expiry": EXPIRY.isoformat(),
+                          "strategy_version_id": str(uuid4())},
+        ))
+        session.commit()
+    calls = []
+    assert _cycle(factory, plan, _Provider(), _recording_arm(calls)) == "OK"
+    assert [body.strategy_key for body, _ in calls] == ["bear_call_spread", "long_put"]
+
+
+def test_nothing_is_armed_before_the_period_starts(world):
+    factory, plan = world
+    calls = []
+    before = datetime(2026, 10, 29, 5, 0, tzinfo=timezone.utc)
+    assert _cycle(factory, plan, _Provider(), _recording_arm(calls), before) == "NOT_STARTED"
+    assert calls == []
 
 
 def test_the_period_ends_on_its_end_date(world):

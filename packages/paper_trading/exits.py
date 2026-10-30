@@ -24,7 +24,10 @@ def evaluate_exit(
         return ExitDecision(updated_peak, "TARGET")
     if (
         trailing_stop_amount is not None
-        and updated_peak > 0
+        # Starts only once the peak gain reaches the trail, so the moving stop locks in
+        # breakeven or better. Starting on any tiny gain would replace the protective
+        # stop with one the size of the trail.
+        and updated_peak >= trailing_stop_amount
         and updated_peak - pnl >= trailing_stop_amount
     ):
         return ExitDecision(updated_peak, "TRAILING_STOP")

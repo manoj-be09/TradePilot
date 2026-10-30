@@ -467,6 +467,7 @@ type PayoffEstimate = {
   maximum_loss_unbounded: boolean;
   maximum_profit: string | null;
   maximum_profit_unbounded: boolean;
+  entry_spread_cost?: number;
   transaction_cost_scenario?: {
     model_id: string; source_url: string; entry_charge: string;
     unchanged_premium_exit_charge: string; round_trip_scenario_charge: string;
@@ -478,7 +479,10 @@ function paperTemplatePolicy(strategyKey: string, payoff: PayoffEstimate) {
   const maximumLoss = Number(payoff.maximum_loss);
   const maximumProfit = Number(payoff.maximum_profit);
   if (!Number.isFinite(maximumLoss) || maximumLoss <= 0 || payoff.maximum_loss_unbounded) return null;
-  const stopLoss = Math.max(1, maximumLoss * 0.4);
+  // The stop must clear the cost of crossing bid/ask, or the spread alone triggers it.
+  // Keep in step with packages/paper_trading/template_policy.py.
+  const spreadCost = Number(payoff.entry_spread_cost) || 0;
+  const stopLoss = Math.min(maximumLoss, Math.max(1, maximumLoss * 0.4, spreadCost * 3));
   const targetProfit = Number.isFinite(maximumProfit) && maximumProfit > 0
     ? Math.max(1, Math.min(maximumProfit * 0.5, stopLoss * 1.75))
     : Math.max(1, stopLoss * 1.5);
@@ -1393,7 +1397,8 @@ export default function Home() {
         const contract = row ? contracts.find((item) => item.expiry === selectedExpiry && item.strike === row.strike && item.option_type === leg.option_type) : undefined;
         const price = leg.side === "BUY" ? option?.quote.ask : option?.quote.bid;
         if (!row || !option || !contract || price === null || price === undefined || Number(price) <= 0) return [];
-        return [{ option_type: leg.option_type, side: leg.side, strike: row.strike, price: Number(price), quantityLots: paperLots * leg.quantity_ratio, lotSize: contract.lot_size }];
+        const spread = Math.max(0, Number(option.quote.ask ?? price) - Number(option.quote.bid ?? price));
+        return [{ option_type: leg.option_type, side: leg.side, strike: row.strike, price: Number(price), quantityLots: paperLots * leg.quantity_ratio, lotSize: contract.lot_size, spreadCost: spread * paperLots * leg.quantity_ratio * contract.lot_size }];
       });
       return legs.length === strategy.legs.length ? [{ strategy, legs }] : [];
     });
@@ -1417,7 +1422,8 @@ export default function Home() {
           legs: legs.map((leg) => ({ option_type: leg.option_type, strike: leg.strike, quantity: leg.quantityLots * (leg.side === "BUY" ? 1 : -1), entry_premium: String(leg.price) })),
         }),
       });
-      return [strategy.key, await readJson<PayoffEstimate>(response)] as const;
+      const estimate = await readJson<PayoffEstimate>(response);
+      return [strategy.key, { ...estimate, entry_spread_cost: legs.reduce((sum, leg) => sum + leg.spreadCost, 0) }] as const;
     })).then((items) => { if (!controller.signal.aborted) { setStrategyPayoffs(Object.fromEntries(items)); setStrategyPayoffKey(snapshotKey); } })
       .catch(() => { if (!controller.signal.aborted) { setStrategyPayoffs({}); setStrategyPayoffKey(snapshotKey); } });
     return () => controller.abort();
@@ -2928,7 +2934,7 @@ export default function Home() {
                 <p><strong>Exit:</strong> Paper P&amp;L stop at −{formatPrice(item.stop_loss_amount)}; target at +{formatPrice(item.target_profit_amount)}; moving stop trails {formatPrice(item.trailing_stop_amount)} below peak P&amp;L. {item.intraday ? "Squared off before every close." : "Closes and re-arms before expiry; re-entry needs these rules to pass again."} A gap can lose more than the stop.</p>
                 </> : <>
                 <p><strong>Entry:</strong> A later open-market option-chain snapshot must satisfy every saved condition: {item.entry_conditions.map(condition => `${ENTRY_RULE_METRICS.find(metric => metric.key === condition.metric)?.label || condition.metric} ${operatorLabel(condition.operator)} ${condition.threshold}`).join(" · ") || "No saved conditions"}. The selected option legs, quote quality, expiry window and paper risk checks must also pass.</p>
-                <p><strong>Exit:</strong> Net paper P&amp;L stop at −{formatPrice(item.stop_loss_amount)}; {item.target_profit_amount ? `target at +${formatPrice(item.target_profit_amount)}` : "no profit target saved"}; moving stop trails {formatPrice(item.trailing_stop_amount)} below peak net P&amp;L after it turns positive. The expiry policy may close earlier.</p>
+                <p><strong>Exit:</strong> Net paper P&amp;L stop at −{formatPrice(item.stop_loss_amount)}; {item.target_profit_amount ? `target at +${formatPrice(item.target_profit_amount)}` : "no profit target saved"}; moving stop trails {formatPrice(item.trailing_stop_amount)} below peak net P&amp;L once the peak gain reaches that amount. The expiry policy may close earlier.</p>
                 </>}
               </div></details>
               <OptionDeploymentDecisions deploymentId={item.id} apiUrl={API_URL} token={token} />{item.status === "WAITING_FOR_ENTRY" && <button className="inline-button" disabled={paperBusy} onClick={() => void cancelPaperDeployment(item.id)} type="button">Cancel waiting strategy</button>}</article>)}</div></details>}

@@ -160,8 +160,22 @@ def serve(root: Path, interval_seconds: float) -> None:
         _stop_tree(process)
 
 
+def configure_logging(root: Path) -> None:
+    # Write the file here and use stdout: Windows PowerShell 5.1 treats a native program's
+    # redirected stderr as a terminating error, which killed this process on its first line.
+    logs = root / "work" / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", force=True,
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler(logs / "supervisor.log", encoding="utf-8"),
+        ],
+    )
+
+
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    configure_logging(Path.cwd())
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--interval", type=float, default=5.0)
     args = parser.parse_args()

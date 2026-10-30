@@ -148,13 +148,13 @@ def _conditions(side: FuturesSide) -> tuple[FuturesCondition, ...]:
 
 def _template(key: str, name: str, side: FuturesSide, intraday: bool) -> FuturesTemplate:
     style = "Exits before every close" if intraday else "Held overnight, rolled before expiry"
-    direction = "upward" if side == "LONG" else "downward"
+    direction = "an upward" if side == "LONG" else "a downward"
     action = "Buys" if side == "LONG" else "Sells"
     return FuturesTemplate(
         key=key, name=name, side=side, intraday=intraday,
         description=(
             f"{action} the front-month future when the completed 5-minute NIFTY regime "
-            f"has an {direction} bias and open-interest PCR agrees. {style}."
+            f"has {direction} bias and open-interest PCR agrees. {style}."
         ),
         stop_points=Decimal(60 if intraday else 120),
         target_points=Decimal(120 if intraday else 240),

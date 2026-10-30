@@ -787,3 +787,24 @@ def test_arm_requires_rules_and_is_user_scoped(client, monkeypatch):
     assert client.get(
         f"/paper/deployments/{first['id']}/decisions", headers=other
     ).status_code == 404
+
+
+def test_armed_entry_stays_waiting_while_its_strategy_is_paused(client, monkeypatch):
+    from packages.database.models import StrategyDemotion
+
+    provider, headers, payload, factory = armed_setup(client, monkeypatch)
+    armed = client.post("/paper/deployments", headers=headers, json=payload)
+    assert armed.status_code == 201, armed.text
+    with factory() as session:
+        deployment = session.get(PaperDeployment, UUID(armed.json()["id"]))
+        session.add(StrategyDemotion(
+            user_id=deployment.user_id, strategy_key=payload["strategy_key"], status="ACTIVE",
+            reason="DRAWDOWN", details={"summary": "a test drawdown"},
+            demoted_at=datetime.now(timezone.utc),
+        ))
+        session.commit()
+    asyncio.run(run_cycle(factory, provider, get_settings()))
+    with factory() as session:
+        deployment = session.get(PaperDeployment, UUID(armed.json()["id"]))
+        assert deployment.status == "WAITING_FOR_ENTRY"
+        assert "a test drawdown" in deployment.detail

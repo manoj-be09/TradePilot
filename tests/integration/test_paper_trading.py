@@ -1038,3 +1038,80 @@ def test_strategy_is_paused_after_five_losses_until_reinstated(client, monkeypat
     assert open_spread().status_code == 201
     again = client.post("/paper/strategies/bull_put_spread/reinstate", headers=headers)
     assert again.status_code == 404
+
+
+def test_paused_strategy_returns_through_one_lot_probation(client, monkeypatch):
+    provider = FakeUpstoxProvider()
+    monkeypatch.setattr("apps.api.main.get_market_data_provider", lambda: provider)
+    headers = _token(client)
+    factory = client.app.state.test_session_factory
+
+    def open_spread(lots=1):
+        return client.post(
+            "/paper/trades",
+            headers={**headers, "Idempotency-Key": str(uuid4())},
+            json={"strategy_key": "bull_put_spread", "expiry": provider.expiry.isoformat(),
+                  "reference_strike": "25000", "lots": lots},
+        )
+
+    def arm(lots=1):
+        return client.post(
+            "/paper/deployments",
+            headers={**headers, "Idempotency-Key": str(uuid4())},
+            json={"strategy_key": "bull_put_spread", "expiry": provider.expiry.isoformat(),
+                  "reference_strike": "25000", "lots": lots,
+                  "entry_conditions": [{"metric": "underlying_spot", "operator": "GT",
+                                        "threshold": "25000"}],
+                  "stop_loss_amount": "100", "target_profit_amount": "200",
+                  "trailing_stop_amount": "50"},
+        )
+
+    still_open = open_spread()
+    assert still_open.status_code == 201, still_open.text
+    for _ in range(5):
+        opened = open_spread()
+        assert opened.status_code == 201, opened.text
+        assert client.post(
+            f"/paper/trades/{opened.json()['id']}/close", headers=headers
+        ).status_code == 200
+
+    # Paused: no new entry, no arming, but the open position still exits.
+    assert open_spread().status_code == 423
+    refused = arm()
+    assert refused.status_code == 423
+    assert "Probation can start on" in refused.json()["detail"]
+    assert client.post(
+        f"/paper/trades/{still_open.json()['id']}/close", headers=headers
+    ).status_code == 200
+
+    # Cooling-off has passed: probation allows one lot and one position at a time.
+    with factory() as session:
+        from packages.database.models import StrategyDemotion
+
+        demotion = session.scalars(select(StrategyDemotion)).one()
+        demotion.demoted_at = demotion.demoted_at - timedelta(days=8)
+        session.commit()
+    assert "at most 1 lot" in open_spread(lots=2).json()["detail"]
+    state = next(
+        item for item in client.get("/paper/strategies/demotions", headers=headers).json()
+        if item["strategy_key"] == "bull_put_spread"
+    )
+    assert state["stage"] == "PROBATION" and state["paused"] is True
+    assert state["promotion_needs"]
+    armed = arm()
+    assert armed.status_code == 201, armed.text
+    assert "one position or armed entry" in arm().json()["detail"]
+    assert client.post(
+        f"/paper/deployments/{armed.json()['id']}/cancel", headers=headers
+    ).status_code == 200
+    first = open_spread()
+    assert first.status_code == 201, first.text
+    assert "one position or armed entry" in open_spread().json()["detail"]
+    assert client.post(
+        f"/paper/trades/{first.json()['id']}/close", headers=headers
+    ).status_code == 200
+
+    history = client.get("/paper/strategies/eligibility-history", headers=headers).json()
+    assert [item["event_type"] for item in reversed(history)] == ["DEMOTED", "PROBATION_STARTED"]
+    assert history[-1]["reason"] == "LOSS_STREAK"
+    assert "5 consecutive losing paper trades" in history[-1]["summary"]

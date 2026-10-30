@@ -1278,6 +1278,11 @@ a.sidebar-action-button { display: flex; align-items: center; justify-content: c
 .strategy-tile-open:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
 .strategy-tile-open:hover strong { text-decoration: underline; }
 .strategy-tile-open u { margin-left: 8px; }
+.strategy-start-list .strategy-tile-past { margin-top: 3px; color: var(--ink); font-size: 12px; }
+.strategy-sort .position-view-tabs { align-items: center; margin-top: 8px; border-bottom: 0; padding-bottom: 0; }
+.strategy-sort em { margin-right: 4px; color: var(--ink-muted); font-size: 13px; font-style: normal; }
+.strategy-sort .trade-note { margin: 6px 0 0; }
+.strategy-details-figures--past { margin-top: 6px; border-bottom: 0; padding: 0 0 8px; }
 .strategy-start-list .strategy-tile-figures { display: flex; flex-wrap: wrap; gap: 0 12px; margin-top: 4px; font-size: 12px; }
 .strategy-start-list .strategy-tile-figures span { font-size: 12px; font-weight: 600; }
 .strategy-start-list .detail-profit, .detail-profit { color: var(--green); }

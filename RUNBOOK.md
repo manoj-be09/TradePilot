@@ -126,3 +126,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-forward-ru
 Its log shows one line per cycle: `OK`, `NOT_STARTED`, `CLOSED`, `PAUSED`, `NO_DATA` or `FINISHED`. Pausing entries stops it arming anything new. A strategy that is paused automatically is skipped and retried each cycle, while the others are still armed.
 
 After each close the nightly job writes `work/forward-reports/<date>.md`: per-strategy armed, open, closed, won, realized P&L and worst drawdown for the frozen strategies only, plus the ledger status. Figures are simulated. Run it by hand with `DATABASE_URL="sqlite:///./work/nifty-local.db" PYTHONPATH=. .venv/Scripts/python.exe -m apps.nightly.main --once`.
+
+## Strategy ranking on the Trade page
+The Trade page sorts option strategies by results in `work/bt/wf-*.json`, written by
+`scripts/run-walk-forward.py`. These files are built from private data and stay out of git. If
+they are missing or belong to an older template version, a strategy shows "No past test" and
+sorts last. Ordering is display only: nothing is started, sized or blocked because of it.

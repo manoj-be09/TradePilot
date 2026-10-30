@@ -12,12 +12,13 @@ function ruleState(rule: DetailRule) {
   return <small className={`detail-rule-state detail-rule-state--${rule.met ? "met" : "unmet"}`}>{rule.met ? "Met now" : "Not met now"}{rule.now ? `: ${rule.now}` : ""}</small>;
 }
 
-export function StrategyDetails({ name, summary, tone, context, figures, legs, entry, exit, notes, action, onClose }: {
+export function StrategyDetails({ name, summary, tone, context, figures, evidence, legs, entry, exit, notes, action, onClose }: {
   name: string;
   summary: string;
   tone: string;
   context: string;
   figures: DetailFigure[];
+  evidence?: { lead: string; figures: DetailFigure[] };
   legs?: string[];
   entry: DetailRule[];
   exit: DetailRule[];
@@ -47,6 +48,13 @@ export function StrategyDetails({ name, summary, tone, context, figures, legs, e
           {figures.map((figure) => <div key={figure.label}><span>{figure.label}</span><strong className={figure.tone ? `detail-${figure.tone}` : undefined}>{figure.value}</strong></div>)}
         </div>
         {legs?.length ? <section><h4>Position</h4><ul className="strategy-details-legs">{legs.map((leg) => <li key={leg}>{leg}</li>)}</ul></section> : null}
+        {evidence ? <section>
+          <h4>Past test</h4>
+          <div className="strategy-details-figures strategy-details-figures--past">
+            {evidence.figures.map((figure) => <div key={figure.label}><span>{figure.label}</span><strong className={figure.tone ? `detail-${figure.tone}` : undefined}>{figure.value}</strong></div>)}
+          </div>
+          <p className="strategy-details-lead">{evidence.lead}</p>
+        </section> : null}
         <section>
           <h4>When it enters</h4>
           <p className="strategy-details-lead">All of these must be true at the same check.</p>

@@ -70,6 +70,7 @@ from packages.paper_trading.transactions import (
     option_cash_reserve,
 )
 from packages.paper_trading.worker_lease import LeaseToken, assert_owned
+from packages.recorder.freshness import feed_freshness
 from packages.recorder.universe import nifty_futures
 
 EXCHANGE = "NFO"
@@ -467,6 +468,7 @@ async def open_trade(
                 "fill_price": str(price),
                 "quantity_units": units,
                 "quote": quote_evidence(quote),
+                "feed": feed_freshness(session, body.instrument_key, now),
                 "modeled_charges": charge_snapshot(order_side, price, units, exchange_today()),
                 "method": "Immediate simulated fill at the touch: buys at ask, sells at bid.",
             },
@@ -579,6 +581,7 @@ def _close_locked(
             **(
                 {
                     "quote": quote_evidence(quote),
+                    "feed": feed_freshness(session, trade.instrument_key, now),
                     "modeled_charges": charge_snapshot(
                         order_side, price, units, exchange_today()
                     ),

@@ -1,15 +1,18 @@
 """A read-only daily summary of a frozen forward paper period. All figures are simulated."""
 
-from dataclasses import dataclass
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from packages.database.models import PaperAccount, PaperDeployment, PaperTrade
+from packages.database.models import PaperAccount, PaperDeployment, PaperOrder, PaperTrade
 from packages.paper_trading.forward_plan import ForwardPlan
 from packages.paper_trading.transactions import reconcile_account
+from packages.recorder.freshness import summarize_ages
 
 
 @dataclass(frozen=True)
@@ -32,6 +35,7 @@ class ForwardReport:
     ledger_status: str
     ledger_issues: int
     rows: tuple[StrategyRow, ...]
+    freshness: dict[str, Any] = field(default_factory=dict)
 
     @property
     def total_realized(self) -> Decimal:
@@ -85,11 +89,16 @@ def build_report(
             realized_pnl=sum(pnls, Decimal(0)),
             worst_drawdown=drawdown(pnls),
         ))
+    orders: Iterable[PaperOrder] = session.scalars(
+        select(PaperOrder).where(PaperOrder.trade_id.in_(trade_ids))
+    ) if trade_ids else []
+    legs = [leg for order in orders for leg in order.fill_snapshot.get("fills", [])]
     ledger = reconcile_account(session, account)
     return ForwardReport(
         as_of=as_of, start=plan.start, end=plan.end, ledger_status=ledger.status,
         ledger_issues=ledger.issue_count,
         rows=tuple(sorted(rows, key=lambda row: row.realized_pnl, reverse=True)),
+        freshness=summarize_ages(legs),
     )
 
 
@@ -110,4 +119,13 @@ def render_markdown(report: ForwardReport) -> str:
         f"{row.worst_drawdown:,.2f} |"
         for row in report.rows
     ]
+    fresh = report.freshness
+    if fresh:
+        lines += [
+            "",
+            f"Last-trade age at fill, from the recorded feed: {fresh['with_age']} of "
+            f"{fresh['legs']} legs have one; median {fresh['median_seconds']} s, "
+            f"90th percentile {fresh['p90_seconds']} s, {fresh['over_60_seconds']} over 60 s. "
+            "This dates the last trade, not the bid/ask.",
+        ]
     return "\n".join(lines) + "\n"

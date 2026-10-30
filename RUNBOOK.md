@@ -72,3 +72,21 @@ Session open and close come from Upstox's scheduled exchange timings for that da
 ## A strategy was paused automatically
 
 Strategies whose closed paper drawdown passes 2× their backtest baseline (6% of capital per lot without a baseline) stop taking new entries; open positions are unaffected. The pause is listed at the top of the app. Re-enable only after reviewing why it lost more than its history suggested.
+
+## Forward paper period
+
+The runner arms each frozen strategy version once per expiry, for the nearest expiry after today, at the strike nearest the index. It goes through the same checks as the web app, and the worker rechecks entry rules and risk limits before any simulated fill. A strategy you cancel stays cancelled for that expiry.
+
+Freeze a period once (this refuses to overwrite `work/forward-paper.json`; the file is private and not committed):
+
+```bash
+DATABASE_URL="sqlite:///./work/nifty-local.db" PYTHONPATH=. .venv/Scripts/python.exe -m apps.forward_runner.main --freeze --user-email <account email> --start 2026-10-30 --weeks 6
+```
+
+Then keep it running alongside the worker:
+
+```bash
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-forward-runner-local.ps1
+```
+
+Its log shows one line per cycle: `OK`, `CLOSED`, `PAUSED`, `NO_DATA` or `FINISHED`. Pausing entries stops it arming anything new.

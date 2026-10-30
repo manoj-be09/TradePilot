@@ -1722,7 +1722,7 @@ export default function Home() {
     setVersionError("");
     setVersionMessage("");
     setPaperError("");
-    setPaperTicketMessage(`${strategy.name} is ready to arm in paper mode. Entry filters, a ₹${policy.stopLoss.toFixed(2)} protective stop, ₹${policy.targetProfit.toFixed(2)} target and ₹${policy.trailingStop.toFixed(2)} trailing drawdown were generated from the current modeled risk. Review them before arming.`);
+    setPaperTicketMessage(`${strategy.name} is ready to start in paper mode. Entry filters, a ₹${policy.stopLoss.toFixed(2)} protective stop, ₹${policy.targetProfit.toFixed(2)} target and ₹${policy.trailingStop.toFixed(2)} trailing drawdown were generated from the current modeled risk. Change anything you want, then press Start with these rules.`);
     window.setTimeout(() => paperTicketRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
   }
 
@@ -1888,6 +1888,9 @@ export default function Home() {
     batchPolicySaveController.current = null;
     setBatchPolicyReview(null);
     setBatchPolicyResults([]);
+    setBatchArmResults([]);
+    setPaperTicketMessage("");
+    setPaperError("");
     setAuthError("");
     setCurrentPassword("");
     setNewPassword("");
@@ -2328,7 +2331,7 @@ export default function Home() {
       setPaperTicketMessage(`${paperStrategies.find(item => item.key === armed.strategy_key)?.name || armed.strategy_key} is armed. The worker will wait for a later market snapshot, passing entry rules and all paper risk checks before opening any trade.`);
       await refreshPaperWorkspace();
     } catch (error) {
-      setPaperError(userFacingError(error, "Could not arm this paper strategy"));
+      setPaperError(userFacingError(error, "Could not start this paper strategy"));
     } finally {
       setPaperBusy(false);
     }
@@ -2927,7 +2930,7 @@ export default function Home() {
             ) : null}
 
             <section className="trade-group" aria-label="Your strategies and positions">
-            {paperDeployments.length > 0 && <details className="equity-history" open={paperDeployments.some(item => item.status === "WAITING_FOR_ENTRY")}><summary>Armed F&amp;O strategies ({paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").length} waiting)</summary><div className="equity-deployments">{paperDeployments.slice(0, 10).map(item => <article key={item.id}><div className="equity-deployment-heading"><strong>{item.strategy_name || paperStrategies.find(strategy => strategy.key === item.strategy_key)?.name || item.strategy_key} · {item.expiry}</strong><span>{item.status.replaceAll("_", " ")}</span></div><p>{item.detail}</p><small>{item.instrument_kind === "FUTURES" ? `${item.trading_symbol} · ${item.side === "LONG" ? "Long" : "Short"}` : `Reference strike ${formatPrice(item.reference_strike)}`} · {item.lots} lot(s) · Armed {new Date(item.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}{item.updated_at !== item.created_at ? ` · Last update ${new Date(item.updated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}</small>
+            {paperDeployments.length > 0 && <details className="equity-history" open={paperDeployments.some(item => item.status === "WAITING_FOR_ENTRY")}><summary>Started strategies ({paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").length} waiting)</summary><div className="equity-deployments">{paperDeployments.slice(0, 10).map(item => <article key={item.id}><div className="equity-deployment-heading"><strong>{item.strategy_name || paperStrategies.find(strategy => strategy.key === item.strategy_key)?.name || item.strategy_key} · {item.expiry}</strong><span>{item.status.replaceAll("_", " ")}</span></div><p>{item.detail}</p><small>{item.instrument_kind === "FUTURES" ? `${item.trading_symbol} · ${item.side === "LONG" ? "Long" : "Short"}` : `Reference strike ${formatPrice(item.reference_strike)}`} · {item.lots} lot(s) · Armed {new Date(item.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}{item.updated_at !== item.created_at ? ` · Last update ${new Date(item.updated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}</small>
               <details><summary>Saved entry &amp; exit rules</summary><div className="equity-deployment-rules">
                 {item.instrument_kind === "FUTURES" ? <>
                 <p><strong>Entry:</strong> A later open-market check must satisfy every saved condition: {(item.futures_conditions ?? []).map(condition => `${FUTURES_RULE_LABELS[condition.metric] || condition.metric} ${operatorLabel(condition.operator as RuleOperator)} ${condition.threshold}`).join(" · ")}. The futures quote, margin and paper risk checks must also pass. The contract is the nearest one outside the rollover window when it fills.</p>
@@ -3292,7 +3295,7 @@ export default function Home() {
               </details>
               <p className="exit-rule-note" ref={paperTicketRef}>Rules apply to total position P&amp;L. The trailing stop starts after unrealized P&amp;L becomes positive. Checks run every 15 seconds while the independent worker is running.</p>
               {paperTicketMessage ? <p className="paper-ticket-message" role="status">{paperTicketMessage}</p> : null}
-              {deploymentPreparedKey === selectedStrategy ? <div className="deployment-ready"><strong>Ready to arm in paper mode</strong><span>The worker will wait for a later qualifying market snapshot. Fresh entry rules, quotes, session and risk are checked before any paper fill. It then monitors the moving stop and exits.</span></div> : null}
+              {deploymentPreparedKey === selectedStrategy ? <div className="deployment-ready"><strong>Ready to start in paper mode</strong><span>The worker will wait for a later qualifying market snapshot. Fresh entry rules, quotes, session and risk are checked before any paper fill. It then monitors the moving stop and exits.</span></div> : null}
               {selectedPaperStrategy ? <p className="strategy-description">{selectedPaperStrategy.description}</p> : isCustomStrategy ? <p className="strategy-description">Compose a same-expiry multi-leg structure. The payoff engine checks expiry loss before paper entry; unbounded loss is blocked.</p> : null}
               {strategyPreview ? (
                 <div className="strategy-preview">
@@ -3344,7 +3347,7 @@ export default function Home() {
               <button className="primary-button paper-submit" disabled={selectedOptionIndex !== "NIFTY" || paperBusy || !paperEntry.ready || !!paperEntry.pending || payoffEstimateBusy || !payoffEstimate || payoffEstimate.maximum_loss_unbounded || Number(payoffEstimate.maximum_loss) <= 0 || !entryRuleInputsValid || (isCustomStrategy && !entryConditionsSatisfied) || (!isCustomStrategy && (matchingWaitingPaperDeployment || deploymentPreparedKey !== selectedStrategy || !entryConditions.length || !stopLossInput || !trailingStopInput)) || (isCustomStrategy && hasDuplicateCustomContracts) || !paperAccount || paperAccount.kill_switch_enabled || !strategyPreview || !chain || chain.quality?.status === "FAIL"} onClick={() => void (isCustomStrategy ? openPaperTrade() : armPaperStrategy())} type="button">
                 {paperBusy ? "Processing paper strategy…" : isCustomStrategy ? "Open custom paper trade" : matchingWaitingPaperDeployment ? "Strategy waiting for entry" : deploymentPreparedKey === selectedStrategy ? "Start with these rules" : "Pick a strategy above"}
               </button>
-              <p className="paper-footnote">Arming a template does not reserve funds or enter now. At entry, risk caps are rechecked: up to 2% of starting capital per position and 10% across open positions. Simulated fills do not model queue priority, partial fills, charges, or slippage.</p>
+              <p className="paper-footnote">Starting a template does not reserve funds or enter now. At entry, risk caps are rechecked: up to 2% of starting capital per position and 10% across open positions. Simulated fills do not model queue priority, partial fills, charges, or slippage.</p>
             </details>
 
             </section>

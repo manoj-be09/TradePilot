@@ -76,7 +76,7 @@ export function OptionDeploymentDecisions({
   return <details onToggle={event => {
     if (event.currentTarget.open && rows === null && !loading) void load();
   }}>
-    <summary>Why is this strategy waiting?</summary>
+    <summary>Entry check history</summary>
     <p className="muted">Provider checks and paper entry state · latest 200 recorded decisions</p>
     <button className="inline-button" type="button" disabled={loading} onClick={() => void load()}>
       {loading ? "Loading…" : "Refresh decisions"}

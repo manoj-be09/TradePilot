@@ -471,6 +471,22 @@ class StrategyDemotionResponse(BaseModel):
     summary: str | None
     demoted_at: datetime | None
     check: dict[str, Any]
+    stage: Literal["ELIGIBLE", "DEMOTED", "PROBATION"]
+    block_reason: str | None
+    probation_starts_at: datetime | None
+    probation_trades: int
+    probation_trades_needed: int
+    promotion_needs: list[str]
+
+
+class StrategyEligibilityEventResponse(BaseModel):
+    """One recorded demotion, probation step or promotion (paper only)."""
+
+    strategy_key: str
+    event_type: str
+    reason: str
+    summary: str
+    occurred_at: datetime
 
 
 class PaperMonitorResponse(BaseModel):

@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from apps.api.paper_schemas import PaperTradeCreateRequest
+from apps.api.services.strategy_eligibility import StrategyNotEligible
 from packages.database.models import PaperDeployment, StrategyVersion, User
 from packages.database.session import build_session_factory
 from packages.market_data.contracts import (
@@ -142,12 +143,17 @@ async def run_cycle(
             try:
                 await arm(body, user, session, key)
                 armed += 1
+            except StrategyNotEligible as error:
+                # Only this strategy is paused or on probation; the others are still armed.
+                session.rollback()
+                logger.info("%s not armed: %s", definition["template_key"], error.detail)
+                blocked += 1
             except HTTPException as error:
                 session.rollback()
                 if error.status_code == 423:
                     logger.info("Entries are paused; nothing more is armed this cycle")
                     return "PAUSED"
-                # A demoted strategy, the waiting limit or changed rules: fail closed, retry later.
+                # The waiting limit or changed rules: fail closed, retry later.
                 logger.warning("%s not armed: %s", definition["template_key"], error.detail)
                 blocked += 1
     logger.info("Expiry %s: armed %d, blocked %d", expiry, armed, blocked)

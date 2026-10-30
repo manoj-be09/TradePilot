@@ -14,6 +14,7 @@ Scope: NIFTY 50 futures and options, **paper trading only**. Live orders are for
 - Versioned charge model (brokerage, STT, exchange, SEBI, stamp duty, GST) applied to fills.
 - Automatic demotion: a strategy's new entries pause when its closed paper drawdown passes 2× its backtest baseline (6% of capital per lot without one).
 - Ledger reconciliation check; a mismatch pauses new paper cash actions.
+- Supervisor: one command starts all local paper processes and restarts any that crash (`scripts/start-all-local.ps1`).
 - Forward paper runner: keeps a frozen set of saved strategy versions armed once per expiry for a fixed period, through the same checks as the web app (`scripts/start-forward-runner-local.ps1`).
 
 **Data and research**

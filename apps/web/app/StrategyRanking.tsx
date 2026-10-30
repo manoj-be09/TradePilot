@@ -103,6 +103,9 @@ export function StrategyRanking({
       : error || !result ? "Unavailable" : pick ? pick.name : "No trade";
     const reason = !chain ? "Waiting for the NIFTY option chain."
       : error ? error : result?.reasons[0] ?? "";
+    if (hideLinkWithoutPick && !pick) {
+      return <p className="trade-note" aria-live="polite">Today&apos;s suggestion: {headline === "No trade" ? "no trade" : headline.toLowerCase()}.{reason ? ` ${reason}` : ""} Simulated, not advice.</p>;
+    }
     return (
       <section className="home-suggestion" aria-label="Today's suggestion" aria-live="polite">
         <div>

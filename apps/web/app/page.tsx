@@ -820,6 +820,7 @@ export default function Home() {
   const [payoffEstimateBusy, setPayoffEstimateBusy] = useState(false);
   const [strategyPayoffs, setStrategyPayoffs] = useState<Record<string, PayoffEstimate>>({});
   const [strategyPayoffKey, setStrategyPayoffKey] = useState("");
+  const payoffSelection = useRef("");
   const [batchComparison, setBatchComparison] = useState<{
     asOf: string; expiry: string; strike: string; lots: number;
     rows: { key: string; name: string; version: string; status: string; maximumProfit: string; maximumLoss: string; costScenario: string | null }[];
@@ -1408,8 +1409,14 @@ export default function Home() {
   useEffect(() => {
     if (!token || !chain || !strategyTilePreviews.length) { setStrategyPayoffs({}); setStrategyPayoffKey(""); return; }
     const controller = new AbortController();
-    setStrategyPayoffs({});
-    setStrategyPayoffKey("");
+    // A quote refresh keeps the last figures on screen, so buttons don't flicker off every
+    // few seconds; a different expiry, strike or lot size has to clear them.
+    const selection = `${chain.expiry}|${selectedPaperStrike}|${paperLots}`;
+    if (payoffSelection.current !== selection) {
+      setStrategyPayoffs({});
+      setStrategyPayoffKey("");
+    }
+    payoffSelection.current = selection;
     const snapshotKey = `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`;
     const spot = Number(chain.underlying_spot || 1);
     Promise.all(strategyTilePreviews.map(async ({ strategy, legs }) => {
@@ -1466,6 +1473,7 @@ export default function Home() {
     && !!version.definition.trailing_stop_amount,
   ).sort((left, right) => right.created_at.localeCompare(left.created_at))[0];
   const savedBatchPolicyCount = paperStrategies.filter((strategy) => !!matchingBatchVersion(strategy)).length;
+  const tradeMessages = [...new Set(paperWarnings.map(warning => /session is closed|closed or unverified/i.test(warning) ? "Market closed. Live P&L and entry checks resume at the open." : warning))];
   const openPaperTrades = paperTrades.filter(trade => trade.status === "OPEN");
   const closedPaperTrades = paperTrades.filter(trade => trade.status === "CLOSED");
   const openFuturesTrades = futuresTrades.filter(trade => trade.status === "OPEN");
@@ -2359,7 +2367,7 @@ export default function Home() {
     const payoff = strategyPayoffs[strategyKey];
     const ready = !!token && selectedOptionIndex === "NIFTY" && !!chain && chain.quality?.status !== "FAIL"
       && !!selectedExpiry && chain.expiry === selectedExpiry && !!selectedPaperStrike
-      && strategyPayoffKey === `${chain.as_of}|${chain.expiry}|${selectedPaperStrike}|${paperLots}`;
+      && strategyPayoffKey.endsWith(`|${chain.expiry}|${selectedPaperStrike}|${paperLots}`);
     const policy = strategy && payoff && ready ? paperTemplatePolicy(strategyKey, payoff) : null;
     if (!strategy || !policy) {
       setSelectedStrategy(strategyKey); setDeploymentPreparedKey("");
@@ -2442,6 +2450,15 @@ export default function Home() {
     }
   }
 
+  const signedRupees = (value: string | number | null | undefined) => {
+    const amount = Number(value);
+    if (value === null || value === undefined || !Number.isFinite(amount)) return "Unavailable";
+    return `${amount > 0 ? "+" : amount < 0 ? "−" : ""}₹${formatPrice(String(Math.abs(amount)))}`;
+  };
+  const waitingStatus = (detail: string) => /session is closed|closed or unverified/i.test(detail) ? "Market closed. Checks resume at the open."
+    : /entry conditions are not satisfied/i.test(detail) ? "Entry rules not met yet."
+    : /^Armed;/.test(detail) ? "Checks start with the next quote."
+    : detail;
   const deploymentName = (item: PaperDeployment) => item.strategy_name || paperStrategies.find(strategy => strategy.key === item.strategy_key)?.name || item.strategy_key;
 
   function renderDeploymentCard(item: PaperDeployment, authToken: string) {
@@ -2981,19 +2998,19 @@ export default function Home() {
               </div>
               {paperAccount ? <dl className="trade-stats">
                 <div><dt>Cash</dt><dd>₹{formatPrice(paperAccount.cash_balance)}</dd></div>
-                <div><dt>Today</dt><dd className={changeClass(paperAccount.daily_realized_pnl)}>{formatSignedPrice(paperAccount.daily_realized_pnl)}</dd></div>
+                <div><dt>Today</dt><dd className={changeClass(paperAccount.daily_realized_pnl)}>{signedRupees(paperAccount.daily_realized_pnl)}</dd></div>
                 <div><dt>Risk left today</dt><dd>₹{formatPrice(paperAccount.daily_risk_remaining)}</dd></div>
               </dl> : null}
               <button className="refresh-button" type="button" disabled={chainBusy || paperBusy} onClick={() => void refreshPaperWorkspace()}>↻ Refresh</button>
             </div>
-            {paperWarnings.length ? <ul className="paper-warning-list">{paperWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
-            {chain?.quality && chain.quality.status !== "PASS" ? <p className="trade-note">Quote check: {chain.quality.status}. Each entry is rechecked against live quotes before it fills.</p> : null}
+            {tradeMessages.length ? <ul className="paper-warning-list">{tradeMessages.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
+            {!tradeMessages.length && chain?.quality && chain.quality.status !== "PASS" ? <p className="trade-note">Quote check: {chain.quality.status}. Each entry is rechecked against live quotes before it fills.</p> : null}
 
             <section className="trade-block" aria-label="Running">
               <h3 className="trade-block-title">Running{runningCount ? <span>{runningCount}</span> : null}</h3>
               {runningCount === 0 ? <p className="trade-empty">Nothing is running. Start a strategy below and it will appear here.</p> : <ul className="running-list">
                 {paperDeployments.filter(item => item.status === "WAITING_FOR_ENTRY").map(item => <li className="running-row" key={item.id}>
-                  <div className="running-name"><strong>{deploymentName(item)}</strong><small><span className="running-state running-state--waiting">Waiting for entry</span> {item.detail}</small></div>
+                  <div className="running-name"><strong>{deploymentName(item)}</strong><small><span className="running-state running-state--waiting">Waiting for entry</span> {waitingStatus(item.detail)}</small></div>
                   <div className="running-pnl"><small>Stop −₹{formatPrice(item.stop_loss_amount)}{item.target_profit_amount ? `, target +₹${formatPrice(item.target_profit_amount)}` : ""}</small></div>
                   <button className="inline-button" disabled={paperBusy} onClick={() => void cancelPaperDeployment(item.id)} type="button">Cancel</button>
                   <details className="running-details"><summary>Details</summary>{renderDeploymentCard(item, token)}</details>
@@ -3002,7 +3019,7 @@ export default function Home() {
                   const expired = trade.expiry < indiaCalendarDate();
                   return <li className="running-row" key={trade.id}>
                     <div className="running-name"><strong>{trade.strategy_name}</strong><small><span className={`running-state ${expired ? "running-state--alert" : "running-state--open"}`}>{expired ? "Needs settlement" : "Open"}</span> Expires {trade.expiry}</small></div>
-                    <div className="running-pnl"><b className={changeClass(trade.unrealized_pnl)}>{expired ? "Pending" : formatSignedPrice(trade.unrealized_pnl)}</b><small>Stop −₹{formatPrice(trade.stop_loss_amount)}{trade.target_profit_amount ? `, target +₹${formatPrice(trade.target_profit_amount)}` : ""}</small></div>
+                    <div className="running-pnl">{expired || trade.unrealized_pnl === null ? <em>{expired ? "Pending" : "No live price"}</em> : <b className={changeClass(trade.unrealized_pnl)}>{signedRupees(trade.unrealized_pnl)}</b>}<small>Stop −₹{formatPrice(trade.stop_loss_amount)}{trade.target_profit_amount ? `, target +₹${formatPrice(trade.target_profit_amount)}` : ""}</small></div>
                     {expired ? <button className="inline-button" disabled={settlementBusy} onClick={() => openSettlement(trade.id)} type="button">Review settlement</button> : <button className="inline-button" disabled={paperBusy} onClick={() => void closePaperTrade(trade.id)} type="button">Close</button>}
                     <details className="running-details"><summary>Details</summary>{renderOptionCard(trade, token)}</details>
                   </li>;
@@ -3011,7 +3028,7 @@ export default function Home() {
                   const expired = trade.expiry < indiaCalendarDate();
                   return <li className="running-row" key={trade.id}>
                     <div className="running-name"><strong>{futuresTradeName(trade)}</strong><small><span className={`running-state ${expired ? "running-state--alert" : "running-state--open"}`}>{expired ? "Needs settlement" : "Open"}</span> {trade.trading_symbol}</small></div>
-                    <div className="running-pnl"><b className={changeClass(trade.unrealized_pnl)}>{expired ? "Pending" : formatSignedPrice(trade.unrealized_pnl)}</b><small>Stop −₹{formatPrice(trade.stop_loss_amount)}{trade.target_profit_amount ? `, target +₹${formatPrice(trade.target_profit_amount)}` : ""}</small></div>
+                    <div className="running-pnl">{expired || trade.unrealized_pnl === null ? <em>{expired ? "Pending" : "No live price"}</em> : <b className={changeClass(trade.unrealized_pnl)}>{signedRupees(trade.unrealized_pnl)}</b>}<small>Stop −₹{formatPrice(trade.stop_loss_amount)}{trade.target_profit_amount ? `, target +₹${formatPrice(trade.target_profit_amount)}` : ""}</small></div>
                     {expired ? <span className="running-action-note">Settle in details</span> : <button className="inline-button" disabled={paperBusy} onClick={() => void closeFuturesTrade(trade.id)} type="button">Close</button>}
                     <details className="running-details" open={expired}><summary>Details</summary><FuturesPositionCard apiUrl={API_URL} onChanged={() => void refreshPaperWorkspace()} token={token} trade={trade} /></details>
                   </li>;
@@ -3099,12 +3116,12 @@ export default function Home() {
                 {closedPaperTrades.length + closedFuturesTrades.length === 0 ? <p className="trade-empty">No closed trades yet.</p> : <ul className="running-list">
                   {closedPaperTrades.map(trade => <li className="running-row" key={trade.id}>
                     <div className="running-name"><strong>{trade.strategy_name}</strong><small>{trade.exit_reason ? trade.exit_reason.replaceAll("_", " ").toLowerCase() : "closed"}, expiry {trade.expiry}</small></div>
-                    <div className="running-pnl"><b className={changeClass(trade.realized_pnl)}>{formatSignedPrice(trade.realized_pnl)}</b></div>
+                    <div className="running-pnl"><b className={changeClass(trade.realized_pnl)}>{signedRupees(trade.realized_pnl)}</b></div>
                     <details className="running-details"><summary>Details</summary>{renderOptionCard(trade, token)}</details>
                   </li>)}
                   {closedFuturesTrades.map(trade => <li className="running-row" key={trade.id}>
                     <div className="running-name"><strong>{futuresTradeName(trade)}</strong><small>{trade.exit_reason ? trade.exit_reason.replaceAll("_", " ").toLowerCase() : "closed"}, {trade.trading_symbol}</small></div>
-                    <div className="running-pnl"><b className={changeClass(trade.realized_pnl)}>{formatSignedPrice(trade.realized_pnl)}</b></div>
+                    <div className="running-pnl"><b className={changeClass(trade.realized_pnl)}>{signedRupees(trade.realized_pnl)}</b></div>
                     <details className="running-details"><summary>Details</summary><FuturesPositionCard apiUrl={API_URL} onChanged={() => void refreshPaperWorkspace()} token={token} trade={trade} /></details>
                   </li>)}
                 </ul>}

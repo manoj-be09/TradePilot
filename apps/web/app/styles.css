@@ -1197,6 +1197,7 @@ a.sidebar-action-button { display: flex; align-items: center; justify-content: c
 .running-state--alert { color: #b23b3b; }
 .running-pnl { text-align: right; }
 .running-pnl b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.running-pnl em { color: var(--ink-muted); font-size: 13px; font-style: normal; }
 .running-row > .inline-button, .running-action-note { justify-self: end; }
 .running-action-note { color: var(--ink-muted); font-size: 12px; }
 .running-details { grid-column: 1 / -1; }
@@ -1220,6 +1221,24 @@ a.sidebar-action-button { display: flex; align-items: center; justify-content: c
 .trade-nested { margin-top: 14px; }
 .trade-nested > summary { display: flex; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 700; }
 .trade-nested > summary span { color: var(--ink-muted); font-weight: 400; }
+@media (hover: hover) {
+  .strategy-start-list .text-link { opacity: 0; transition: opacity .12s; }
+  .strategy-start-list li:hover .text-link, .strategy-start-list li:focus-within .text-link { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .strategy-start-list .text-link { transition: none; }
+}
+.trade-more > details > summary { color: inherit; }
+.trade-more > details.strategy-builder { padding: 12px 0; }
+.running-details .position-card { border: 1px solid var(--line); box-shadow: none; }
+.running-details .position-card::before { display: none; }
+/* The row above already gives the name, state and expiry. */
+.running-details .position-card > .workspace-section-heading,
+.running-details .position-card > .position-probability { display: none; }
+.running-details .position-card-metrics { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.futures-lots { display: inline-flex; align-items: center; gap: 10px; margin: 12px 0 4px; font-size: 13px; }
+.futures-lots input { width: 64px; min-height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font: inherit; }
+.trade-block > .trade-note:first-of-type { margin-top: 0; }
 @media (max-width: 680px) {
   .trade-stats { width: 100%; justify-content: space-between; }
   .running-row { grid-template-columns: minmax(0, 1fr) auto; }

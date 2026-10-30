@@ -40,7 +40,7 @@ export function ExpiryTestControl({ token, apiUrl, expiry, strike, disabled, onA
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : "Entry status unknown; refresh positions before retrying."); }
     finally { setBusy(false); }
   }
-  return <details className="equity-context-details"><summary>TEST ONLY · NIFTY expiry settlement</summary>
+  return <details className="equity-context-details"><summary>Test an expiry settlement</summary>
     <p>One long call lot at {strike}, expiry {expiry}. Maximum premium loss ₹10,000; at most one open expiry test. Uses the current server quote policy and all normal session, quote, cash and risk checks.</p>
     <p>This test has no automatic P&amp;L stop, target, trailing stop or expiry square-off. You can lose the full premium. Manual close remains available before expiry. Settlement needs official evidence and your review after expiry. Test outcomes do not qualify for strategy feedback.</p>
     <label><input type="checkbox" checked={consent} disabled={busy} onChange={event => setConsent(event.target.checked)} /> I want a paper-only expiry test with these limits.</label>

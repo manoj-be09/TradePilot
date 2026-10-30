@@ -1135,3 +1135,11 @@ a.sidebar-action-button { display: flex; align-items: center; justify-content: c
   .status-chip-menu { position: static; }
   .status-chip-panel { right: 0; left: 0; width: auto; }
 }
+
+/* Backtest: one setup, a mode switch, then that mode's dates and results. */
+.backtest-title { margin: 0; font-family: Manrope, sans-serif; font-size: 23px; letter-spacing: -.04em; }
+.backtest-mode { display: inline-flex; gap: 4px; margin: 4px 0 12px; border-radius: 8px; padding: 3px; background: #f1f3f0; }
+.backtest-mode button { min-height: 32px; border: 0; border-radius: 6px; padding: 0 12px; background: transparent; color: var(--ink-muted); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.backtest-mode button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px #1b2b1f1a; }
+.backtest-mode button:focus-visible { outline: 2px solid #4c9272; outline-offset: 2px; }
+.backtest-assumption-panel { margin-bottom: 12px; }

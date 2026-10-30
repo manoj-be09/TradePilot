@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { StrategyDetails } from "./StrategyDetails";
 
 type Contract = { instrument_key: string; trading_symbol: string; expiry: string; lot_size: number };
 
@@ -50,8 +51,16 @@ type FuturesStrategy = {
   stop_points: string;
   target_points: string;
   trailing_points: string;
+  conditions: { metric: string; operator: string; threshold: string }[];
   note: string;
 };
+
+const OPERATOR_LABELS: Record<string, string> = { GT: ">", GTE: "≥", LT: "<", LTE: "≤" };
+
+function futuresRuleText(condition: FuturesStrategy["conditions"][number]) {
+  if (condition.metric === "regime_direction") return `5-minute NIFTY regime points ${Number(condition.threshold) > 0 ? "up" : "down"}`;
+  return `${FUTURES_RULE_LABELS[condition.metric] ?? condition.metric} ${OPERATOR_LABELS[condition.operator] ?? condition.operator} ${condition.threshold}`;
+}
 
 export const FUTURES_RULE_LABELS: Record<string, string> = {
   regime_direction: "5-minute regime direction (1 up, −1 down)",
@@ -92,6 +101,7 @@ export function FuturesPaper({ token, apiUrl, waitingKeys, entriesPaused, onChan
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [strategies, setStrategies] = useState<FuturesStrategy[]>([]);
   const [strategyLots, setStrategyLots] = useState(1);
+  const [detailKey, setDetailKey] = useState("");
   const [instrumentKey, setInstrumentKey] = useState("");
   const [quote, setQuote] = useState<FuturesQuote | null>(null);
   const [side, setSide] = useState<"LONG" | "SHORT">("LONG");
@@ -183,6 +193,9 @@ export function FuturesPaper({ token, apiUrl, waitingKeys, entriesPaused, onChan
   const frontContract = contracts.find((contract) => daysUntil(contract.expiry) > ROLLOVER_DAYS);
   const unit = frontContract ? frontContract.lot_size * strategyLots : null;
   const amount = (points: string) => unit === null ? "unavailable" : rupees(String(Number(points) * unit));
+  const detail = strategies.find((strategy) => strategy.key === detailKey);
+  const detailMargin = quote?.margin_per_lot && quote.contract.instrument_key === frontContract?.instrument_key
+    ? Number(quote.margin_per_lot) * strategyLots : null;
 
   return (
     <section className="futures-paper" id="paper-futures" aria-label="NIFTY futures paper strategies">
@@ -194,13 +207,50 @@ export function FuturesPaper({ token, apiUrl, waitingKeys, entriesPaused, onChan
         {strategies.map((strategy) => {
           const waiting = waitingKeys.includes(strategy.key);
           return (
-            <li className="strategy-tile strategy-tile--futures" key={strategy.key} title={strategy.description}>
-              <div><strong>{strategy.name}</strong><small>Stop −{amount(strategy.stop_points)}, target +{amount(strategy.target_points)}. {strategy.intraday ? "Exits before the market closes each day." : `Held overnight, rolls ${ROLLOVER_DAYS} days before expiry.`}</small></div>
+            <li className="strategy-tile strategy-tile--futures" key={strategy.key}>
+              <button aria-label={`${strategy.name}: rules and details`} className="strategy-tile-open" onClick={() => setDetailKey(strategy.key)} type="button">
+                <strong>{strategy.name}</strong>
+                <small>{strategy.intraday ? "Exits the same day" : "Held overnight"}<u>Rules and details</u></small>
+                <small className="strategy-tile-figures"><span className="detail-profit">Target +{amount(strategy.target_points)}</span><span className="detail-loss">Stop −{amount(strategy.stop_points)}</span></small>
+              </button>
               {waiting ? <span>Waiting</span> : <button aria-label={`Start ${strategy.name} in paper`} className="strategy-play" disabled={busy || entriesPaused || !frontContract} onClick={() => void startStrategy(strategy)} title={entriesPaused ? "Entries are paused" : "Start in paper"} type="button">▶</button>}
             </li>
           );
         })}
       </ul>
+      {detail ? <StrategyDetails
+        action={waitingKeys.includes(detail.key) ? <span>Waiting for entry. Cancel it under Running.</span> : <button className="primary-button" disabled={busy || entriesPaused || !frontContract} onClick={() => { setDetailKey(""); void startStrategy(detail); }} type="button">▶ Start in paper</button>}
+        context={`${frontContract?.trading_symbol ?? "Contract unavailable"}, ${strategyLots} lot${strategyLots === 1 ? "" : "s"}. Simulated.`}
+        entry={[
+          ...detail.conditions.map((condition) => ({ text: futuresRuleText(condition) })),
+          { text: "The market is open, the quotes pass quality checks and the account's risk limits have room" },
+        ]}
+        exit={[
+          { text: `Target: profit reaches +${amount(detail.target_points)}` },
+          { text: `Stop-loss: loss reaches −${amount(detail.stop_points)}` },
+          { text: `Trailing stop: once profit has reached ${amount(detail.trailing_points)}, it falls by that much from its peak` },
+          detail.intraday
+            ? { text: "Every day: 20 minutes before the close, so it isn't held overnight" }
+            : { text: `${ROLLOVER_DAYS} days before expiry: it closes, then waits for its entry rules on the next contract` },
+          { text: "You press Close under Running" },
+        ]}
+        figures={[
+          { label: "Target", value: `+${amount(detail.target_points)}`, tone: "profit" },
+          { label: "Stop-loss", value: `−${amount(detail.stop_points)}`, tone: "loss" },
+          { label: "Max profit", value: "No fixed limit" },
+          { label: "Max loss", value: "No fixed limit" },
+          ...(detailMargin === null ? [] : [{ label: "Estimated margin", value: rupees(String(detailMargin)) }]),
+        ]}
+        name={detail.name}
+        notes={[
+          "Futures risk isn't capped. A price gap can lose more than the stop-loss.",
+          "Profit and loss are simulated and before charges.",
+          "These rules are exploratory and not validated. They decide when a simulated entry may be attempted; they are not a forecast.",
+        ]}
+        onClose={() => setDetailKey("")}
+        summary={detail.description}
+        tone="futures"
+      /> : null}
       {strategies.length === 0 && !error ? <p className="trade-empty">Loading futures strategies…</p> : null}
       {strategies[0] ? <p className="strategy-library-note">{strategies[0].note}</p> : null}
       {error ? <p className="error-banner" role="alert">{error}</p> : null}

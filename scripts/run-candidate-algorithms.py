@@ -23,6 +23,7 @@ from packages.backtesting.candidate_algorithms import (
     CURRENT_LOT,
     HOLDOUT_START,
     MAXIMUM_ADVANCED,
+    WIDE_STRUCTURES,
     CandidateAlgorithm,
     CandidateResult,
     WeeklyResult,
@@ -37,7 +38,7 @@ from packages.database.session import build_session_factory
 from packages.history.loader import load_histories
 from packages.paper_trading.strategies import STRATEGIES
 
-_BY_KEY = {strategy.key: strategy for strategy in STRATEGIES}
+_BY_KEY = {strategy.key: strategy for strategy in STRATEGIES} | WIDE_STRUCTURES
 _FIRST_EXPIRY = date(2024, 10, 1)
 _LAST_EXPIRY = date(2026, 10, 27)
 
@@ -55,7 +56,7 @@ def main(args: argparse.Namespace) -> None:
     chosen = [rule for rule in CANDIDATE_ALGORITHMS if not holdout or rule.name in args.holdout]
     ledgers: dict[tuple[str, int], list[BacktestTrade]] = {}
     for rule in chosen:
-        for key in rule.templates:
+        for key in (*rule.templates, *rule.comparison):
             if (key, rule.entry_days) in ledgers:
                 continue
             ledgers[(key, rule.entry_days)] = run_backtest(histories, BacktestConfig(
@@ -79,7 +80,7 @@ def main(args: argparse.Namespace) -> None:
     def evaluate(rule: CandidateAlgorithm) -> tuple[CandidateResult, CandidateResult]:
         by_expiry = {
             key: {trade.expiry: trade for trade in ledgers[(key, rule.entry_days)]}
-            for key in rule.templates
+            for key in {*rule.templates, *rule.comparison}
         }
         taken = []
         for expiry, signal in signals[rule.entry_days].items():
@@ -88,7 +89,7 @@ def main(args: argparse.Namespace) -> None:
             if trade is not None and in_stage(expiry):
                 taken.append(scaled(trade))
         every_week = [
-            scaled(trade) for key in rule.templates for trade in by_expiry[key].values()
+            scaled(trade) for key in rule.comparison for trade in by_expiry[key].values()
             if in_stage(trade.expiry)
         ]
         return summarize_results(taken), summarize_results(every_week)

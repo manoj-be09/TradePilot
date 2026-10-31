@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from packages.backtesting.candidate_algorithms import (
     CANDIDATE_ALGORITHMS,
+    WIDE_STRUCTURES,
     CandidateResult,
     WeeklyResult,
     advances_from_development,
@@ -111,9 +112,14 @@ def test_a_later_expiry_cannot_change_an_earlier_signal():
 
 
 def test_every_rule_names_only_real_templates():
-    keys = {strategy.key for strategy in STRATEGIES}
+    keys = {strategy.key for strategy in STRATEGIES} | set(WIDE_STRUCTURES)
     for rule in CANDIDATE_ALGORITHMS:
         assert set(rule.templates) <= keys
+        assert set(rule.comparison) <= keys
+
+
+def test_paper_trading_cannot_arm_a_research_structure():
+    assert not set(WIDE_STRUCTURES) & {strategy.key for strategy in STRATEGIES}
 
 
 def test_rules_sit_out_until_ranks_exist_and_in_the_middle():
@@ -132,6 +138,9 @@ def test_rules_pick_their_named_side():
     assert _rule("fade_large_move").pick(_signal(move_size=-1.5)) == "bull_put_spread"
     assert _rule("fade_large_move").pick(_signal(move_size=1.5)) == "bear_call_spread"
     assert _rule("fade_skew").pick(_signal(skew_rank=0.9)) == "bull_put_spread"
+    assert _rule("wide_condor").pick(_signal(premium_rank=None)) == "wide_iron_condor"
+    assert _rule("wide_condor_when_rich").pick(_signal()) is None
+    assert _rule("wide_fade_move").pick(_signal(move_size=1.5)) == "wide_bear_call_spread"
 
 
 def test_summary_counts_drawdown_in_expiry_order():

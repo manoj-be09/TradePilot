@@ -18,6 +18,14 @@ Research only. Results are simulated history, not a forecast. Nothing here reach
 
 **A pass does not make a rule validated.** It only makes the rule a candidate to run in paper trading after 14 December 2026.
 
+## Round 2, fixed on 1 November 2026 before any round 2 result was seen
+
+Round 1 advanced no rule, so the holdout was not run. It also showed why: on one-strike structures the most a trade can lose is close to what charges cost, so no entry filter can rescue them.
+
+Round 2 adds 8 rules on 7 wider structures, in `WIDE_STRUCTURES`, on the same development expiries and under the same advancing and holdout tests. A rule that trades every week compares with the narrow templates it replaces. The template exit formula is unchanged. These structures are not in the paper strategy registry.
+
+The search now totals 20 rules, and this is the last round before the holdout. If none advances, the holdout stays unread and the answer is that no rule was found.
+
 ## Known limits
 
 - The holdout is not pristine. Whole-period results for the 26 templates, and the direction of the market in those years, were already seen before these rules were written.

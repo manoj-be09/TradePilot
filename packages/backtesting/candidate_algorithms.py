@@ -15,6 +15,7 @@ from math import sqrt
 from statistics import mean, stdev
 
 from packages.backtesting.entry_signals import EntrySignal
+from packages.paper_trading.strategies import StrategyDefinition, StrategyLeg
 
 HOLDOUT_START = date(2025, 11, 1)
 _HIGH_RANK = 2 / 3
@@ -30,6 +31,35 @@ MAXIMUM_WORST_TRADE = 20000.0
 MAXIMUM_DRAWDOWN = 60000.0
 # Lot sizes changed over the period, so trades compare at the current one.
 CURRENT_LOT = 65
+
+
+def _wide(key: str, name: str, *legs: StrategyLeg) -> StrategyDefinition:
+    return StrategyDefinition(key, name, "Research structure, not a paper template.", legs)
+
+
+# Round 2. One-strike wings risk about what charges cost, so these use wider ones. They are not in
+# the paper strategy registry, so paper trading cannot arm them.
+WIDE_STRUCTURES = {
+    item.key: item for item in (
+        _wide("wide_iron_condor", "Wide iron condor",
+              StrategyLeg("PE", "BUY", -9), StrategyLeg("PE", "SELL", -4),
+              StrategyLeg("CE", "SELL", 4), StrategyLeg("CE", "BUY", 9)),
+        _wide("late_wide_iron_condor", "Late wide iron condor",
+              StrategyLeg("PE", "BUY", -8), StrategyLeg("PE", "SELL", -3),
+              StrategyLeg("CE", "SELL", 3), StrategyLeg("CE", "BUY", 8)),
+        _wide("wide_iron_butterfly", "Wide iron butterfly",
+              StrategyLeg("PE", "BUY", -6), StrategyLeg("PE", "SELL", 0),
+              StrategyLeg("CE", "SELL", 0), StrategyLeg("CE", "BUY", 6)),
+        _wide("wide_bull_put_spread", "Wide bull put spread",
+              StrategyLeg("PE", "SELL", -4), StrategyLeg("PE", "BUY", -9)),
+        _wide("wide_bear_call_spread", "Wide bear call spread",
+              StrategyLeg("CE", "SELL", 4), StrategyLeg("CE", "BUY", 9)),
+        _wide("wide_bull_call_spread", "Wide bull call spread",
+              StrategyLeg("CE", "BUY", 0), StrategyLeg("CE", "SELL", 6)),
+        _wide("wide_bear_put_spread", "Wide bear put spread",
+              StrategyLeg("PE", "BUY", 0), StrategyLeg("PE", "SELL", -6)),
+    )
+}
 
 
 def _rich(signal: EntrySignal) -> bool:
@@ -58,12 +88,12 @@ def _with_trend(up: str, down: str) -> Callable[[EntrySignal], str | None]:
     return pick
 
 
-def _fade_large_move(signal: EntrySignal) -> str | None:
-    if signal.move_size <= -_LARGE_MOVE:
-        return "bull_put_spread"
-    if signal.move_size >= _LARGE_MOVE:
-        return "bear_call_spread"
-    return None
+def _against_large_move(up: str, down: str) -> Callable[[EntrySignal], str | None]:
+    def pick(signal: EntrySignal) -> str | None:
+        if signal.move_size <= -_LARGE_MOVE:
+            return up
+        return down if signal.move_size >= _LARGE_MOVE else None
+    return pick
 
 
 def _fade_skew(signal: EntrySignal) -> str | None:
@@ -89,6 +119,12 @@ class CandidateAlgorithm:
     templates: tuple[str, ...]
     pick: Callable[[EntrySignal], str | None]
     entry_days: int = 7
+    # Templates taken every week as the comparison; empty means this rule's own.
+    compared_with: tuple[str, ...] = ()
+
+    @property
+    def comparison(self) -> tuple[str, ...]:
+        return self.compared_with or self.templates
 
 
 CANDIDATE_ALGORITHMS = (
@@ -109,7 +145,8 @@ CANDIDATE_ALGORITHMS = (
     CandidateAlgorithm("trend_long_option", "Buy one option in the trend's direction",
                        ("long_call", "long_put"), _with_trend("long_call", "long_put")),
     CandidateAlgorithm("fade_large_move", "Sell a spread against a large five-session move",
-                       ("bull_put_spread", "bear_call_spread"), _fade_large_move),
+                       ("bull_put_spread", "bear_call_spread"),
+                       _against_large_move("bull_put_spread", "bear_call_spread")),
     CandidateAlgorithm("fade_skew", "Sell the side the option market prices highest",
                        ("bull_put_spread", "bear_call_spread"), _fade_skew),
     CandidateAlgorithm("volatility_switch", "Sell dear options and buy cheap ones",
@@ -118,6 +155,31 @@ CANDIDATE_ALGORITHMS = (
                        ("iron_butterfly",), _when_rich("iron_butterfly"), entry_days=3),
     CandidateAlgorithm("late_cheap_straddle", "Buy movement closer to expiry when cheap",
                        ("long_straddle",), _when_cheap("long_straddle"), entry_days=3),
+    CandidateAlgorithm("wide_condor", "Sell a wide range every week",
+                       ("wide_iron_condor",), lambda signal: "wide_iron_condor",
+                       compared_with=("iron_condor",)),
+    CandidateAlgorithm("wide_condor_when_rich", "Sell a wide range when options are dear",
+                       ("wide_iron_condor",), _when_rich("wide_iron_condor")),
+    CandidateAlgorithm("late_wide_condor", "Sell a wide range closer to expiry every week",
+                       ("late_wide_iron_condor",), lambda signal: "late_wide_iron_condor",
+                       entry_days=3, compared_with=("iron_condor",)),
+    CandidateAlgorithm("wide_butterfly", "Sell the centre with wide wings every week",
+                       ("wide_iron_butterfly",), lambda signal: "wide_iron_butterfly",
+                       compared_with=("iron_butterfly",)),
+    CandidateAlgorithm("wide_butterfly_when_rich", "Sell the centre with wide wings when dear",
+                       ("wide_iron_butterfly",), _when_rich("wide_iron_butterfly")),
+    CandidateAlgorithm("wide_trend_credit", "Sell a far spread on the side away from the trend",
+                       ("wide_bull_put_spread", "wide_bear_call_spread"),
+                       _with_trend("wide_bull_put_spread", "wide_bear_call_spread"),
+                       compared_with=("bull_put_spread", "bear_call_spread")),
+    CandidateAlgorithm("wide_fade_move", "Sell a far spread against a large five-session move",
+                       ("wide_bull_put_spread", "wide_bear_call_spread"),
+                       _against_large_move("wide_bull_put_spread", "wide_bear_call_spread"),
+                       compared_with=("bull_put_spread", "bear_call_spread")),
+    CandidateAlgorithm("wide_trend_debit", "Buy a wide spread in the trend's direction",
+                       ("wide_bull_call_spread", "wide_bear_put_spread"),
+                       _with_trend("wide_bull_call_spread", "wide_bear_put_spread"),
+                       compared_with=("bull_call_spread", "bear_put_spread")),
 )
 
 

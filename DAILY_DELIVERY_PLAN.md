@@ -127,8 +127,8 @@ The data provider and exchange control some evidence. The rational assumption is
 | Core paper safety and accounting software | PASS for bounded software scope | CI passes on main; first full market-hours forward cycle is 2 and 3 November. |
 | PostgreSQL research reservation/lease safety | PASS for bounded isolated scope | CI runs the PostgreSQL tests; no real study has used them yet. |
 | Current deployment and signed-in UI | PARTIAL | Trade page rechecked on desktop and phone width; populated Research views and labels still open. |
-| Executable NIFTY option book timing | BLOCKED | Upstox V3 has no exchange-origin depth time. Needs written proof from a licensed source. |
+| Executable NIFTY option book timing | BLOCKED | Day 5 decision: no selected leg has a usable book time on Upstox V3 (`DATA_SOURCE_DECISION.md`). Needs written proof from a licensed source. |
 | Genuine normal-session NIFTY paper round trip | BLOCKED for qualified acceptance | The forward period from 2 November gives indicative evidence only, because the book-time gate has not passed. |
 | Actual 19 October expiry settlement | BLOCKED | Final clearing and cost review not done; the older database holding the position was not running on this check. |
-| Qualified NIFTY ranking/POP | BLOCKED | Reviewed artifacts, `NO_TRADE` comparison and prospective outcomes are missing. Trade page order is display only and simulated. |
+| Qualified NIFTY ranking/POP | BLOCKED | 0 of 26 strategies beat `NO_TRADE` under the Day 15 gates, so the system abstains. Reviewed artifacts and prospective outcomes are missing. Trade page order is display only and simulated. |
 

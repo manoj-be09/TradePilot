@@ -8,17 +8,17 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
 
 ## Dated work
 
-**31 October 2026 summary:** 5 of 20 days complete (1, 2, 3, 4, 9), 12 partial (5, 6, 7, 8, 10, 11, 12, 13, 14, 16, 17, 18), 3 not done (15, 19, 20), and 0 of 4 external gates passed. [PLATFORM_ROADMAP.md](PLATFORM_ROADMAP.md) wins on order and scope, so the forward paper period on 2 November goes ahead before several items here. It departs from this checklist in two ways: it runs without the Day 19 book-time gate, and it tests 26 templates rather than an incumbent plus at most two challengers. Its results are indicative and do not close Day 10, Day 19 or the gates below. The research study, policy-set, budget-slot and recommendation tables in the local database are empty, so Days 10, 12, 13, 15 and 16 have not been run on real data.
+**31 October 2026 summary:** 8 of 20 days complete (1, 2, 3, 4, 5, 8, 9, 15), 10 partial (6, 7, 10, 11, 12, 13, 14, 16, 17, 18), 2 not done (19, 20), and 0 of 4 external gates passed. [PLATFORM_ROADMAP.md](PLATFORM_ROADMAP.md) wins on order and scope, so the forward paper period on 2 November goes ahead before several items here. It departs from this checklist in two ways: it runs without the Day 19 book-time gate, and it tests 26 templates rather than an incumbent plus at most two challengers. Its results are indicative and do not close Day 10, Day 19 or the gates below. The research study, policy-set, budget-slot and recommendation tables in the local database are empty, so Days 10, 12, 13 and 16 have not been run on real data.
 
 - [x] **Day 1 — 22 Oct: Publish and verify the local build.** Confirm the pushed source, healthy API/worker/web and signed-in desktop and phone F&O views.
 - [x] **Day 2 — 23 Oct: Diagnose the worker cycle.** Check the account-safe worker warning and reconcile the observed paper ledger without changing historical positions.
 - [x] **Day 3 — 24 Oct: Decide on a NIFTY data provider.** Compare Upstox/DhanHQ capabilities, published costs and use limits; verify the observed NIFTY instrument, expiry and lot mapping. Keep Upstox observation-only while rights and book timing are unreviewed.
 - [x] **Day 4 — 25 Oct: Define the timestamp contract.** Distinguish source event, executable-book, last-trade, provider-response and server-receipt times; specify missing, stale and future-data behavior. Provider proof of exchange-origin book time remains open under Day 5 and the external gates below.
-- [ ] **Day 5 — 26 Oct: Probe a normal-session feed when the exchange is open.**
+- [x] **Day 5 — 26 Oct: Probe a normal-session feed when the exchange is open.**
   - [x] Make the read-only probe and deterministic fixtures report missing provider tick time as unknown.
   - [x] Permit a bounded NIFTY V3 quote and exact-frame journal only under the private, Git-ignored work directory; keep the probe read-only.
-  - [ ] Retain bounded raw observations and decide whether every selected leg has a usable exchange-origin executable-book time. Record `NOT OBSERVED` if no eligible session is available.
-  - [x] Run the Feed V3 recorder privately. Published Upstox guidance and the current status notes say V3 has no exchange-origin depth time; the per-leg decision above is still not formally recorded.
+  - [x] Retain bounded raw observations and decide whether every selected leg has a usable exchange-origin executable-book time. Record `NOT OBSERVED` if no eligible session is available.
+  - [x] Run the Feed V3 recorder privately. Published Upstox guidance and the current status notes say V3 has no exchange-origin depth time. Decision recorded 31 October in [DATA_SOURCE_DECISION.md](DATA_SOURCE_DECISION.md): no selected leg has a usable executable-book time.
 - [ ] **Day 6 — 27 Oct: Retain point-in-time NIFTY chain and bar artifacts.**
   - [x] Validate declared event, availability and receipt times, source identity, revisions, exact bytes and late corrections in offline fixtures.
   - [x] Review published Upstox community guidance for private Feed V3 retention/replay and private NSE F&O display; record its scope in [DATA_SOURCE_DECISION.md](DATA_SOURCE_DECISION.md).
@@ -26,9 +26,9 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
 - [ ] **Day 7 — 28 Oct: Record available market fields with provenance.**
   - [x] Track returned-chain expiry, underlying, volume/OI/IV/Greek and bid/ask quantity coverage; keep partial totals and missing depth-order counts explicit.
   - [ ] Establish licensed depth-order data if available. Do not label order counts as distinct buyers or sellers.
-- [ ] **Day 8 — 29 Oct: Freeze derived volatility and price-level features.**
+- [x] **Day 8 — 29 Oct: Freeze derived volatility and price-level features.**
   - [x] Require continuous current-session bars for the 20-return realized-volatility heuristic; withhold values on insufficient history.
-  - [ ] Review source availability and validation for the descriptive support/resistance heuristic before research use.
+  - [x] Review source availability and validation for the descriptive support/resistance heuristic before research use. Outcome 31 October: excluded. The prior-20-bar high/low stays descriptive, is not validated, and no template entry or exit rule uses it; `validated_support` and `validated_resistance` stay empty.
 - [x] **Day 9 — 30 Oct: Resolve news as a missing factor.** Mark historical NIFTY news `UNAVAILABLE_FOR_RESEARCH` without backfilling old fills or inventing narratives. Reopen only if a suitable timestamped source and its rights are reviewed.
 - [ ] **Day 10 — 31 Oct: Freeze a real NIFTY policy set before outcomes.**
   - [x] Implement the immutable incumbent, `NO_TRADE` and at-most-two-challenger policy-set contract.
@@ -49,8 +49,8 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
   - [x] Screen supplied option quote paths for contract identity, timing, side, spread, displayed size, expiry and explicit unresolved/no-fill outcomes.
   - [ ] Run reproducible policy-matched chronological entry and exit on reviewed data with full costs and conservative nonfill; label daily-close illustrations separately.
   - [x] Replay all 26 templates with their real entry and exit rules after charges (PR #46), and compare other exit rules on the same entries with a held-back later half (PR #47). These use 5-minute candle closes and a modeled spread, with no historical bid/ask or nonfill, so the item above stays open.
-- [ ] **Day 15 — 5 Nov: Compare qualified policies with `NO_TRADE`.** Apply capital, tail-risk and uncertainty gates; otherwise abstain. Publish no invented probability of profit.
-  - Not done. The Trade page sorts by simulated past results for display only; it does not compare against `NO_TRADE` under these gates, and it publishes no probability of profit.
+- [x] **Day 15 — 5 Nov: Compare qualified policies with `NO_TRADE`.** Apply capital, tail-risk and uncertainty gates; otherwise abstain. Publish no invented probability of profit.
+  - 31 October: `scripts/compare-with-no-trade.py` applies the gates to the saved replays and 0 of 26 strategies qualify, so the answer is to abstain. Saved summaries give a lower bound on spread, so failures are firm. The Trade page still sorts by simulated past results for display only and publishes no probability of profit.
 - [ ] **Day 16 — 6 Nov: Retain prospective decisions and outcomes.**
   - [x] Keep existing time-bounded account-scoped recommendation/abstention records separate from orders and promotion.
   - [x] Bind newly recorded shadow no-fill and rejection events to the saved frozen policy artifact; preserve idempotent replay of earlier records.
@@ -70,7 +70,7 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
   - [x] Inspect earlier signed-in F&O desktop and approximately 390 px phone layouts.
   - [x] Show the frozen study's declared cost artifact status and uncertainty note in the Research summary; frontend type check passed.
   - [ ] Verify current populated Research/F&O views, cost/source/uncertainty labels and accessible abstention states.
-  - [x] Recheck the current Trade page, ranking and details window on desktop and phone width (PRs #44 to #46). Populated Research views and their labels still need the check above.
+  - [x] Recheck the current Trade page, ranking and details window on desktop and phone width (PRs #44 to #46). `scripts/check-research-ui.cjs` passes on synthetic populated, failed, pending and legacy states. A signed-in check of the live Research page still needs the check above.
 - [ ] **Day 19 — 9 Nov: Attempt normal-session paper lifecycle acceptance only after the book-time gate passes.** Observe a natural policy-pinned signal, entry, exit, rejected/no-fill paths and ledger reconciliation. If no qualified feed or signal exists, record the waiting evidence; do not force a trade.
   - Not done. The book-time gate cannot pass on Upstox V3. The forward paper period starts 2 November on indicative quotes under the local educational setting; it is not acceptance under this item.
 - [ ] **Day 20 — 10 Nov: Decide on the bounded software release candidate.** Review exact deployment revision, test/skip results and the gate ledger; review final expiry evidence without changing the saved trade unless independently justified.

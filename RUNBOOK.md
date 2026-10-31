@@ -142,3 +142,6 @@ because they are built from private data. The earlier half of the expiries picks
 strategy and the later half judges it. A result only counts if the later half makes money and beats
 the current rules with a paired t-value of at least 2. Run it from the main checkout so that it uses
 the local database.
+
+`scripts/compare-with-no-trade.py` prints whether each saved replay beats `NO_TRADE` under
+`packages/backtesting/no_trade.py`. It writes nothing, and nothing reads its result.

@@ -26,6 +26,18 @@ Round 2 adds 8 rules on 7 wider structures, in `WIDE_STRUCTURES`, on the same de
 
 The search now totals 20 rules, and this is the last round before the holdout. If none advances, the holdout stays unread and the answer is that no rule was found.
 
+## Outcome, 1 November 2026
+
+**0 of 20 rules advanced, so no rule was found and the holdout stays unread.** Expiries from 1 November 2025 on have not been used by this study and remain available for one future test.
+
+- Choosing when to trade did not rescue one-strike structures. Their losses come mostly from charges and spread.
+- Wider wings raised the win rate a lot but did not make the structures profitable after charges: the occasional larger loss took back the many small wins. Higher win rate alone is not better.
+- Selling options only when they looked dear did not clear the test, on narrow or wide structures.
+- Trend and fade rules did not clear the test either.
+- Buying a straddle three days out when options looked cheap was the one reading worth watching, but with too few trades to advance. It stays an idea, not a finding, and must not be retuned on these expiries.
+
+Numbers are in `work/bt/candidates-development-0.25.json` and the log beside it, both private and local.
+
 ## Known limits
 
 - The holdout is not pristine. Whole-period results for the 26 templates, and the direction of the market in those years, were already seen before these rules were written.

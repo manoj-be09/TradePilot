@@ -64,6 +64,8 @@ The day numbers are work packages, not guaranteed calendar dates. Advance to the
 
 ## Daily gate ledger (update only when evidence changes)
 
+The latest checkpoint, 31 October, is at the end of this file. The table below is the 21 October baseline.
+
 | Gate | 21 October baseline | Next evidence |
 | --- | --- | --- |
 | Core paper safety and accounting software | PASS for bounded software scope | Regression only after relevant change |
@@ -117,3 +119,16 @@ The data provider and exchange control some evidence. The rational assumption is
 2026-10-25 — Day 13 source-path holdout audit (PARTIAL): `HOLDOUT_ACCESS_AUDIT.md` maps frozen study metadata, the offline equity input split, the already-produced NIFTY replay summary route, readiness checks and prospective time boundary. It confirms no code or isolated test proves separate holdout storage credentials, an independent validation principal, raw-access logging or one-time release; legacy equity input can enter the process with holdout bytes before its adapter filters them. The NIFTY scheduled replay observed-input digest hashes observed legs/settings and is not the frozen dataset digest. Day 13 remains open pending actual artifact/rights/access evidence and leakage tests. This was a source audit only; no owner artifact, position, order or Docker volume was changed. Actual work time was not measured.
 
 2026-10-25 — Day 17 local regression after the Day 12 parent-lock change (PARTIAL): the full isolated unit/integration suite passed 609 tests, skipped 13 and reported two existing deprecation warnings. The 13 skips include PostgreSQL-only cases, including the newly added study-freeze/reservation race test, and opt-in NSE archive cases. Ruff reported all checks passed but printed access-denied scan warnings; full mypy (105 source files), Bandit and diff checks passed locally. PostgreSQL concurrency for this new change, GitHub CI, source publication and deployment remain unverified. No owner database, paper order or position was changed. Actual work time was not measured.
+
+## Gate ledger checkpoint — 31 October 2026
+
+| Gate | Status | Evidence or next step |
+| --- | --- | --- |
+| Core paper safety and accounting software | PASS for bounded software scope | CI passes on main; first full market-hours forward cycle is 2 and 3 November. |
+| PostgreSQL research reservation/lease safety | PASS for bounded isolated scope | CI runs the PostgreSQL tests; no real study has used them yet. |
+| Current deployment and signed-in UI | PARTIAL | Trade page rechecked on desktop and phone width; populated Research views and labels still open. |
+| Executable NIFTY option book timing | BLOCKED | Upstox V3 has no exchange-origin depth time. Needs written proof from a licensed source. |
+| Genuine normal-session NIFTY paper round trip | BLOCKED for qualified acceptance | The forward period from 2 November gives indicative evidence only, because the book-time gate has not passed. |
+| Actual 19 October expiry settlement | BLOCKED | Final clearing and cost review not done; the older database holding the position was not running on this check. |
+| Qualified NIFTY ranking/POP | BLOCKED | Reviewed artifacts, `NO_TRADE` comparison and prospective outcomes are missing. Trade page order is display only and simulated. |
+

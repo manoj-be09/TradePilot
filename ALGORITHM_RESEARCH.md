@@ -73,3 +73,15 @@ The owner asked for strategies published online to be tested. This is a new stud
 **Passing the holdout, run once:** positive average after charges, at least 15 trades, t of at least 2.45, worst trade within ₹20,000 and drawdown within ₹60,000. A rule that passes is rerun at a 0.5% half-spread. A naked rule can never be armed in paper trading as written.
 
 **Limits of this study:** the rules are adapted to our data, so a failure tests our form of an idea, not every form of it. Spread on far strikes is probably wider than 0.25%. Stops on real orders can slip further than a 5-minute bar shows. A run of daily trades can share one market regime, so t may overstate certainty.
+
+### Published rules outcome, 1 November 2026
+
+**0 of 11 published rules advanced, so the holdout stays unread.** Across both studies, 0 of 31 rules advanced.
+
+- The 9:20 straddle, with or without a stop, was positive after charges, but not clearly enough to separate it from chance. Without a stop, one day's loss went past the per-trade limit. It is naked, so paper trading could not arm it as written.
+- Adding wings to the 9:20 straddle removed that tail, but extra charges and spread turned it negative.
+- Taking profit at a set share of credit gave high win rates without a clear profit. The high-volatility condor had too few trades.
+- The overnight idea did not survive charges and spread, which is what its own sources warn about.
+- The opening range breakout won less than a third of the time and lost after charges.
+
+Numbers are in `work/bt/published-development-0.25.json`, private and local.

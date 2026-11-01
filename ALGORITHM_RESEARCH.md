@@ -45,6 +45,7 @@ Numbers are in `work/bt/candidates-development-0.25.json` and the log beside it,
 - Exits are checked on 5-minute closes, so a stop can realize more than its amount.
 - The straddle volatility reading is approximate, and the first expiries have no rank while the trailing window fills.
 - Weekly expiry moved from Thursday to Tuesday during the period, which the rules do not model separately.
+- The first import's strikes were centred on NIFTY about a week before expiry, so after a large move one side of the ladder could be missing. Rules that needed those strikes skipped the week. The rich premium study below adds a private wider import and reruns the earlier verdicts against it.
 
 ## Published rules study, fixed on 1 November 2026 before any result was seen
 
@@ -170,3 +171,41 @@ All three decide at 09:20 from bars closed by then, skip the session before a we
 - Weekly expiry moved from Thursday to Tuesday between the two halves, so the later half trades different days of the week before expiry. Sessions four days out barely appear in development.
 - Next-close rules can hold two trades at once. Results are per trade.
 - Simulated results, not a forecast, and not investment advice.
+
+### Rich premium outcome, 1 November 2026
+
+**0 of 3 rules passed the later half. Across all four studies, 1 of 45 rules has passed, and it is naked.** `rich_condor_day` and `rich_condor_next_close` lost a little after charges and won barely more than half the time, far from their development results. `very_rich_condor_next_close` stayed positive but did not clear the chance test. None passed, so none is rerun at wider spreads or a later entry. The later half is now spent for this study as well.
+
+What the later half showed:
+
+- Hedged selling on an ordinary session lost money after charges, so the whole level was lower than in the earlier half.
+- The reading still sorted days the same way, and results rose with it in both halves. A reading of 1 was too low to pay for costs, and readings just above 1 earned nothing in either half in the one-night form.
+- Same-day results did not carry over. Across every setting, a same-day exit's earlier result said nothing about its later one. Only about a fifth of one-night settings were positive in the later half, and those sit at high readings.
+- Most profit in held trades arrived on the following session, not the entry day. That is why the same-day form failed and the one-night form at high readings did not.
+- The last change before the run made things worse. Leaving before expiry day was chosen from the long-run model and the development tail, and on the later half it removed the best trades. The third rule in its earlier form, held into expiry day, would have cleared the tests. That does not count, because it is known only from reading the result.
+
+**What the far strikes changed in earlier studies.** Rerunning the 22 published and global rules on development expiries with far strikes changed no verdict. `far_put_write` gained the weeks it had skipped without getting worse, on both halves, and it is still naked. The 9:20 straddle's worst day, 17 April 2025, was overstated because the nearest listed strike sat far from the market, but it stays past the per-trade limit. Hedged rules got more trades and slightly worse averages.
+
+### Forward-only rules, fixed on 1 November 2026
+
+Two rules sit in `night_rules()` in `packages/backtesting/rich_premium.py`. **They were chosen after reading both halves, so history cannot validate them.** Sessions from 2 November 2026 are the only real test.
+
+| Rule | Reading | Sold strikes | Bought wings | Decision and entry |
+| --- | --- | --- | --- | --- |
+| `very_rich_night_condor` | at least 1.1 | 15-delta call and put | 300 points beyond each | 09:30 |
+| `very_rich_night_condor_920` | at least 1.1 | 20-delta call and put | 300 points beyond each | 09:20 |
+
+Both exit at the next session's close, including when that is expiry day, or the same day when the entry day is expiry day. Both skip the session before a weekend or holiday unless it is expiry day, and use one lot of 65 with no stop or target.
+
+**For them:** positive with high win rates in both halves, with nearby settings positive too. Upper-quartile spreads and entries a few minutes late changed little. A luck check across both halves, using the lower of the two t values over about 48,000 settings, puts the 15-delta one-night form above its 95% line. The 20-delta 09:20 form does not reach that line on its own.
+
+**Against them:**
+
+- They are in sample by construction, and the 09:30 form was picked with the later half in view.
+- The sample has no large fall, and the worst loss so far is well short of the most a trade can lose.
+- The 17-year model is much weaker. Picking rich days clearly beat trading every day, but its average per trade sits well below the sample, its win rates are lower, it has several losing years and its reading only partly agrees with the real one.
+- At about 30 trades a year, the six-week forward period will see too few to decide. About six months is the least that could tell.
+
+They are not in the 26 frozen paper templates and do not change the forward period. They are scored afterwards with `--study night --forward`. Whether either moves into paper trading is the owner's decision.
+
+Numbers are in `work/bt/rich-*.json` and `work/explore/`, private and local.

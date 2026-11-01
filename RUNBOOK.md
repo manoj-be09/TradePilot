@@ -150,3 +150,8 @@ the local database.
 on development expiries. `scripts/run-published-strategies.py` does the same for the published rules, and with
 `--study global` for the global ones. The holdout was spent on `far_put_write` on 1 November 2026, so a `--holdout`
 run no longer counts as an untouched test.
+
+The forward-only rules in that file are scored after the fact. Import new expiries with `scripts/import-history.py`, then
+their far strikes with `scripts/import-far-strikes.py --first-expiry 2026-11-01`, then run
+`scripts/run-published-strategies.py --study night --forward --extra-database work/history-wide.db`. All three need
+`DATABASE_URL="sqlite:///./work/nifty-local.db"` and `PYTHONPATH=.`. The extra database is private and stays out of git.

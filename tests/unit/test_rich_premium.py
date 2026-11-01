@@ -11,6 +11,8 @@ from packages.backtesting.candidate_algorithms import CURRENT_LOT, MAXIMUM_WORST
 from packages.backtesting.history_backtest import _IST
 from packages.backtesting.published_strategies import Bar, Book, Leg, Market, simulate
 from packages.backtesting.rich_premium import (
+    _CONDOR,
+    NIGHT_RULES,
     RICH_RULES,
     WING_POINTS,
     condor_strikes,
@@ -145,6 +147,28 @@ def test_exit_is_the_same_day_or_the_next_close_but_never_overnight_into_expiry(
     assert exit_bar_for(book, monday, None, True) is None
 
 
+def test_only_rules_that_allow_it_stay_the_night_into_expiry_day():
+    book = _book()
+    monday, tuesday, wednesday = _SESSIONS[5], _SESSIONS[6], _SESSIONS[7]
+    assert exit_bar_for(book, wednesday, _EXPIRY, True, into_expiry=True) == _at(_EXPIRY, 15, 5)
+    assert exit_bar_for(book, monday, tuesday, True, into_expiry=True) == _at(tuesday, 15, 10)
+    assert exit_bar_for(book, _EXPIRY, None, True, into_expiry=True) == _at(_EXPIRY, 15, 5)
+    assert exit_bar_for(book, wednesday, _EXPIRY, False, into_expiry=True) == _at(wednesday, 15, 10)
+
+
+def test_a_later_entry_reads_and_enters_at_its_own_time():
+    book = _book()
+    market = Market([book], 0.0)
+    assert sessions_until_expiry(book, _at(_SESSIONS[6], 9, 30)) == pytest.approx(3 - 15 / 375)
+    session = _SESSIONS[6]
+    traded = run_rich_condor(0.3, 0.0, False, entry_time=time(9, 30))(market)
+    trade = next(item for item in traded if item.session == session)
+    strikes = condor_strikes(book, _at(session, 9, 30), 0.3)
+    direct = simulate(book, _CONDOR, strikes, _at(session, 9, 30), _at(session, 15, 10), 0.0,
+                      quiet_exit=True)
+    assert trade.gross_pnl == direct.gross_pnl
+
+
 def test_wings_sit_a_fixed_distance_beyond_the_sold_strikes():
     book = _book()
     strikes = condor_strikes(book, _at(_SESSIONS[6], 9, 20), 0.2)
@@ -218,3 +242,8 @@ def test_quiet_exit_counts_a_bought_leg_as_worthless_and_a_sold_leg_at_its_last_
 def test_rules_are_defined_risk_and_no_more_than_the_holdout_allows():
     assert len(RICH_RULES) <= 3
     assert all(rule.defined_risk for rule in RICH_RULES)
+
+
+def test_forward_only_rules_are_defined_risk_and_separate_from_the_tested_ones():
+    assert all(rule.defined_risk for rule in NIGHT_RULES)
+    assert not {rule.name for rule in NIGHT_RULES} & {rule.name for rule in RICH_RULES}

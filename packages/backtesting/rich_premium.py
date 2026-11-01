@@ -12,7 +12,7 @@ hours only, so the loader has to leave out special sessions. Results are simulat
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from math import log, sqrt
 from statistics import mean
@@ -49,6 +49,7 @@ _LARGEST_CENTRE_GAP = 75.0
 _SMALLEST_DELTA_TOLERANCE = 0.012
 _DELTA_TOLERANCE_SHARE = 0.25
 _CONDOR = (Leg(0, "CE", "SELL"), Leg(0, "PE", "SELL"), Leg(0, "CE", "BUY"), Leg(0, "PE", "BUY"))
+_LATER_ENTRY_TIME = time(9, 30)
 
 
 @dataclass(frozen=True)
@@ -159,19 +160,24 @@ def is_before_break(book: Book, session: date, following: date | None) -> bool:
 
 def exit_bar_for(
     book: Book, session: date, following: date | None, hold_overnight: bool,
+    into_expiry: bool = False,
 ) -> datetime | None:
-    """Same day on expiry day and the day before it; otherwise the next close if held overnight."""
+    """Same day on expiry day; otherwise the next close if held overnight.
+
+    Held rules leave the day before expiry day too, unless `into_expiry` lets them stay the night.
+    """
     if session == book.expiry:
         return _at(session, _SQUARE_OFF_BAR)
-    if not hold_overnight or following == book.expiry:
+    if not hold_overnight or (following == book.expiry and not into_expiry):
         return _at(session, _INTRADAY_EXIT_BAR)
     if following is None or following not in book.moments_by_day:
         return None
-    return _at(following, _INTRADAY_EXIT_BAR)
+    return _at(following, _SQUARE_OFF_BAR if following == book.expiry else _INTRADAY_EXIT_BAR)
 
 
 def run_rich_condor(
     short_delta: float, threshold: float, hold_overnight: bool, entry_delay_bars: int = 0,
+    entry_time: time = _ENTRY_TIME, into_expiry: bool = False,
 ) -> Callable[[Market], list[TradeResult]]:
     def run(market: Market) -> list[TradeResult]:
         moves = session_moves(market)
@@ -180,14 +186,15 @@ def run_rich_condor(
             following = moves[at + 1].session if at + 1 < len(moves) else None
             if is_before_break(move.book, move.session, following):
                 continue
-            richness = read_richness(move.book, _at(move.session, _ENTRY_TIME),
+            richness = read_richness(move.book, _at(move.session, entry_time),
                                      moves[max(0, at - _FORECAST_SESSIONS):at])
             if richness is None or richness < threshold:
                 continue
-            exit_bar = exit_bar_for(move.book, move.session, following, hold_overnight)
+            exit_bar = exit_bar_for(move.book, move.session, following, hold_overnight,
+                                    into_expiry)
             if exit_bar is None:
                 continue
-            decided_at = _at(move.session, _ENTRY_TIME) + _BAR * entry_delay_bars
+            decided_at = _at(move.session, entry_time) + _BAR * entry_delay_bars
             strikes = condor_strikes(move.book, decided_at, short_delta)
             if strikes is None:
                 continue
@@ -216,4 +223,18 @@ def rich_rules(entry_delay_bars: int = 0) -> tuple[PublishedRule, ...]:
     )
 
 
+def night_rules(entry_delay_bars: int = 0) -> tuple[PublishedRule, ...]:
+    """Picked after reading both halves, so only sessions from 2 November 2026 can test them."""
+    return (
+        PublishedRule("very_rich_night_condor",
+                      "Picked on both halves: very rich days, 15-delta, 09:30, one night",
+                      run_rich_condor(0.15, 1.1, True, entry_delay_bars, _LATER_ENTRY_TIME, True),
+                      True),
+        PublishedRule("very_rich_night_condor_920",
+                      "The third rule before its last change: 20-delta, 09:20, one night",
+                      run_rich_condor(0.2, 1.1, True, entry_delay_bars, _ENTRY_TIME, True), True),
+    )
+
+
 RICH_RULES = rich_rules()
+NIGHT_RULES = night_rules()

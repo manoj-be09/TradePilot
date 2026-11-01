@@ -1679,3 +1679,5 @@ book timing, final settlement, after-cost ranking and POP remain open.
 2026-11-01 — Candidate algorithm study: 20 rules fixed in git before their results, tested on development expiries only. None advanced, so the holdout from 1 November 2025 stays unread. Research only; paper trading and the frozen forward period are unchanged. See [ALGORITHM_RESEARCH.md](ALGORITHM_RESEARCH.md).
 
 2026-11-01 — Published rules study: 11 rules from public sources, fixed in git before their results, tested on development expiries only. None advanced, so the holdout stays unread. Research only; nothing was added to paper trading. See [ALGORITHM_RESEARCH.md](ALGORITHM_RESEARCH.md).
+
+2026-11-01 — Global strategies study: 11 rules fixed in git before results. One, `far_put_write`, advanced and passed the single holdout run, so the holdout is now spent. It is naked, cannot be armed in paper trading and remains a research candidate. Nothing changed in paper trading or the frozen forward period. See [ALGORITHM_RESEARCH.md](ALGORITHM_RESEARCH.md).

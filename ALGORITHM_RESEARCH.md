@@ -228,3 +228,13 @@ Numbers are in `work/bt/rich-*.json` and `work/explore/`, private and local.
 **What counts.** One run, for the primary form above: positive average, at least 15 trades, t of at least 2.45, worst trade no worse than ₹20,000, drawdown no more than ₹60,000. Each of these is reported beside it and none can rescue it: doubled spreads, 20-delta, fixed 300-point wings on 65 units, the top 14% of readings by trailing rank, and every usable day with no reading at all. Each year and the crash window of 20 February to 30 April 2020 are reported for the primary form and for every day.
 
 **What a result means.** A pass says the rough form survived years the recorded data lacks; the rule remains unproven until new sessions test it. A failure lowers the expectation for the rule and is recorded as such. Either way the rule stays forward-only, and paper trading and the frozen forward period do not change. No setting changes after the run; a different setting would be another picked-after-seeing rule.
+
+## Older years outcome, 1 November 2026
+
+The primary form failed its one run: the average was close to zero and t was far below 2.45, though the worst trade and drawdown stayed inside their limits. Nothing reported beside it passed either, and the frozen protocol does not let them rescue it. All figures stay in private `work/`.
+
+- **The reading did not help.** Trading every usable day did better on average than trading only the chosen days, in the opposite order to the recorded sessions. Every day still failed: its t, its drawdown and its worst trade all missed their limits. That result was not a test of anything and is not a new candidate.
+- **Crashes were not what hurt.** In the 2020 crash window the reading chose few days, because recent movement was already high and the forecast rose with it. The damage came in 2022 and 2023, ordinary years for the index.
+- **What this changes.** The expectation for `very_rich_night_condor` falls: its recorded results may belong to that period. This was a rougher form sharing about half its days with the rule, so it does not disprove the intraday rule. It stays forward-only and unproven, and paper trading is unchanged. No setting will change because of this run.
+
+Data notes: 30 March 2021 is not on the archive and was left out. The count rule dropped five special sessions and left two Muhurat sessions in the calendar (24 October 2022 and 12 November 2023, if listed); no primary trade fell on them.

@@ -129,3 +129,44 @@ Why a pass here is weak evidence about risk:
 The other ten did not advance. Weekly at-the-money put writing, index-style condors and butterflies, delta hedging, the weekend effect, 0DTE condors, straddle momentum and the volatility gap all failed in our form. Far puts bought as a hedge lost every time, as a hedge is expected to; that does not test their value as protection.
 
 Numbers are in `work/bt/global-*.json`, private and local.
+
+## Rich premium study, fixed on 1 November 2026 before the later half was read for these rules
+
+The owner asked for a strategy with a better win rate and profit, found from the historical data itself. This is a fourth study, and the whole search now totals 45 rules. Rules are in `packages/backtesting/rich_premium.py`.
+
+**How the rules were found.** Only expiries before 1 November 2025 were read for them. About 5,200 relationships between market readings and later results were checked and most were noise. About 8,100 hedged settings were then run across strikes, entry times, exits, stops and targets, each with several thresholds. That is a wide search, so development results overstate what to expect, and the shorter-horizon rule below does not clear a family-wise luck check on its own.
+
+**A data problem found on the way.** The first import took strikes within about 3% of NIFTY about a week before expiry. After a large move one side of the ladder was missing, so far-strike rules skipped those weeks and the nearest listed strike could sit far from the market. This study adds a second private import, `work/history-wide.db`, with strikes within 5% of the lowest and highest NIFTY level seen in each expiry's window. Earlier studies ran before it existed.
+
+**The idea.** At 09:20 compare the move the at-the-money straddle implies until expiry with a forecast of the move until expiry. The forecast blends the last session, week and month of squared 5-minute parity changes and overnight gaps, and each weekend or holiday before expiry counts as one more session. A reading of 1 means the straddle charges about what recent movement predicts. Unfiltered hedged trades came to about nothing on development expiries. Days with a reading of at least 1 made money and days below it lost, so the reading sorts days rather than adding a new trade.
+
+| Rule | Reading | Sold strikes | Bought wings | Exit |
+| --- | --- | --- | --- | --- |
+| `rich_condor_day` | at least 1.0 | 30-delta call and put | 300 points beyond each | Same day |
+| `rich_condor_next_close` | at least 1.0 | 30-delta call and put | 300 points beyond each | Next session's close, or the same day when the next session is expiry day |
+| `very_rich_condor_next_close` | at least 1.1 | 20-delta call and put | 300 points beyond each | As above |
+
+All three decide at 09:20 from bars closed by then, skip the session before a weekend or holiday unless it is expiry day, and use one lot of 65 with no stop or target. Exits are the 15:10 bar, or the 15:05 bar on expiry day. A bought wing with no bar on the exit day counts as worthless and a sold leg keeps its last price, so a quiet contract cannot flatter a result.
+
+**Choices made from development results, and why:**
+
+- Wings of 300 points are the widest round width that keeps one lot's maximum loss under the ₹20,000 per-trade limit at any credit. Wider wings scored a little better but would be refused on some days.
+- No profit target. Small targets showed win rates near 100%, and those vanished when the threshold or target changed slightly. A tiny target hides the tail rather than removing it.
+- Not held overnight into expiry day. A 17-year model and the development tail both pointed the same way, and leaving a session earlier about halved the development drawdown.
+
+**Tests:** one lot of 65, dated charges, recorded spread bands at the median, as in the global study. The later half is expiries from 1 November 2025. It runs once for these three rules, on the same five tests: positive average after charges, at least 15 trades, t of at least 2.45, worst trade within ₹20,000 and drawdown within ₹60,000. A rule that passes is rerun at the band's upper quartile and with entry one bar later, and must stay positive in both.
+
+**The later half is reused, not pristine.** It was read for `far_put_write`, and market statistics for those months were seen while researching. Results for these rules on it have not been read. A pass is evidence, not proof.
+
+**Long-run check.** Weekly option prices do not exist before the sample, so a model prices a hypothetical weekly from India VIX back to 2009, at today's index level. It checks whether rich-looking days paid in other eras and how bad the bad days got. It assumes option prices relative to VIX were always as they are now, and its daily-candle reading only partly agrees with the real one, so it is a stress test and not a backtest.
+
+**Forward test.** These rules are frozen by this commit, so sessions from 2 November 2026 are the first data nobody has seen. They are not added to the 26 frozen paper templates, and the forward period does not change. Whether any of them ever moves into paper trading is the owner's decision after it ends.
+
+**Limits of this study:**
+
+- The sample has no one-session fall of 2.5% or more from open to close, which 22 years of NIFTY say is unusually calm. Wings cap the loss on each trade, but several capped losses in a row are possible.
+- Much of the profit comes from selling at 09:20, because rich straddles keep falling through the morning. Later entries earned clearly less, so real fills at that minute matter, and only live quotes can show them.
+- Spread bands come from a single recorded day.
+- Weekly expiry moved from Thursday to Tuesday between the two halves, so the later half trades different days of the week before expiry. Sessions four days out barely appear in development.
+- Next-close rules can hold two trades at once. Results are per trade.
+- Simulated results, not a forecast, and not investment advice.

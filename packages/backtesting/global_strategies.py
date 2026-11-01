@@ -70,6 +70,7 @@ def _last_closed(book: Book, strike: Decimal, kind: Kind, decided_at: datetime) 
 
 def strike_at_delta(
     book: Book, kind: Kind, decided_at: datetime, spot: float, target: float,
+    tolerance: float = _DELTA_TOLERANCE,
 ) -> Decimal | None:
     """The out-of-the-money strike closest to the delta; None when none comes near enough."""
     years = _years(book, decided_at)
@@ -86,7 +87,7 @@ def strike_at_delta(
         gap = abs(abs(delta) - target)
         if best is None or gap < best[0]:
             best = (gap, strike)
-    return best[1] if best is not None and best[0] <= _DELTA_TOLERANCE else None
+    return best[1] if best is not None and best[0] <= tolerance else None
 
 
 def centre_strike(book: Book, spot: float) -> Decimal:

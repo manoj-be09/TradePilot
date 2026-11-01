@@ -153,9 +153,13 @@ def _strikes_for(book: Book, spot: float, legs: Sequence[Leg]) -> list[Decimal] 
 def simulate(
     book: Book, legs: Sequence[Leg], strikes: Sequence[Decimal], entry_at: datetime,
     exit_bar: datetime, half_spread_pct: HalfSpread, leg_stop_share: float | None = None,
-    target_share: float | None = None,
+    target_share: float | None = None, quiet_exit: bool = False,
 ) -> TradeResult | None:
-    """One lot from the entry bar's open to the exit bar's close; None when a leg has no price."""
+    """One lot from the entry bar's open to the exit bar's close; None when a leg has no price.
+
+    With `quiet_exit`, a leg with no bar on the exit day no longer drops the trade: a bought leg
+    counts as worthless and a sold leg keeps its last price, so a quiet contract cannot flatter it.
+    """
     try:
         schedule_for(entry_at.date())
     except ValueError:
@@ -165,8 +169,9 @@ def simulate(
                                                                           strict=True)]
     if any(entry_at not in item for item in series):
         return None
-    if any(not any(moment.date() == exit_bar.date() and moment <= exit_bar for moment in item)
-           for item in series):
+    quiet = [not any(moment.date() == exit_bar.date() and moment <= exit_bar for moment in item)
+             for item in series]
+    if any(quiet) and not quiet_exit:
         return None
     positions = [
         _Open(strike, leg.kind, leg.side,
@@ -217,7 +222,8 @@ def simulate(
                 break
     for index, position in enumerate(positions):
         if not position.closed:
-            close(index, last_close[index], last_seen)
+            worthless = quiet[index] and position.side == "BUY"
+            close(index, _TICK if worthless else last_close[index], last_seen)
     charges = sum(
         float(order_charges(instrument="OPT", side=side, price=Decimal(str(price)),
                             quantity=CURRENT_LOT, trade_date=day).total)

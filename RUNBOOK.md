@@ -148,3 +148,4 @@ the local database.
 
 `scripts/run-candidate-algorithms.py` tests the fixed rules in [ALGORITHM_RESEARCH.md](ALGORITHM_RESEARCH.md)
 on development expiries. Do not run its `--holdout` form: no rule advanced, so the holdout stays unread.
+`scripts/run-published-strategies.py` does the same for the published rules, under the same limit.

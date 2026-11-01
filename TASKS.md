@@ -1,6 +1,6 @@
 # TradePilot task checklist
 
-Source: [DAILY_DELIVERY_PLAN.md](DAILY_DELIVERY_PLAN.md) and [PROJECT_PLAN.md](PROJECT_PLAN.md). Status checked against [BUILD_PROGRESS.md](BUILD_PROGRESS.md) and the local records on **31 October 2026**. Dates are work targets, not proof of completion. A checked box means the stated bounded task has evidence; it does not qualify a paper fill, final settlement, profitability, or a calibrated probability.
+Source: [DAILY_DELIVERY_PLAN.md](DAILY_DELIVERY_PLAN.md) and [PROJECT_PLAN.md](PROJECT_PLAN.md). Status checked against [BUILD_PROGRESS.md](BUILD_PROGRESS.md) and the local records on **1 November 2026**. Dates are work targets, not proof of completion. A checked box means the stated bounded task has evidence; it does not qualify a paper fill, final settlement, profitability, or a calibrated probability.
 
 ## Working rule
 
@@ -8,7 +8,7 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
 
 ## Dated work
 
-**31 October 2026 summary:** 8 of 20 days complete (1, 2, 3, 4, 5, 8, 9, 15), 10 partial (6, 7, 10, 11, 12, 13, 14, 16, 17, 18), 2 not done (19, 20), and 0 of 4 external gates passed. [PLATFORM_ROADMAP.md](PLATFORM_ROADMAP.md) wins on order and scope, so the forward paper period on 2 November goes ahead before several items here. It departs from this checklist in two ways: it runs without the Day 19 book-time gate, and it tests 26 templates rather than an incumbent plus at most two challengers. Its results are indicative and do not close Day 10, Day 19 or the gates below. The research study, policy-set, budget-slot and recommendation tables in the local database are empty, so Days 10, 12, 13 and 16 have not been run on real data.
+**1 November 2026 summary:** 9 of 20 days complete (1, 2, 3, 4, 5, 8, 9, 15, 17), 10 partial (6, 7, 10, 11, 12, 13, 14, 16, 18, 20), 1 not done (19), and 0 of 4 external gates passed. [PLATFORM_ROADMAP.md](PLATFORM_ROADMAP.md) wins on order and scope, so the forward paper period on 2 November goes ahead before several items here. It departs from this checklist in two ways: it runs without the Day 19 book-time gate, and it tests 26 templates rather than an incumbent plus at most two challengers. Its results are indicative and do not close Day 10, Day 19 or the gates below. The research study, policy-set, budget-slot and recommendation tables in the local database are empty, so Days 10, 12, 13 and 16 have not been run on real data.
 
 - [x] **Day 1 — 22 Oct: Publish and verify the local build.** Confirm the pushed source, healthy API/worker/web and signed-in desktop and phone F&O views.
 - [x] **Day 2 — 23 Oct: Diagnose the worker cycle.** Check the account-safe worker warning and reconcile the observed paper ledger without changing historical positions.
@@ -56,7 +56,7 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
   - [x] Keep existing time-bounded account-scoped recommendation/abstention records separate from orders and promotion.
   - [x] Bind newly recorded shadow no-fill and rejection events to the saved frozen policy artifact; preserve idempotent replay of earlier records.
   - [ ] Record policy-matched unresolved, rejected and no-fill observations prospectively and idempotently.
-- [ ] **Day 17 — 7 Nov: Complete release security and recovery checks.**
+- [x] **Day 17 — 7 Nov: Complete release security and recovery checks.**
   - [x] Run full CI on `74d34c5` (passed), including the configured isolated PostgreSQL test service.
   - [x] Run the later isolated local suite after the parent-lock change: 609 passed, 13 skipped, with two existing deprecation warnings; Ruff, mypy and Bandit passed.
   - [x] Suppress a research evaluation wrapper's saved result when its lease outcome is not COMPLETED; focused lease/evaluator checks passed.
@@ -66,7 +66,8 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
   - [x] Run the new PostgreSQL study-freeze/reservation race test in CI with `TEST_POSTGRES_URL`; backend and frontend jobs passed on `05d41c0`.
   - [x] Recheck the same-trial concurrent slot reservation fix in PostgreSQL CI; backend and frontend jobs passed on `f69f3fd`.
   - [x] Audit the 13 local skip reasons: 11 PostgreSQL-only cases require the CI test database and two historical-settlement cases require an explicit opt-in NSE archive date.
-  - [ ] Finish final migration, account-isolation, lease/recovery and failure-path review against the release candidate and verify the deployed revision.
+  - [x] Finish final migration, account-isolation, lease/recovery and failure-path review against the release candidate and verify the deployed revision.
+    - 1 November, on the local stack at `f66b570`: one migration head; every model column exists in the local database; 73 of 78 API routes require a signed-in user, and the other five are login, register and three health checks; a scan of API handlers found every query on an owned table limited to the user or their account (a scan, not a proof); the latest backup passes SQLite's check; the full suite gave 921 passed, 13 skipped. The running API, worker and runner have no behaviour change from `main`; the only runtime difference since they started is one renamed function. PostgreSQL cases run in CI only. No hosted deployment exists, so none was checked.
 - [ ] **Day 18 — 8 Nov: Verify the final desktop and phone screens.**
   - [x] Inspect earlier signed-in F&O desktop and approximately 390 px phone layouts.
   - [x] Show the frozen study's declared cost artifact status and uncertainty note in the Research summary; frontend type check passed.
@@ -75,6 +76,7 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
 - [ ] **Day 19 — 9 Nov: Attempt normal-session paper lifecycle acceptance only after the book-time gate passes.** Observe a natural policy-pinned signal, entry, exit, rejected/no-fill paths and ledger reconciliation. If no qualified feed or signal exists, record the waiting evidence; do not force a trade.
   - Not done. The book-time gate cannot pass on Upstox V3. The forward paper period starts 2 November on indicative quotes under the local educational setting; it is not acceptance under this item.
 - [ ] **Day 20 — 10 Nov: Decide on the bounded software release candidate.** Review exact deployment revision, test/skip results and the gate ledger; review final expiry evidence without changing the saved trade unless independently justified.
+  - 1 November: `f66b570` is suitable for local, paper-only forward use on indicative quotes. It is not a release candidate for live use or for any claim of edge: Day 18's signed-in Research check, the expiry evidence and all four external gates are open. Live orders stay off.
 
 ## Open external acceptance gates after Day 20
 

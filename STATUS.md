@@ -1,6 +1,6 @@
 # TradePilot status
 
-Short current state. The forward plan is `PLATFORM_ROADMAP.md`; dated history is `BUILD_PROGRESS.md`; how live trading would be added is `LIVE_TRADING.md`. Updated 30 October 2026.
+Short current state. The forward plan is `PLATFORM_ROADMAP.md`; dated history is `BUILD_PROGRESS.md`; how live trading would be added is `LIVE_TRADING.md`. Updated 1 November 2026.
 
 Scope: NIFTY 50 futures and options, **paper trading only**. Live orders are forced off.
 
@@ -31,7 +31,7 @@ Scope: NIFTY 50 futures and options, **paper trading only**. Live orders are for
 ## What's next
 
 1. Forward paper period: all 26 option templates frozen, 2 November to 14 December 2026. The first period (30 October) was stopped the same day because exits fired within minutes; the exit rules were fixed and it restarts on 2 November.
-2. Calibrate backtest spreads from recorded sessions and save drawdown baselines. Promotion stays on hold until baselines exist.
+2. Score the two forward-only research rules after new expiries are imported (`RUNBOOK.md`). They are not in paper trading. The first of them failed a rougher test on 2019 to 2024 daily prices, so expect less from it. Backtest spreads are calibrated and drawdown baselines are saved, so promotion can now run on its own rules.
 3. After the period: a decision on a 1-lot live pilot (`LIVE_TRADING.md`).
 4. Deferred until after that decision: removing backend equity code and tables, and splitting `main.py` and `page.tsx`.
 5. Owner steps: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` and `TELEGRAM_ALERT_USER_EMAIL` for alerts; `scripts/install-autostart.ps1` to start at sign-in.

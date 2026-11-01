@@ -105,6 +105,12 @@ def test_a_leg_with_no_price_on_the_exit_day_is_not_filled_in():
     assert simulate(book, _STRADDLE, [_K, _K], _at(9, 20), later, 0.0) is None
 
 
+def test_a_date_with_no_charge_schedule_is_skipped_not_guessed():
+    day = date(2020, 1, 6)
+    book = _book((_at(9, 20, day), 100, 100), (_at(15, 10, day), 100, 100))
+    assert simulate(book, _STRADDLE, [_K, _K], _at(9, 20, day), _at(15, 10, day), 0.0) is None
+
+
 def test_spot_uses_only_bars_closed_by_the_decision():
     book = _book((_at(9, 15), 150, 100), (_at(9, 20), 900, 100))
     assert spot_from_closed_bars(book, _at(9, 20)) == 22050.0

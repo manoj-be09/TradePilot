@@ -26,7 +26,7 @@ from packages.backtesting.candidate_algorithms import (
 )
 from packages.backtesting.entry_signals import EntrySignal
 from packages.backtesting.history_backtest import _IST, synthetic_spot
-from packages.core.charges import order_charges
+from packages.core.charges import order_charges, schedule_for
 
 __all__ = ["HOLDOUT_START"]
 
@@ -152,6 +152,11 @@ def simulate(
     target_share: float | None = None,
 ) -> TradeResult | None:
     """One lot from the entry bar's open to the exit bar's close; None when a leg has no price."""
+    try:
+        schedule_for(entry_at.date())
+    except ValueError:
+        # Costs before the first dated schedule are unknown; skip rather than guess them.
+        return None
     series = [book.bars.get((strike, leg.kind), {}) for strike, leg in zip(strikes, legs,
                                                                           strict=True)]
     if any(entry_at not in item for item in series):

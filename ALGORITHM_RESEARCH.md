@@ -209,3 +209,22 @@ Both exit at the next session's close, including when that is expiry day, or the
 They are not in the 26 frozen paper templates and do not change the forward period. They are scored afterwards with `--study night --forward`. Whether either moves into paper trading is the owner's decision.
 
 Numbers are in `work/bt/rich-*.json` and `work/explore/`, private and local.
+
+## Older years test, fixed on 1 November 2026 before any 2019 to 2024 price was read
+
+`very_rich_night_condor` was picked after both recorded halves were read, and neither half holds a large fall. The owner approved downloading NSE's public daily F&O files to test it on years that do. These files give each contract's open and close only, so this is a rougher form of the rule, in `packages/backtesting/daily_condor.py`. It is not the rule itself, and no result here can validate it: only sessions from 2 November 2026 can do that.
+
+**Data.** About 1,400 daily files from `archives.nseindia.com`, sessions 1 January 2019 to 30 September 2024, fetched by `scripts/import-nse-daily.py` into `work/nse-fo/`. They stay private and out of git. Only the two nearest NIFTY expiries are kept each day, and a contract with no trades that day has no price. Sessions whose NIFTY option contract count falls below 15% of the median of the previous 22 counted sessions are special sessions and do not count. Trades start on 11 February 2019, when weekly options began; earlier files only warm up the forecast.
+
+**The daily form.**
+- Reading: the opening straddle of the nearest expiry against the same blended forecast, with each session's variance now the squared overnight gap plus the Garman-Klass range from the index's daily prices.
+- Cut: at least 1.20, the reading that picks the same number of days on the recorded sessions as the intraday rule's 1.1. It was set by that count and not by results. On those sessions the daily reading tracks the intraday one only moderately and about half the chosen days are shared, so this tests a close relative of the rule.
+- Skips: the session before a weekend or holiday unless it is expiry day.
+- Trade: at the open sell the 15-delta call and put, with the same strike tolerance, and buy wings beyond them. Exit at the next session's close, or the same session's close on expiry day.
+- Size: the index was far lower in these years, so the wing is the same share of the index as 300 points at 24,500, to the nearest 50 points, one step wider or narrower if that strike did not trade. Units are set so a full wing loss costs what 300 points cost on one lot of 65.
+- Exit marks: a bought leg with no trade that day counts as worthless. A sold leg with no trade keeps its last price, and a sold leg never marks below its value against the index close.
+- Costs: today's charges and the recorded median half-spreads by premium band, applied to the actual premium. Charges and spreads were both different in these years; spreads were probably wider, which is why doubled spreads are reported.
+
+**What counts.** One run, for the primary form above: positive average, at least 15 trades, t of at least 2.45, worst trade no worse than ₹20,000, drawdown no more than ₹60,000. Each of these is reported beside it and none can rescue it: doubled spreads, 20-delta, fixed 300-point wings on 65 units, the top 14% of readings by trailing rank, and every usable day with no reading at all. Each year and the crash window of 20 February to 30 April 2020 are reported for the primary form and for every day.
+
+**What a result means.** A pass says the rough form survived years the recorded data lacks; the rule remains unproven until new sessions test it. A failure lowers the expectation for the rule and is recorded as such. Either way the rule stays forward-only, and paper trading and the frozen forward period do not change. No setting changes after the run; a different setting would be another picked-after-seeing rule.

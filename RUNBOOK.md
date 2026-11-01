@@ -147,5 +147,6 @@ the local database.
 `packages/backtesting/no_trade.py`. It writes nothing, and nothing reads its result.
 
 `scripts/run-candidate-algorithms.py` tests the fixed rules in [ALGORITHM_RESEARCH.md](ALGORITHM_RESEARCH.md)
-on development expiries. Do not run its `--holdout` form: no rule advanced, so the holdout stays unread.
-`scripts/run-published-strategies.py` does the same for the published rules, under the same limit.
+on development expiries. `scripts/run-published-strategies.py` does the same for the published rules, and with
+`--study global` for the global ones. The holdout was spent on `far_put_write` on 1 November 2026, so a `--holdout`
+run no longer counts as an untouched test.

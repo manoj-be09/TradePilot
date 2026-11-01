@@ -109,3 +109,23 @@ The owner asked for the search to go beyond Indian sources. This is a third stud
 **Tests:** one lot of 65, dated charges, and half-spreads from our recorded quotes by premium band, at the band median, because a flat 0.25% flatters cheap options. Those bands come from private data and stay local. Advancing and holdout tests are the same as the published rules study. A rule that passes is rerun at the band's upper quartile.
 
 **Not testable on our data:** stock-level strategies (cross-sectional straddles, option momentum as published, dispersion), anything longer than about 10 days to expiry, covered calls on the index, and term structure trades.
+
+### Global strategies outcome, 1 November 2026
+
+**1 of 11 advanced: `far_put_write`. It then passed every holdout test once, and stayed positive at the upper-quartile spread. Across all three studies, 1 of 42 rules passed. It is a candidate, not a validated strategy, and paper trading cannot arm it as written.**
+
+**The holdout is now spent.** Expiries from 1 November 2025 have been read for this rule, so no later rule can claim them as untouched. The earlier statements that the holdout stayed unread describe the time of those studies.
+
+Why a pass here is weak evidence about risk:
+
+- It sells a naked put, so its loss has no cap. A single large fall while a trade is open would exceed the ₹20,000 per-trade limit and take back about two years of gains.
+- Neither half contained that fall during a held trade. A high t reads the wins well and says little about a crash that did not happen in the sample.
+- The study's data starts in September 2024, so it misses earlier large falls.
+- The two halves are different trades. Thursday expiries were mostly held about three days, while Tuesday expiries are held about one day and no weekend.
+- Strikes outside the imported range were skipped. On development expiries the skipped weeks were not the worst ones, but about a quarter of weeks in the sample have no trade.
+- Premiums are small, so real bid/ask matters more than percentage bands show.
+- The Cboe and academic results that motivated this family were measured on other markets, mostly before costs.
+
+The other ten did not advance. Weekly at-the-money put writing, index-style condors and butterflies, delta hedging, the weekend effect, 0DTE condors, straddle momentum and the volatility gap all failed in our form. Far puts bought as a hedge lost every time, as a hedge is expected to; that does not test their value as protection.
+
+Numbers are in `work/bt/global-*.json`, private and local.

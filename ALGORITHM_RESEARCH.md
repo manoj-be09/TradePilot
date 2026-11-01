@@ -45,3 +45,31 @@ Numbers are in `work/bt/candidates-development-0.25.json` and the log beside it,
 - Exits are checked on 5-minute closes, so a stop can realize more than its amount.
 - The straddle volatility reading is approximate, and the first expiries have no rank while the trailing window fills.
 - Weekly expiry moved from Thursday to Tuesday during the period, which the rules do not model separately.
+
+## Published rules study, fixed on 1 November 2026 before any result was seen
+
+The owner asked for strategies published online to be tested. This is a new study, outside the 20 rules above, and the whole search now totals 31 rules. Rules are in `packages/backtesting/published_strategies.py`.
+
+**No source offers an audited trading record, so nothing here is evidence that any trader succeeded.** SEBI reports that over 91% of individual F&O traders lost money in FY25, so a popular rule starts with no credit.
+
+| Rule | Published idea | Our form |
+| --- | --- | --- |
+| `straddle_920_leg_stop` | [Zerodha forum analysis](https://tradingqna.com/t/detailed-analysis-of-920-short-straddle-strategy-is-it-stopped-working/130677) | Sell the nearest-expiry straddle at 09:20, 25% stop per leg, the other leg runs to 15:15. Naked |
+| `straddle_920_no_stop` | [Zerodha forum post](https://tradingqna.com/t/reports-of-the-death-of-920-short-straddle-are-greatly-exaggerated/179061) | Same with no stop. Naked |
+| `iron_fly_920_leg_stop` | Same thread's hedged form | Add wings six strikes out; a stopped leg closes its wing |
+| `iron_fly_920_skip_expiry_day` | [Bank Nifty blog](https://bankniftyoptions-com.pages.dev/artigos/banknifty-920-straddle-strategy) | Same, not on expiry day |
+| `condor_take_half` | [tastylive](https://www.tastylive.com/shows/market-measures/episodes/iron-condors-management-and-wing-width-05-09-2016) | Weekly wide condor, close at 50% of credit, no loss stop. Their 45-day entry cannot be tested on our data |
+| `condor_take_half_when_rich` | tastylive, high volatility | Same, only in the top third of the trailing volatility premium |
+| `iron_fly_take_quarter` | [tastylive](https://www.tastylive.com/shows/options-jive/episodes/why-manage-at-25-not-50-for-short-straddles-09-06-2016) | Weekly iron fly, close at 25% of credit, no loss stop |
+| `short_strangle_weekly` | [Bangur 2020](https://www.risk.net/journal-of-investment-strategies/7721271/strangle-to-resuscitate-evidence-from-india) | Weekly short strangle four strikes out, held. The paper is monthly and its exact rules are paywalled. Naked |
+| `overnight_straddle` | [Muravyev and Ni, summary](https://www.cxoadvisory.com/equity-options/intraday-versus-overnight-option-returns/) | Sell at 15:15, buy back about 09:20 next session. Naked |
+| `overnight_iron_fly` | Same | With wings |
+| `opening_range_breakout` | [AlgoTest](https://docs.algotest.in/sample-algo-trading-strategies/range-breakout-strategy), [OneTradeJournal](https://onetradejournal.com/strategies/opening-range-breakout) | Buy an at-the-money option on the first close beyond the 09:15-09:30 range, up to 14:00; stop on a close beyond the far side; out by 15:15 |
+
+**Tests:** one lot of 65, dated charges, 0.25% half-spread on every fill. A leg stop triggers on the bar's high and fills at the stop or at a worse gap open.
+
+**Advancing, on expiries before 1 November 2025:** at least 15 trades, positive average after charges, t of at least 1.5. At most 3 advance, highest t first.
+
+**Passing the holdout, run once:** positive average after charges, at least 15 trades, t of at least 2.45, worst trade within ₹20,000 and drawdown within ₹60,000. A rule that passes is rerun at a 0.5% half-spread. A naked rule can never be armed in paper trading as written.
+
+**Limits of this study:** the rules are adapted to our data, so a failure tests our form of an idea, not every form of it. Spread on far strikes is probably wider than 0.25%. Stops on real orders can slip further than a 5-minute bar shows. A run of daily trades can share one market regime, so t may overstate certainty.

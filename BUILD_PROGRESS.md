@@ -1675,3 +1675,5 @@ book timing, final settlement, after-cost ranking and POP remain open.
 2026-10-31 — Day-wise plan status review (docs only): `TASKS.md` and the gate ledger in `DAILY_DELIVERY_PLAN.md` now show 5 of 20 days complete, 12 partial, 3 not done and 0 of 4 external gates passed. The forward paper period from 2 November runs without the book-time gate and with 26 templates, so its results are indicative only.
 
 2026-10-31 — Days 5, 8 and 15 closed with negative outcomes: recorded Feed V3 frames show no per-leg book time (`NOT USABLE`), the support/resistance heuristic is excluded from research use, and 0 of 26 saved replays beat `NO_TRADE` under the capital, tail-risk and uncertainty gates, so the system abstains. Plan status is now 8 of 20 days complete, 10 partial, 2 not done and 0 of 4 external gates passed.
+
+2026-11-01 — Candidate algorithm study: 20 rules fixed in git before their results, tested on development expiries only. None advanced, so the holdout from 1 November 2025 stays unread. Research only; paper trading and the frozen forward period are unchanged. See [ALGORITHM_RESEARCH.md](ALGORITHM_RESEARCH.md).

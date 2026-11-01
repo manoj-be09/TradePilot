@@ -39,6 +39,7 @@ Complete the tasks below in order. After a task meets its stated evidence gate, 
   - [ ] Review complete account-specific charges and exact source, dataset and cost artifacts; do not retrofit missing historical costs.
   - [x] Apply the versioned public charge model to paper fills and history replays. It has not been reviewed against the owner's account.
 - [ ] **Day 12 — 2 Nov: Enforce canonical parent search accounting.**
+  - 1 November: the candidate algorithm study kept its full search of 20 rules in git, with its outcome in [ALGORITHM_RESEARCH.md](ALGORITHM_RESEARCH.md). That is a written record, not the canonical parent budget, so this day stays partial.
   - [x] Reserve numbered slots under the exact NIFTY dataset digest and block new slots for differently hashed owned studies with overlapping declared dates; focused checks and CI passed on `74d34c5`.
   - [ ] Review actual observational lineage across copied/rehashed datasets, concurrency around newly frozen studies, and retention/counting of every failed or rejected search.
 - [ ] **Day 13 — 3 Nov: Protect an independent holdout.**

@@ -145,3 +145,6 @@ the local database.
 
 `scripts/compare-with-no-trade.py` prints whether each saved replay beats `NO_TRADE` under
 `packages/backtesting/no_trade.py`. It writes nothing, and nothing reads its result.
+
+`scripts/run-candidate-algorithms.py` tests the fixed rules in [ALGORITHM_RESEARCH.md](ALGORITHM_RESEARCH.md)
+on development expiries. Do not run its `--holdout` form: no rule advanced, so the holdout stays unread.

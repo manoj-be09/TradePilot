@@ -14,7 +14,7 @@ import apps.nightly.main as nightly
 from apps.nightly.main import IST, due, run_once
 from packages.database import futures_models  # noqa: F401
 from packages.database.base import Base
-from packages.database.models import PaperAccount, PaperDeployment, PaperTrade, User
+from packages.database.models import AuditEvent, PaperAccount, PaperDeployment, PaperTrade, User
 from packages.database.sqlite_backup import BackupError, backup_database
 from packages.paper_trading.forward_plan import ForwardPlan
 from packages.paper_trading.forward_report import build_report, drawdown, render_markdown
@@ -145,6 +145,42 @@ def test_the_report_counts_only_frozen_versions_and_orders_by_time(factory):
     assert row.realized_pnl == Decimal("50") and row.worst_drawdown == Decimal("50")
     text = render_markdown(report)
     assert "Simulated" in text and "long put" in text and "strip" not in text
+
+
+def _unfilled(session, account, key, status, detail, version=FROZEN):
+    row = PaperDeployment(
+        user_id=account.user_id, command_key=uuid4().hex, request_hash="h", status=status,
+        detail=detail, created_at=NOW, updated_at=NOW,
+        request_data={"strategy_key": key, "strategy_version_id": str(version)},
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def test_the_report_says_why_armed_strategies_have_no_trade(factory):
+    with factory() as session:
+        account = _account(session)
+        _trade(session, account, Decimal("100"), 0)
+        blocked = _unfilled(session, account, "strap", "EXPIRED", "Expiry passed")
+        for reason in ("First block", "Maximum loss exceeds the per-trade risk cap"):
+            session.add(AuditEvent(
+                actor_user_id=account.user_id, correlation_id=str(blocked.id),
+                event_type="paper.deployment.entry_blocked", details={"reason": reason},
+            ))
+        session.flush()
+        _unfilled(session, account, "guts", "WAITING_FOR_ENTRY", "Conditions not met")
+        _unfilled(session, account, "guts", "WAITING_FOR_ENTRY", "Conditions not met")
+        _unfilled(session, account, "strip", "EXPIRED", "Other period", version=uuid4())
+        session.commit()
+        report = build_report(session, PLAN, account, date(2026, 11, 3))
+    assert [(row.strategy_key, row.status, row.reason, row.count) for row in report.unfilled] == [
+        ("guts", "WAITING_FOR_ENTRY", "Conditions not met", 2),
+        ("strap", "EXPIRED", "Maximum loss exceeds the per-trade risk cap", 1),
+    ]
+    text = render_markdown(report)
+    assert "not a full sample" in text and "per-trade risk cap" in text
+    assert "strip" not in text
 
 
 def test_due_once_per_day_after_the_close_in_india_time():

@@ -237,4 +237,4 @@ The primary form failed its one run: the average was close to zero and t was far
 - **Crashes were not what hurt.** In the 2020 crash window the reading chose few days, because recent movement was already high and the forecast rose with it. The damage came in 2022 and 2023, ordinary years for the index.
 - **What this changes.** The expectation for `very_rich_night_condor` falls: its recorded results may belong to that period. This was a rougher form sharing about half its days with the rule, so it does not disprove the intraday rule. It stays forward-only and unproven, and paper trading is unchanged. No setting will change because of this run.
 
-Data notes: 30 March 2021 is not on the archive and was left out. The count rule dropped five special sessions and left two Muhurat sessions in the calendar (24 October 2022 and 12 November 2023, if listed); no primary trade fell on them.
+Data notes: 30 March 2021 is not on the archive and was left out. The count rule dropped five special sessions and left two Muhurat sessions in the calendar (24 October 2022 and 12 November 2023); no primary trade fell on them.

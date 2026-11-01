@@ -3,6 +3,10 @@
 Usage:
   PYTHONPATH=. python scripts/run-published-strategies.py
   PYTHONPATH=. python scripts/run-published-strategies.py --holdout rule_a rule_b
+  PYTHONPATH=. python scripts/run-published-strategies.py --study global
+
+The global study prices fills from recorded spread bands in work/bt/cal-bear_call_spread.json,
+at the median by default.
 
 The first form loads development expiries only and picks which rules advance. The second reports
 only the named rules, on holdout expiries, and is meant to run once. Writes
@@ -12,6 +16,7 @@ not a forecast.
 
 import argparse
 import json
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -22,6 +27,7 @@ from sqlalchemy import select
 
 from apps.api.settings import get_settings
 from packages.backtesting.entry_signals import read_signals
+from packages.backtesting.global_strategies import GLOBAL_RULES
 from packages.backtesting.history_backtest import Candle, ExpiryHistory, _ist
 from packages.backtesting.past_tests import DEFAULT_RESULTS_DIRECTORY
 from packages.backtesting.published_strategies import (
@@ -41,6 +47,7 @@ from packages.database.session import build_session_factory
 
 _FIRST_EXPIRY = date(2024, 10, 1)
 _LAST_EXPIRY = date(2026, 10, 27)
+_RECORDED_SPREADS = DEFAULT_RESULTS_DIRECTORY / "cal-bear_call_spread.json"
 
 
 def load_books(database_url: str, last_expiry: date) -> list[Book]:
@@ -73,14 +80,27 @@ def as_history(book: Book) -> ExpiryHistory:
     })
 
 
+def _recorded_spread(band_field: str) -> Callable[[float], float]:
+    saved = json.loads(_RECORDED_SPREADS.read_text(encoding="utf-8"))
+    bands = [(float(band["lower"]), float(band[band_field]))
+             for band in saved["config"]["spread_model"]["bands"]]
+
+    def half_spread(price: float) -> float:
+        return next(pct for lower, pct in reversed(bands) if price >= lower)
+    return half_spread
+
+
 def main(args: argparse.Namespace) -> None:
     holdout = args.holdout is not None
     end = _LAST_EXPIRY if holdout else HOLDOUT_START - timedelta(days=1)
     books = load_books(get_settings().database_url, end)
     print("expiries loaded", len(books), flush=True)
     signals = read_signals([as_history(book) for book in books], 7)
-    market = Market(books, float(args.half_spread_pct), signals)
-    chosen = [rule for rule in PUBLISHED_RULES if not holdout or rule.name in args.holdout]
+    rules = GLOBAL_RULES if args.study == "global" else PUBLISHED_RULES
+    spread = _recorded_spread(args.spread_band) if args.study == "global" \
+        else float(args.half_spread_pct)
+    market = Market(books, spread, signals)
+    chosen = [rule for rule in rules if not holdout or rule.name in args.holdout]
     rows = {}
     for rule in chosen:
         trades = [trade for trade in rule.run(market)
@@ -106,7 +126,8 @@ def main(args: argparse.Namespace) -> None:
               "drawdown", round(result.drawdown), verdict, flush=True)
     stage = "holdout" if holdout else "development"
     args.directory.mkdir(parents=True, exist_ok=True)
-    path = args.directory / f"published-{stage}-{args.half_spread_pct}.json"
+    label = args.spread_band if args.study == "global" else args.half_spread_pct
+    path = args.directory / f"{args.study}-{stage}-{label}.json"
     path.write_text(json.dumps(output, indent=2, default=str), encoding="utf-8")
 
 
@@ -115,5 +136,8 @@ if __name__ == "__main__":
     parser.add_argument("--holdout", nargs="+", default=None,
                         help="Rules that advanced; omit to run the development stage")
     parser.add_argument("--half-spread-pct", default="0.25")
+    parser.add_argument("--study", choices=("published", "global"), default="published")
+    parser.add_argument("--spread-band", choices=("median_pct", "half_spread_pct"),
+                        default="median_pct")
     parser.add_argument("--directory", type=Path, default=DEFAULT_RESULTS_DIRECTORY)
     main(parser.parse_args())

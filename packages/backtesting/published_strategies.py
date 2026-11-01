@@ -113,8 +113,12 @@ class _Open:
     closed: bool = False
 
 
-def _adverse(price: float, side: Side, half_spread_pct: float) -> float:
-    moved = price * (1 + half_spread_pct / 100 if side == "BUY" else 1 - half_spread_pct / 100)
+HalfSpread = float | Callable[[float], float]
+
+
+def _adverse(price: float, side: Side, half_spread_pct: HalfSpread) -> float:
+    pct = half_spread_pct(price) if callable(half_spread_pct) else half_spread_pct
+    moved = price * (1 + pct / 100 if side == "BUY" else 1 - pct / 100)
     return max(_TICK, round(moved, 2))
 
 
@@ -148,7 +152,7 @@ def _strikes_for(book: Book, spot: float, legs: Sequence[Leg]) -> list[Decimal] 
 
 def simulate(
     book: Book, legs: Sequence[Leg], strikes: Sequence[Decimal], entry_at: datetime,
-    exit_bar: datetime, half_spread_pct: float, leg_stop_share: float | None = None,
+    exit_bar: datetime, half_spread_pct: HalfSpread, leg_stop_share: float | None = None,
     target_share: float | None = None,
 ) -> TradeResult | None:
     """One lot from the entry bar's open to the exit bar's close; None when a leg has no price."""
@@ -224,7 +228,7 @@ def simulate(
 
 
 class Market:
-    def __init__(self, books: Sequence[Book], half_spread_pct: float,
+    def __init__(self, books: Sequence[Book], half_spread_pct: HalfSpread,
                  signals: dict[date, EntrySignal] | None = None) -> None:
         self.books = sorted(books, key=lambda book: book.expiry)
         self.half_spread_pct = half_spread_pct

@@ -85,3 +85,27 @@ The owner asked for strategies published online to be tested. This is a new stud
 - The opening range breakout won less than a third of the time and lost after charges.
 
 Numbers are in `work/bt/published-development-0.25.json`, private and local.
+
+## Global strategies study, fixed on 1 November 2026 before any result was seen
+
+The owner asked for the search to go beyond Indian sources. This is a third study, and the whole search now totals 42 rules. Rules are in `packages/backtesting/global_strategies.py`.
+
+**Evidence from other markets does not transfer by itself.** The strongest research also warns that costs and margin take much of the gross return: [Santa-Clara and Saretto](https://www.cxoadvisory.com/equity-options/good-deals-in-broad-market-index-options/) report that costs and margin calls cut the Sharpe ratio of a short strangle from 1.83 to 0.16, and [Gray](https://ideas.repec.org/a/wly/jfutmk/v36y2016i2p107-126.html) finds costs erode the Goyal and Saretto straddle.
+
+| Rule | Published idea | Our form |
+| --- | --- | --- |
+| `weekly_put_write` | [Cboe WPUT](https://www.cxoadvisory.com/equity-options/performance-of-cboe-putwrite-indexes) | Sell an at-the-money put a week out and hold. Naked; no T-bill return is counted |
+| `far_put_write` | [Early Retirement Now](https://earlyretirementnow.com/2021/11/10/passive-income-through-option-writing-part-9-2016-2021-backtest-guest-post-by-spintwig) | Sell a 5-delta put about 3 days out, once a week and held. Naked |
+| `index_style_condor` | [Cboe CNDR study](https://ir.cboe.com/news/news-details/2016/Study-Analyzes-Performance-of-CBOE-SP-500-SPX-Options-Selling-Indexes-02-23-2016/default.aspx) | Sell 20-delta, buy 5-delta, weekly and held. Deltas are from memory of Cboe's method, not read from it |
+| `index_style_butterfly` | Cboe BFLY, same study | Sell the centre, buy 5-delta, weekly and held. Same caveat |
+| `near_strangle` | Santa-Clara and Saretto | Sell 10-delta strangle a week out and hold. Naked |
+| `delta_hedged_straddle` | [Volatility premium research](https://quantpedia.com/overview-of-different-short-volatility-strategies/) | Sell a weekly straddle and rebalance whole-lot futures near each close. Parity forward stands in for the future. Naked |
+| `weekend_straddle` | [Jones and Shemesh](https://ideas.repec.org/a/bla/jfinan/v73y2018i2p861-900.html) | Sell before a gap of three or more days, buy back after the next open. Sources report little effect in S&P 500 index options. Naked |
+| `zero_day_condor` | [US 0DTE form](https://optionstradingiq.com/?p=28544) | On expiry day sell 14-delta with wings three strikes out, 30% target, out before 11:00 |
+| `straddle_momentum` | [Heston and others](https://www.cxoadvisory.com/?p=965), index form | Buy a held weekly straddle only if the last four finished ones averaged a profit. The paper is cross-sectional stock options |
+| `volatility_gap_straddle` | Goyal and Saretto, index form | Buy a held weekly straddle only when implied is below realized. The paper is cross-sectional stock options |
+| `tail_hedge_puts` | [AQR and Universa debate](https://www.aqr.com/insights/research/white-papers/tail-risk-hedging-contrasting-put-and-trend-strategies) | Buy a 5-delta put each week and hold. As a hedge it could be worth holding without profit; this tests it alone |
+
+**Tests:** one lot of 65, dated charges, and half-spreads from our recorded quotes by premium band, at the band median, because a flat 0.25% flatters cheap options. Those bands come from private data and stay local. Advancing and holdout tests are the same as the published rules study. A rule that passes is rerun at the band's upper quartile.
+
+**Not testable on our data:** stock-level strategies (cross-sectional straddles, option momentum as published, dispersion), anything longer than about 10 days to expiry, covered calls on the index, and term structure trades.

@@ -1,5 +1,6 @@
 """A read-only daily summary of a frozen forward paper period. All figures are simulated."""
 
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date
@@ -9,7 +10,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from packages.database.models import PaperAccount, PaperDeployment, PaperOrder, PaperTrade
+from packages.database.models import (
+    AuditEvent,
+    PaperAccount,
+    PaperDeployment,
+    PaperOrder,
+    PaperTrade,
+)
 from packages.paper_trading.forward_plan import ForwardPlan
 from packages.paper_trading.transactions import reconcile_account
 from packages.recorder.freshness import summarize_ages
@@ -28,6 +35,14 @@ class StrategyRow:
 
 
 @dataclass(frozen=True)
+class UnfilledRow:
+    strategy_key: str
+    status: str
+    reason: str
+    count: int
+
+
+@dataclass(frozen=True)
 class ForwardReport:
     as_of: date
     start: date
@@ -36,6 +51,7 @@ class ForwardReport:
     ledger_issues: int
     rows: tuple[StrategyRow, ...]
     freshness: dict[str, Any] = field(default_factory=dict)
+    unfilled: tuple[UnfilledRow, ...] = ()
 
     @property
     def total_realized(self) -> Decimal:
@@ -50,6 +66,24 @@ def drawdown(pnls: list[Decimal]) -> Decimal:
         peak = max(peak, total)
         worst = max(worst, peak - total)
     return worst
+
+
+def _unfilled(session: Session, deployments: list[PaperDeployment]) -> tuple[UnfilledRow, ...]:
+    """Why armed strategies have no trade, so a cap's silent selection stays visible."""
+    waiting = [row for row in deployments if row.trade_id is None]
+    blocks: dict[str, str] = {}
+    if waiting:
+        events = session.scalars(select(AuditEvent).where(
+            AuditEvent.event_type == "paper.deployment.entry_blocked",
+            AuditEvent.correlation_id.in_([str(row.id) for row in waiting]),
+        ).order_by(AuditEvent.created_at, AuditEvent.id))
+        blocks = {str(event.correlation_id): str(event.details.get("reason")) for event in events}
+    counts = Counter(
+        (str(row.request_data["strategy_key"]), row.status, blocks.get(str(row.id), row.detail))
+        for row in waiting
+    )
+    return tuple(UnfilledRow(key, status, reason, count)
+                 for (key, status, reason), count in sorted(counts.items()))
 
 
 def build_report(
@@ -99,6 +133,7 @@ def build_report(
         ledger_issues=ledger.issue_count,
         rows=tuple(sorted(rows, key=lambda row: row.realized_pnl, reverse=True)),
         freshness=summarize_ages(legs),
+        unfilled=_unfilled(session, deployments),
     )
 
 
@@ -119,6 +154,19 @@ def render_markdown(report: ForwardReport) -> str:
         f"{row.worst_drawdown:,.2f} |"
         for row in report.rows
     ]
+    if report.unfilled:
+        lines += [
+            "",
+            "Armed with no trade. These are missing from the results above, so the strategies",
+            "that did trade are not a full sample of the frozen set.",
+            "",
+            "| Strategy | Status | Times | Last block or check |",
+            "|---|---|---|---|",
+        ]
+        lines += [
+            f"| {row.strategy_key.replace('_', ' ')} | {row.status} | {row.count} | {row.reason} |"
+            for row in report.unfilled
+        ]
     fresh = report.freshness
     if fresh:
         lines += [

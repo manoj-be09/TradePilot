@@ -39,6 +39,7 @@ Scope: NIFTY 50 futures and options, **paper trading only**. Live orders are for
 ## Known limits
 
 - Local services stop if the machine sleeps or the process that started the supervisor ends.
+- The 26 forward templates cannot all be open together. The 5% daily budget counts open maximum loss, so it limits open risk before the 10% aggregate cap does, and long-premium templates often exceed the 2% per-trade cap on a full-week expiry. Blocked entries keep waiting and may fill later in the week, closer to expiry, in an order that follows arming order and freed risk. Compare templates with that in mind; the nightly report lists each armed entry with no trade and why.
 - Proposed exit rules are exploratory rules of thumb, and their rupee amounts stay fixed for a whole forward period.
 - Not every strategy can be started with one click from Trade: only those the ranking shows. The rest go through the strategy builder.
 

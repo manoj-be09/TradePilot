@@ -1,15 +1,15 @@
 """A read-only daily summary of a frozen forward paper period. All figures are simulated."""
 
 from collections import Counter
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from packages.core.charges import order_charges
 from packages.database.models import (
     AuditEvent,
     PaperAccount,
@@ -17,6 +17,7 @@ from packages.database.models import (
     PaperOrder,
     PaperTrade,
 )
+from packages.paper_trading.costs import summarize_costs
 from packages.paper_trading.forward_plan import ForwardPlan
 from packages.paper_trading.transactions import reconcile_account
 from packages.recorder.freshness import summarize_ages
@@ -32,6 +33,9 @@ class StrategyRow:
     wins: int
     realized_pnl: Decimal
     worst_drawdown: Decimal
+    modeled_charges: Decimal = Decimal(0)
+    after_charges: Decimal = Decimal(0)
+    trades_with_charges: int = 0
 
 
 @dataclass(frozen=True)
@@ -56,6 +60,18 @@ class ForwardReport:
     @property
     def total_realized(self) -> Decimal:
         return sum((row.realized_pnl for row in self.rows), Decimal(0))
+
+    @property
+    def total_after_charges(self) -> Decimal:
+        return sum((row.after_charges for row in self.rows), Decimal(0))
+
+    @property
+    def closed_trades(self) -> int:
+        return sum(row.closed_trades for row in self.rows)
+
+    @property
+    def trades_with_charges(self) -> int:
+        return sum(row.trades_with_charges for row in self.rows)
 
 
 def drawdown(pnls: list[Decimal]) -> Decimal:
@@ -86,6 +102,28 @@ def _unfilled(session: Session, deployments: list[PaperDeployment]) -> tuple[Unf
                  for (key, status, reason), count in sorted(counts.items()))
 
 
+def _round_trip_charges(trade: PaperTrade, orders: list[PaperOrder]) -> Decimal | None:
+    """The backtests' charge schedule on every filled leg, or None if a fill is not on record.
+
+    A trade settled at expiry has no recorded closing fills, so its charges are never estimated.
+    """
+    summary = summarize_costs(trade.status, trade.realized_pnl, orders)
+    if summary["pnl_after_modeled_charges"] is None:
+        return None
+    total = Decimal(0)
+    try:
+        for order in orders:
+            for fill in order.fill_snapshot["fills"]:
+                total += order_charges(
+                    instrument="OPT", side=fill["side"],
+                    price=Decimal(str(fill["fill_price"])),
+                    quantity=int(fill["quantity_units"]), trade_date=order.created_at.date(),
+                ).total
+    except (KeyError, TypeError, ValueError, InvalidOperation):
+        return None
+    return total
+
+
 def build_report(
     session: Session, plan: ForwardPlan, account: PaperAccount, as_of: date
 ) -> ForwardReport:
@@ -103,6 +141,12 @@ def build_report(
             select(PaperTrade).where(PaperTrade.id.in_(trade_ids))
         )
     } if trade_ids else {}
+    orders = list(session.scalars(
+        select(PaperOrder).where(PaperOrder.trade_id.in_(trade_ids))
+    )) if trade_ids else []
+    orders_by_trade: dict[Any, list[PaperOrder]] = {}
+    for order in orders:
+        orders_by_trade.setdefault(order.trade_id, []).append(order)
     keys = sorted({str(row.request_data["strategy_key"]) for row in deployments})
     rows = []
     for key in keys:
@@ -113,6 +157,13 @@ def build_report(
             key=lambda row: (row.closed_at is None, row.closed_at),
         )
         pnls = [row.realized_pnl for row in closed if row.realized_pnl is not None]
+        # Only a complete, reconciled round trip counts; missing charges are never estimated.
+        costs = [
+            (row.realized_pnl - charges, charges) for row, charges in (
+                (row, _round_trip_charges(row, orders_by_trade.get(row.id, [])))
+                for row in closed
+            ) if charges is not None and row.realized_pnl is not None
+        ]
         rows.append(StrategyRow(
             strategy_key=key,
             armed=len(mine),
@@ -122,10 +173,10 @@ def build_report(
             wins=sum(pnl > 0 for pnl in pnls),
             realized_pnl=sum(pnls, Decimal(0)),
             worst_drawdown=drawdown(pnls),
+            modeled_charges=sum((charges for _, charges in costs), Decimal(0)),
+            after_charges=sum((after for after, _ in costs), Decimal(0)),
+            trades_with_charges=len(costs),
         ))
-    orders: Iterable[PaperOrder] = session.scalars(
-        select(PaperOrder).where(PaperOrder.trade_id.in_(trade_ids))
-    ) if trade_ids else []
     legs = [leg for order in orders for leg in order.fill_snapshot.get("fills", [])]
     ledger = reconcile_account(session, account)
     return ForwardReport(
@@ -137,21 +188,33 @@ def build_report(
     )
 
 
+def _after_charges(row: StrategyRow) -> str:
+    if row.trades_with_charges < row.closed_trades:
+        return f"{row.trades_with_charges} of {row.closed_trades} trades only"
+    return f"{row.after_charges:+,.2f}"
+
+
 def render_markdown(report: ForwardReport) -> str:
     lines = [
         f"# Forward paper report, {report.as_of.isoformat()}",
         "",
         f"Simulated, not advice. Period {report.start.isoformat()} to {report.end.isoformat()}.",
         f"Ledger: {report.ledger_status} ({report.ledger_issues} issues).",
-        f"Realized P&L of the frozen strategies: {report.total_realized:+,.2f}.",
+        f"Realized P&L of the frozen strategies, before charges: {report.total_realized:+,.2f}.",
+        f"After estimated charges: {report.total_after_charges:+,.2f}, covering "
+        f"{report.trades_with_charges} of {report.closed_trades} closed trades.",
+        "Charges use the backtests' schedule (brokerage, STT, exchange, SEBI, stamp duty, GST) on "
+        "each filled leg. They are not reviewed against an account statement, and they are not "
+        "the illustrative charges shown on Trade.",
         "",
-        "| Strategy | Armed | Waiting | Open | Closed | Won | Realized | Worst drawdown |",
-        "|---|---|---|---|---|---|---|---|",
+        "| Strategy | Armed | Waiting | Open | Closed | Won | Realized | Charges | After charges "
+        "| Worst drawdown |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     lines += [
         f"| {row.strategy_key.replace('_', ' ')} | {row.armed} | {row.waiting} | "
         f"{row.open_trades} | {row.closed_trades} | {row.wins} | {row.realized_pnl:+,.2f} | "
-        f"{row.worst_drawdown:,.2f} |"
+        f"{row.modeled_charges:,.2f} | {_after_charges(row)} | {row.worst_drawdown:,.2f} |"
         for row in report.rows
     ]
     if report.unfilled:

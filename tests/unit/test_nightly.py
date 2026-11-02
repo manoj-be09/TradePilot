@@ -12,10 +12,19 @@ from sqlalchemy.pool import StaticPool
 
 import apps.nightly.main as nightly
 from apps.nightly.main import IST, due, run_once
+from packages.core.charges import order_charges
 from packages.database import futures_models  # noqa: F401
 from packages.database.base import Base
-from packages.database.models import AuditEvent, PaperAccount, PaperDeployment, PaperTrade, User
+from packages.database.models import (
+    AuditEvent,
+    PaperAccount,
+    PaperDeployment,
+    PaperOrder,
+    PaperTrade,
+    User,
+)
 from packages.database.sqlite_backup import BackupError, backup_database
+from packages.paper_trading.costs import cost_snapshot
 from packages.paper_trading.forward_plan import ForwardPlan
 from packages.paper_trading.forward_report import build_report, drawdown, render_markdown
 
@@ -181,6 +190,46 @@ def test_the_report_says_why_armed_strategies_have_no_trade(factory):
     text = render_markdown(report)
     assert "not a full sample" in text and "per-trade risk cap" in text
     assert "strip" not in text
+
+
+def _order(session, trade, action, flow, price):
+    side = "BUY" if action == "OPEN" else "SELL"
+    fills = [{"instrument_key": "NSE_FO|1", "quantity_units": 65, "fill_price": price,
+              "side": side}]
+    session.add(PaperOrder(
+        account_id=trade.account_id, trade_id=trade.id, user_id=trade.user_id, action=action,
+        status="EXECUTED", net_cash_flow=Decimal(flow), created_at=NOW,
+        fill_snapshot={"fills": fills, "modeled_costs": cost_snapshot(fills)},
+    ))
+
+
+def test_the_report_shows_results_after_charges_and_never_guesses_missing_ones(factory):
+    with factory() as session:
+        account = _account(session)
+        _trade(session, account, Decimal("100"), 0)
+        trade = session.query(PaperTrade).one()
+        _order(session, trade, "OPEN", "-6500", "100")
+        _order(session, trade, "CLOSE", "6600", "200")
+        session.commit()
+        one = build_report(session, PLAN, account, date(2026, 11, 3))
+        _trade(session, account, Decimal("50"), 1)
+        session.commit()
+        both = build_report(session, PLAN, account, date(2026, 11, 3))
+    expected = sum(
+        order_charges(instrument="OPT", side=side, price=Decimal(price), quantity=65,
+                      trade_date=NOW.date()).total
+        for side, price in (("BUY", "100"), ("SELL", "200"))
+    )
+    after = Decimal("100") - expected
+    row = one.rows[0]
+    assert expected > 40 and (row.modeled_charges, row.after_charges) == (expected, after)
+    text = render_markdown(one)
+    assert "before charges: +100.00" in text
+    assert f"After estimated charges: {after:+,.2f}, covering 1 of 1 closed trades" in text
+    assert "not reviewed against an account statement" in text
+    assert both.total_realized == Decimal("150") and both.total_after_charges == after
+    assert "covering 1 of 2 closed trades" in render_markdown(both)
+    assert "1 of 2 trades only" in render_markdown(both)
 
 
 def test_due_once_per_day_after_the_close_in_india_time():

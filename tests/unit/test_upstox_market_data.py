@@ -550,7 +550,29 @@ def test_nfo_session_uses_date_specific_read_only_market_timings():
     assert session is not None
     assert session.exchange == "NFO"
     assert session.start == start
-    assert session.end == end
+    assert session.end == datetime(2026, 9, 28, 15, 30, tzinfo=zone)
+
+
+def test_nfo_session_keeps_an_evening_special_session_and_an_earlier_close():
+    from zoneinfo import ZoneInfo
+
+    zone = ZoneInfo("Asia/Kolkata")
+    for start_at, end_at in (((18, 0), (19, 0)), ((9, 15), (13, 0))):
+        start = datetime(2026, 11, 8, *start_at, tzinfo=zone)
+        end = datetime(2026, 11, 8, *end_at, tzinfo=zone)
+        provider = UpstoxMarketDataProvider(
+            "private-test-token",
+            transport=httpx.MockTransport(lambda _request, s=start, e=end: httpx.Response(
+                200,
+                json={"status": "success", "data": [
+                    {"exchange": "NFO", "start_time": int(s.timestamp() * 1000),
+                     "end_time": int(e.timestamp() * 1000)}
+                ]},
+            )),
+        )
+        session = asyncio.run(provider.get_nfo_session(date(2026, 11, 8)))
+        assert session is not None
+        assert (session.start, session.end) == (start, end)
 
 
 def test_nfo_session_fails_closed_when_missing_or_malformed():

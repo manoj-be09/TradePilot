@@ -58,7 +58,7 @@ Status row shows **Market data: not verified**; the worker logs quote or provide
 
 ## Expiry day
 
-- Short-dated positions are squared off `PAPER_EXPIRY_SQUARE_OFF_MINUTES_BEFORE_CLOSE` (default 20) minutes before the scheduled close. Entries into an expiring contract are refused inside that window.
+- Short-dated positions are squared off `PAPER_EXPIRY_SQUARE_OFF_MINUTES_BEFORE_CLOSE` (default 20) minutes before the scheduled close, so 15:10 on a normal day. Upstox's session times run to 15:40; paper entries and exits stop at 15:30, and an evening special session keeps its own times. Entries into an expiring contract are refused inside that window.
 - Short options expiring today also carry the 2% additional exposure margin.
 - A position that could not be squared off shows **Expired paper positions needing settlement** on Trade. Preview the settlement against the official NSE index close, review the archive fingerprint, then record it. Nothing settles automatically.
 

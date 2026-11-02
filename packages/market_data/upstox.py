@@ -1,6 +1,6 @@
 import json
 from collections.abc import AsyncIterator, Callable
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import quote, urlparse
@@ -245,6 +245,11 @@ class UpstoxMarketDataProvider:
             or end.astimezone(zone).date() != trading_day
         ):
             raise MarketDataProviderError("Upstox NFO market timings are invalid")
+        # Upstox's end_time runs to 15:40; no paper fill after the 15:30 close. Evening
+        # special sessions such as Muhurat start later and keep their own end.
+        close = datetime.combine(trading_day, time(15, 30), zone)
+        if start < close:
+            end = min(end, close)
         return ExchangeSession(exchange=exchange, start=start, end=end)
 
     async def get_option_contracts(

@@ -19,7 +19,7 @@ import { StrategyDetails } from "./StrategyDetails";
 import { STRATEGY_CATALOG, STRATEGY_CATALOG_META, StrategyCatalogStatus, StrategyMarketBias } from "./strategyCatalog";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
-const MAX_WAITING_PAPER_STRATEGIES = 26;
+const MAX_WAITING_PAPER_STRATEGIES = 100; // Mirrors apps/api/services/futures_paper.py.
 
 type TokenResponse = {
   access_token: string;

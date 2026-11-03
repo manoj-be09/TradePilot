@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from test_paper_trading import FakeUpstoxProvider, _token
 
+from apps.api.services.futures_paper import MAX_WAITING_PAPER_STRATEGIES
 from apps.api.settings import get_settings
 from apps.paper_worker.main import run_cycle
 from packages.database.models import AuditEvent, PaperDeployment, PaperOrder, PaperTrade
@@ -731,7 +732,7 @@ def test_batch_sized_arming_respects_slots_retries_and_cancellation(client, monk
     with factory() as session:
         first = session.get(PaperDeployment, UUID(armed[0][2]["id"]))
         assert first is not None
-        for index in range(21):
+        for index in range(MAX_WAITING_PAPER_STRATEGIES - 5):
             session.add(PaperDeployment(
                 user_id=first.user_id,
                 command_key=f"batch_extra_{index}_{uuid4().hex}",
@@ -742,7 +743,8 @@ def test_batch_sized_arming_respects_slots_retries_and_cancellation(client, monk
                 updated_at=datetime.now(timezone.utc),
             ))
         session.commit()
-    assert len(client.get("/paper/deployments", headers=headers).json()) == 26
+    waiting = client.get("/paper/deployments", headers=headers).json()
+    assert len(waiting) == MAX_WAITING_PAPER_STRATEGIES
 
     sixth = get_strategy(keys[5])
     assert sixth is not None
@@ -751,7 +753,7 @@ def test_batch_sized_arming_respects_slots_retries_and_cancellation(client, monk
     sixth_headers = {**headers, "Idempotency-Key": f"batch_{keys[5]}_{uuid4().hex}"}
     refused = client.post("/paper/deployments", headers=sixth_headers, json=sixth_request)
     assert refused.status_code == 409
-    assert "26 paper strategies" in refused.json()["detail"]
+    assert f"{MAX_WAITING_PAPER_STRATEGIES} paper strategies" in refused.json()["detail"]
 
     first_headers, first_request, first_response = armed[0]
     replay = client.post("/paper/deployments", headers=first_headers, json=first_request)
@@ -766,7 +768,7 @@ def test_batch_sized_arming_respects_slots_retries_and_cancellation(client, monk
     accepted = client.post("/paper/deployments", headers=sixth_headers, json=sixth_request)
     assert accepted.status_code == 201 and accepted.json()["status"] == "WAITING_FOR_ENTRY"
     assert len([item for item in client.get("/paper/deployments", headers=headers).json()
-                if item["status"] == "WAITING_FOR_ENTRY"]) == 26
+                if item["status"] == "WAITING_FOR_ENTRY"]) == MAX_WAITING_PAPER_STRATEGIES
     assert client.get("/paper/trades", headers=headers).json()["trades"] == []
 
 

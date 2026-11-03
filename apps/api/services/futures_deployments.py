@@ -207,7 +207,9 @@ async def arm_futures_deployment(
             PaperDeployment.status == "WAITING_FOR_ENTRY",
         )).all()
         if len(waiting) >= MAX_WAITING_PAPER_STRATEGIES:
-            raise FuturesError(409, "At most 26 paper strategies can wait for entry")
+            raise FuturesError(
+                409, f"At most {MAX_WAITING_PAPER_STRATEGIES} paper strategies can wait for entry"
+            )
         if any(
             row.instrument_kind == "FUTURES"
             and row.request_data.get("strategy_key") == template.key

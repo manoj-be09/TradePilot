@@ -1,9 +1,10 @@
 """Run with python -m apps.nightly.main; after each close it backs up and checks the paper run.
 
-Each day after 16:30 IST it makes a verified database backup, checks the paper ledger and
-writes a forward report to work/forward-reports. A failed step is logged and the next step
-still runs. A ledger mismatch already pauses new paper cash actions by itself; this job
-only reads the account, and places no orders.
+Each day after 16:30 IST it makes a verified database backup, checks the paper ledger,
+writes a forward report to work/forward-reports and runs the research rule engine over the
+imported history. A failed step is logged and the next step still runs. A ledger mismatch
+already pauses new paper cash actions by itself; this job only reads the account, and places
+no orders.
 """
 
 import argparse
@@ -19,6 +20,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
+from apps.api.settings import get_settings
+from packages.backtesting.book_loader import load_books, recorded_spread
+from packages.backtesting.published_strategies import Market
+from packages.backtesting.rule_engine import run_engine
 from packages.database.models import PaperAccount, User
 from packages.database.session import build_session_factory
 from packages.database.sqlite_backup import BackupError, backup_database
@@ -33,6 +38,8 @@ BACKUPS = Path("work/backups")
 REPORTS = Path("work/forward-reports")
 DEFAULT_PLAN = Path("work/forward-paper.json")
 LOW_DISK_GB = 10.0
+# Beside the database: the far strikes the condors need, from scripts/import-far-strikes.py.
+WIDE_HISTORY_NAME = "history-wide.db"
 
 
 def disk_free_gb(path: Path) -> float:
@@ -62,6 +69,20 @@ def write_report(
     return report.ledger_status
 
 
+def run_rule_engine(factory: sessionmaker[Session], wide: Path, now: datetime) -> str:
+    """Score frozen research rules on newly imported sessions; simulated, places nothing."""
+    if not wide.exists():
+        return "SKIPPED_NO_WIDE_HISTORY"
+    books = load_books(get_settings().database_url, date.max,
+                       [f"sqlite:///{wide.as_posix()}"], regular_hours_only=True)
+    with factory() as session:
+        decisions = run_engine(session, Market(books, recorded_spread("median_pct")), now)
+        session.commit()
+    for decision in decisions:
+        logger.warning("Rule engine: %s", decision)
+    return f"{len(decisions)} decision(s)"
+
+
 def run_once(
     factory: sessionmaker[Session], plan: ForwardPlan, database: Path, backups: Path,
     reports: Path, now: datetime,
@@ -82,6 +103,14 @@ def run_once(
     except (SQLAlchemyError, OSError) as error:
         logger.error("Report failed: %s", type(error).__name__)
         results["ledger"] = "FAILED"
+    try:
+        results["rule_engine"] = (
+            run_rule_engine(factory, database.parent / WIDE_HISTORY_NAME, now)
+            if now.astimezone(IST).time() >= RUN_AFTER else "SKIPPED_BEFORE_CLOSE"
+        )
+    except Exception as error:  # noqa: BLE001 - one failed step must not stop the others
+        logger.error("Rule engine failed: %s", type(error).__name__)
+        results["rule_engine"] = "FAILED"
     if results["ledger"] != "MATCHED":
         logger.error("Ledger needs review: %s", results["ledger"])
     free = disk_free_gb(database.parent)
@@ -116,7 +145,8 @@ def main() -> None:
             results = run_once(factory, plan, DATABASE, BACKUPS, REPORTS, now)
             logger.info("Nightly: %s", results)
             last_run = now.astimezone(IST).date()
-        if args.once or last_run is not None and last_run > plan.end:
+        # Keeps running after the forward period: the rule engine needs months of sessions.
+        if args.once:
             return
         clock.sleep(300)
 

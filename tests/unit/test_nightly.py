@@ -119,6 +119,7 @@ def test_low_disk_space_is_reported(tmp_path, factory, monkeypatch, caplog):
         factory, PLAN, tmp_path / "absent.db", tmp_path / "backups", tmp_path / "reports", NOW,
     )
     assert results["disk_free_gb"] == "4.0"
+    assert results["rule_engine"] == "SKIPPED_NO_WIDE_HISTORY"
     assert "Low disk space" in caplog.text
     assert "Disk free: 4.0 GB. LOW" in (tmp_path / "reports" / "2026-11-03.md").read_text()
 

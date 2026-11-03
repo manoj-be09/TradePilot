@@ -15,6 +15,7 @@ Scope: NIFTY 50 futures and options, **paper trading only**. Live orders are for
 - Versioned charge model (brokerage, STT, exchange, SEBI, stamp duty, GST) used by backtests, futures fills and the nightly forward report. Option trades on Trade show a smaller illustrative 0.10% of premium instead, and neither is deducted from paper option cash.
 - Automatic demotion: a strategy's new entries pause on 5 consecutive closed paper losses, when its closed paper drawdown passes 2× its backtest baseline (6% of capital per lot without one), or when a closed trade has no usable P&L. It then ranks as blocked and can't be armed.
 - Rule-based promotion: after 7 days a paused strategy goes on one-lot probation; 5 closed probation trades with a positive total, inside tighter limits and with a saved baseline, make it eligible again. Every step is listed on Research. The forward runner skips a paused strategy and keeps arming the others.
+- Research rule engine (`packages/backtesting/rule_engine.py`): each night the two forward-only night condors are scored on imported sessions from 2 November 2026 into a shadow ledger. A version is promoted only past a strict bar (20 trades, 90 days, positive after charges, study loss limits, t of at least 4.47, the one-in-twenty line across 12,500 rules tried). It is demoted on a loss streak, a limit breach or drift below its shadow record, and a demoted newer version rolls back to the one it replaced. Every decision is listed on Research. Promotion clears a rule for a separate paper account only; nothing arms it there yet.
 - Ledger reconciliation check; a mismatch pauses new paper cash actions.
 - Supervisor: one command starts all local paper processes and restarts any that crash (`scripts/start-all-local.ps1`).
 - Forward paper runner: keeps a frozen set of saved strategy versions armed once per expiry for a fixed period, through the same checks as the web app (`scripts/start-forward-runner-local.ps1`).
@@ -31,7 +32,7 @@ Scope: NIFTY 50 futures and options, **paper trading only**. Live orders are for
 ## What's next
 
 1. Forward paper period: all 26 option templates frozen, 2 November to 14 December 2026. The first period (30 October) was stopped the same day because exits fired within minutes; the exit rules were fixed and it restarts on 2 November.
-2. Score the two forward-only research rules after new expiries are imported (`RUNBOOK.md`). They are not in paper trading. The first of them failed a rougher test on 2019 to 2024 daily prices, so expect less from it. Backtest spreads are calibrated and drawdown baselines are saved, so promotion can now run on its own rules.
+2. Import new expiries and their far strikes (`RUNBOOK.md`); the nightly job's rule engine then scores the two forward-only research rules. They are not in paper trading. The first of them failed a rougher test on 2019 to 2024 daily prices, so expect less from it. Backtest spreads are calibrated and drawdown baselines are saved, so promotion can now run on its own rules.
 3. After the period: a decision on a 1-lot live pilot (`LIVE_TRADING.md`).
 4. Deferred until after that decision: removing backend equity code and tables, and splitting `main.py` and `page.tsx`.
 5. Owner steps: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` and `TELEGRAM_ALERT_USER_EMAIL` for alerts; `scripts/install-autostart.ps1` to start at sign-in.

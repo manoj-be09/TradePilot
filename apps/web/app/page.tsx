@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { WorkerStatus } from "./WorkerStatus";
 import { PaperStrategyResults } from "./ObservedStrategyPerformance";
+import { RuleEngineTrail } from "./RuleEngine";
 import { StrategyEligibilityHistory, StrategyPauses } from "./StrategyPauses";
 import { ExpiryTestControl } from "./ExpiryTestControl";
 import { OptionDeploymentDecisions } from "./OptionDeploymentDecisions";
@@ -3042,7 +3043,7 @@ export default function Home() {
               {securityActivity.length ? <ul>{securityActivity.map((event) => <li key={event.id}><span>{SECURITY_ACTIVITY_LABELS[event.event_type]}</span><time dateTime={event.created_at}>{formatTime(event.created_at)}</time></li>)}</ul> : !securityActivityBusy && !securityActivityError ? <p className="muted">No activity available yet.</p> : null}
             </div>
           </section> : null}
-          {activeSection === "research" ? <><StrategyEligibilityHistory token={token} apiUrl={API_URL} /><PaperStrategyResults token={token} apiUrl={API_URL} /><ResearchWorkspace key={token} token={token} apiUrl={API_URL} /></> : <>
+          {activeSection === "research" ? <><StrategyEligibilityHistory token={token} apiUrl={API_URL} /><RuleEngineTrail token={token} apiUrl={API_URL} /><PaperStrategyResults token={token} apiUrl={API_URL} /><ResearchWorkspace key={token} token={token} apiUrl={API_URL} /></> : <>
           {indexCatalogError ? <p role="alert">{indexCatalogError}</p> : null}
           {activeSection === "charts" ? <ChartWorkspace token={token} apiUrl={API_URL} /> : null}
           {activeSection === "charts" ? <>

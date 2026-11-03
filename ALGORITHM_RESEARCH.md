@@ -208,6 +208,8 @@ Both exit at the next session's close, including when that is expiry day, or the
 
 They are not in the 26 frozen paper templates and do not change the forward period. They are scored afterwards with `--study night --forward`. Whether either moves into paper trading is the owner's decision.
 
+**Rule engine, 3 November 2026.** The owner chose to let the research rule engine decide this from forward evidence. Each night it scores both rules on imported sessions from 2 November 2026 only, as version 1 with the settings above, and promotes a version only with at least 20 trades over 90 days, a positive average after charges, the per-trade and drawdown limits above, and a t value of at least 4.47: the one-sided Bonferroni line at 5% across about 12,500 rules tried on this history. At about 30 trades a year that bar is far off, which is intended. Promotion clears a rule for a separate paper account, never the frozen forward account; arming it there is not built yet.
+
 Numbers are in `work/bt/rich-*.json` and `work/explore/`, private and local.
 
 ## Older years test, fixed on 1 November 2026 before any 2019 to 2024 price was read

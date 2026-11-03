@@ -35,6 +35,7 @@ from packages.database.sqlite_backup import BackupError, backup_database
 from packages.learning.engine import link_paper_trades, load_hypotheses, run_learning
 from packages.learning.features import Context
 from packages.learning.forward_bars import merge_books, recorded_books
+from packages.learning.ideas import GENERATED, generate, save_generated
 from packages.paper_trading.forward_plan import ForwardPlan, load_plan
 from packages.paper_trading.forward_report import build_report, render_markdown
 
@@ -137,7 +138,16 @@ def run_learning_loop(
     market = Market(merge_books(history.books, recorded), history.half_spread_pct)
     with factory() as session:
         link_paper_trades(session, now)
-        decisions = run_learning(session, market, now, load_hypotheses(hypotheses),
+        known = load_hypotheses(hypotheses)
+        if GENERATED.exists():
+            known += load_hypotheses(GENERATED)
+        if len({item.key for item in known}) != len(known):
+            raise ValueError("A generated hypothesis reuses an owner's key")
+        # Ideas from the ledger as it stood; they are frozen from the next session.
+        fresh = generate(session, market, now.astimezone(IST).date(),
+                         {item.key for item in known})
+        save_generated(GENERATED, fresh)
+        decisions = run_learning(session, market, now, known + fresh,
                                  Context.load(get_settings().database_url))
         session.commit()
     for decision in decisions:

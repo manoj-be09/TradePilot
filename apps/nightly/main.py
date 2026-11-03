@@ -33,6 +33,7 @@ from packages.database.models import PaperAccount, User
 from packages.database.session import build_session_factory
 from packages.database.sqlite_backup import BackupError, backup_database
 from packages.learning.engine import link_paper_trades, load_hypotheses, run_learning
+from packages.learning.forward_bars import merge_books, recorded_books
 from packages.paper_trading.forward_plan import ForwardPlan, load_plan
 from packages.paper_trading.forward_report import build_report, render_markdown
 
@@ -48,6 +49,7 @@ LOW_DISK_GB = 10.0
 WIDE_HISTORY_NAME = "history-wide.db"
 # Private: the v2 hypotheses and their pre-registered effects stay out of the repository.
 HYPOTHESES = Path("work/learning/hypotheses.json")
+RECORDED_LOOKBACK = timedelta(days=60)
 
 
 def disk_free_gb(path: Path) -> float:
@@ -128,7 +130,10 @@ def run_learning_loop(
     if not wide.exists():
         return "SKIPPED_NO_WIDE_HISTORY"
     # shortcut: loads the books again after the rule engine; share them if the night runs long.
-    market = _research_market(wide)
+    history = _research_market(wide)
+    # Recorder minutes fill live sessions the imports do not have yet, at no API cost.
+    recorded = recorded_books(get_settings().database_url, now.date() - RECORDED_LOOKBACK)
+    market = Market(merge_books(history.books, recorded), history.half_spread_pct)
     with factory() as session:
         link_paper_trades(session, now)
         decisions = run_learning(session, market, now, load_hypotheses(hypotheses))

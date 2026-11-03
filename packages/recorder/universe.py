@@ -29,7 +29,8 @@ class RecordedSpec:
 class UniverseConfig:
     weekly_expiries: int = 3
     futures_count: int = 3
-    strikes_each_side: int = 20
+    # ±2,000 points at 50-point strikes, so far wings and low-delta shorts are recorded too.
+    strikes_each_side: int = 40
     recenter_margin: int = 5
 
 

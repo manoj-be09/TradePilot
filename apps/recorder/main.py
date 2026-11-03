@@ -24,7 +24,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Private NIFTY F&O Feed V3 recorder")
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument("--weekly-expiries", type=int, default=3)
-    parser.add_argument("--strikes-each-side", type=int, default=20)
+    parser.add_argument("--strikes-each-side", type=int, default=40)
     parser.add_argument(
         "--rebuild", type=date.fromisoformat, metavar="YYYY-MM-DD",
         help="Re-derive database rows for one recorded day from raw files, then exit",

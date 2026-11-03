@@ -1,6 +1,6 @@
 # Learning loop v2
 
-Branch `feat/learning-v2`. It is not merged and not running: the live system keeps v1 (the research rule engine plus the night condor override) until the owner says to apply v2. Every result here is simulated and none of it is investment advice.
+Merged and live since 3 November 2026: the night runner reads its rules from the v2 ledger. Every result here is simulated and none of it is investment advice.
 
 ## Owner decisions (3 November 2026)
 
@@ -11,7 +11,7 @@ Branch `feat/learning-v2`. It is not merged and not running: the live system kee
 
 ## What changes from v1
 
-| v1 (live) | v2 (this branch) |
+| v1 | v2 |
 |---|---|
 | A fixed t ≥ 4.47 over 12,500 backtest trials | Always-valid betting e-process (`packages/learning/evidence.py`), safe to check every night |
 | Corrects for backtest trials | Corrects for forward hypotheses. Each gets a slice of one 5% budget as it enters shadow; backtests spend nothing (`budget.py`) |
@@ -23,7 +23,7 @@ Branch `feat/learning-v2`. It is not merged and not running: the live system kee
 
 Kept from v1: frozen versions, the append-only decision trail, champion/challenger within a family, rollback, and the ₹20,000 per-trade and ₹60,000 drawdown limits.
 
-## Phase 0 fixes (also on this branch)
+## Phase 0 fixes
 
 - The nightly job imports newly expired expiries and far strikes (`import_recent_history`), so the shadow ledger no longer depends on manual runs.
 - The night runner sends phone alerts through the relay account when it opens a trade, is blocked, skips for missing data, or fails its cache import.
@@ -37,7 +37,7 @@ Kept from v1: frozen versions, the append-only decision trail, champion/challeng
 - **A ₹3,000-a-trade loser:** dropped within 100 trades in most runs.
 - **Speed:** forward evidence is slow at these effect sizes. That is the cost of not fooling ourselves.
 
-## Built on this branch
+## Built
 
 1. **Probation runner** (`apps/night_runner`, `tradable_rules` in `engine.py`): once the hypothesis file exists, the night runner reads its rules each morning from the v2 ledger. It trades rules in probation or approved, and the owner's overrides until evidence stops them, in the same separate paper account (₹10 lakh). Non-override trades are named "Probation". A rule stopped by either loop is not traded.
 2. **Forward bars from the recorder** (`forward_bars.py`): recorder minutes fold into 5-minute IST bars. They fill sessions the history imports lack, and imported bars always win, so nightly shadow scoring makes no API calls. The recorder now keeps ±40 strikes.
@@ -72,9 +72,9 @@ Kept from v1: frozen versions, the append-only decision trail, champion/challeng
 - **Greek caps are fixed.** The caps (delta 40 index points, vega ₹3,000 a point) are starting values, not fitted ones.
 - **LLM data sharing.** LLM ideas send aggregate simulated results to the Anthropic API. Leave `ANTHROPIC_API_KEY` unset to keep them off.
 
-## Applying v2 later
+## How v2 was applied
 
-1. Merge this branch. Migration `0041_learning_v2` adds three tables and changes nothing existing.
+1. Merge the branch. Migration `0041_learning_v2` adds three tables and changes nothing existing.
 2. Write `work/learning/hypotheses.json` with the two condors:
    - keyed like the v1 rules (`very_rich_night_condor`, `very_rich_night_condor_920`);
    - with `override: true`, their pre-registered effects, and an every-day baseline.

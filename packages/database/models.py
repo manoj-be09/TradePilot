@@ -8,6 +8,7 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -800,6 +801,84 @@ class ResearchRuleEvent(Base):
     rule_version_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("research_rule_versions.id"))
     rule_key: Mapped[str] = mapped_column(String(64))
     version: Mapped[int] = mapped_column(Integer)
+    event_type: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(String(32))
+    summary: Mapped[str] = mapped_column(String(256))
+    details: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+LEARNING_STAGES = ("UNDERPOWERED", "SHADOW", "PROBATION", "APPROVED", "SUPERSEDED", "DEMOTED",
+                   "RETIRED", "BASELINE")
+LEARNING_EVENTS = ("REGISTERED", "REFUSED", "TO_PROBATION", "APPROVED", "SUPERSEDED",
+                   "DEMOTED", "ROLLED_BACK", "RETIRED")
+
+
+class LearningHypothesis(Base):
+    """One frozen forward hypothesis of the v2 loop, with its slice of the error budget."""
+
+    __tablename__ = "learning_hypotheses"
+    __table_args__ = (
+        UniqueConstraint("key", name="uq_learning_hypothesis_key"),
+        UniqueConstraint("budget_sequence", name="uq_learning_budget_sequence"),
+        CheckConstraint("stage IN ('" + "', '".join(LEARNING_STAGES) + "')",
+                        name="ck_learning_stage"),
+        CheckConstraint("origin IN ('HUMAN', 'GRID', 'LLM')", name="ck_learning_origin"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    key: Mapped[str] = mapped_column(String(96))
+    family: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(32))
+    params: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    forward_from: Mapped[date] = mapped_column(Date)
+    origin: Mapped[str] = mapped_column(String(8))
+    override: Mapped[bool] = mapped_column(Boolean, default=False)
+    baseline_key: Mapped[str | None] = mapped_column(String(96))
+    rationale: Mapped[str] = mapped_column(Text)
+    preregistration: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    budget_sequence: Mapped[int | None] = mapped_column(Integer)
+    alpha: Mapped[float | None] = mapped_column(Float)
+    stage: Mapped[str] = mapped_column(String(16))
+    stage_since: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    latest_check: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class LearningObservation(Base):
+    """One forward trade of a hypothesis: simulated in shadow, or filled in paper probation."""
+
+    __tablename__ = "learning_observations"
+    __table_args__ = (
+        UniqueConstraint("hypothesis_id", "session", "source", name="uq_learning_observation"),
+        CheckConstraint("source IN ('SHADOW', 'PAPER')", name="ck_learning_source"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    hypothesis_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("learning_hypotheses.id"),
+                                                index=True)
+    session: Mapped[date] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(String(8))
+    net_pnl: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    max_loss: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    max_gain: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class LearningEvent(Base):
+    """Append-only trail of every v2 decision, with the evidence it used."""
+
+    __tablename__ = "learning_events"
+    __table_args__ = (
+        CheckConstraint("event_type IN ('" + "', '".join(LEARNING_EVENTS) + "')",
+                        name="ck_learning_event_type"),
+        Index("ix_learning_events_time", "occurred_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    hypothesis_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("learning_hypotheses.id"))
+    key: Mapped[str] = mapped_column(String(96))
     event_type: Mapped[str] = mapped_column(String(16))
     reason: Mapped[str] = mapped_column(String(32))
     summary: Mapped[str] = mapped_column(String(256))

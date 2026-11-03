@@ -1,7 +1,7 @@
 """The live night condor decision is the frozen research rule, and the runner trades it once."""
 
 import asyncio
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from math import log, sqrt
 from statistics import NormalDist
@@ -361,3 +361,41 @@ def test_the_runner_applies_a_hypothesis_filter_live(factory, tmp_path):
     asyncio.run(runner.cycle(at_entry))
     assert opened == []
     assert "Filters not met" in runner.state.decisions["filtered"].reason
+
+
+def test_recorder_minutes_fill_a_past_session_the_history_api_has_not_served(
+        factory, tmp_path):
+    from packages.database.recorder_models import MarketSnapshot1m, RecordedInstrument
+
+    # The provider serves nothing for the day before today; the recorder has every minute of it.
+    runner = _runner(factory, tmp_path, [], [_rule(0.0)])
+    previous = date(2025, 3, 10)
+    served = runner.provider.get_historical
+
+    async def lagging(key, start, end, interval):
+        return [bar for bar in await served(key, start, end, interval)
+                if bar.timestamp.astimezone(_IST).date() != previous]
+
+    runner.provider.get_historical = lagging
+    with factory() as session:
+        for (strike, kind), series in _FULL.bars.items():
+            key = f"NSE_FO|{kind}{strike}"
+            session.add(RecordedInstrument(trading_day=previous, instrument_key=key, kind="OPT",
+                                           expiry=_EXPIRY, strike=strike, option_type=kind,
+                                           first_subscribed_at=datetime(2025, 3, 10,
+                                                                        tzinfo=_IST)))
+            for moment, bar in series.items():
+                if moment.date() == previous:
+                    price = Decimal(str(bar.close))
+                    # The recorder writes UTC minutes.
+                    utc = moment.astimezone(timezone.utc)
+                    session.add(MarketSnapshot1m(
+                        instrument_key=key, bucket_start=utc, trading_day=previous,
+                        received_at=utc, ltp_open=Decimal(str(bar.open)),
+                        ltp_high=Decimal(str(bar.high)), ltp_low=Decimal(str(bar.low)),
+                        ltp_close=price, message_count=1))
+        session.commit()
+    early = datetime.combine(_TODAY, time(9, 16), tzinfo=_IST)
+    assert asyncio.run(runner.cycle(early)) == "READY"
+    assert runner.state.moves is not None and runner.state.moves[-1].session == previous
+    assert [move.session for move in runner.state.moves] == [move.session for move in _past()]

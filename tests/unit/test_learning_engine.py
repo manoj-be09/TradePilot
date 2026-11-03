@@ -108,6 +108,8 @@ def test_too_few_trades_or_a_better_baseline_keep_it_in_shadow(session):
     assert _row(session, "short").stage == "SHADOW"
     assert _row(session, "every_day").stage == "BASELINE"
     assert _row(session, "every_day").budget_sequence is None
+    assert _row(session, "every_day").latest_check["trades"] == 120
+    assert _row(session, "every_day").latest_check["average"] == 4_500.0
     filtered = _row(session, "filtered")
     assert filtered.stage == "SHADOW"
     assert "a higher average than its baseline" in filtered.latest_check["needs"]

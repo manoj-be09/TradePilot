@@ -391,6 +391,12 @@ def _decide(session: Session, members: list[_State], states: dict[str, _State],
         row = state.row
         if row.stage in ("SHADOW", "PROBATION"):
             decisions += _judge(session, state, states, champion(), now)
+        elif row.stage == "BASELINE":
+            # Scored only, so the page and report can compare a rule with it.
+            values = _values(state.shadow)
+            row.latest_check = {"policy_id": POLICY_ID, "trades": len(values),
+                                "average": round(mean(values), 2) if values else None}
+            row.checked_at = now
     return decisions
 
 

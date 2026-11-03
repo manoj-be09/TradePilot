@@ -37,7 +37,12 @@ from packages.backtesting.rich_premium import SessionMove, session_moves
 from packages.backtesting.rule_engine import ENGINE_RULES, EngineRule
 from packages.database.base import Base
 from packages.database.history_models import HistoricalImportContract, HistoricalOptionBar
-from packages.database.models import ResearchRuleVersion, User, UserNotification
+from packages.database.models import (
+    LearningHypothesis,
+    ResearchRuleVersion,
+    User,
+    UserNotification,
+)
 from packages.database.session import build_session_factory
 from packages.history.importer import (
     HistoryProvider,
@@ -45,6 +50,7 @@ from packages.history.importer import (
     import_expiry,
     list_expiries,
 )
+from packages.learning.engine import tradable_rules
 from packages.market_data.contracts import (
     MarketDataProvider,
     MarketDataProviderError,
@@ -67,6 +73,7 @@ IST = ZoneInfo("Asia/Kolkata")
 DEFAULT_CONFIG = Path("work/night-override.json")
 CACHE_DATABASE = Path("work/night-history.db")
 WIDE_HISTORY = Path("work/history-wide.db")
+HYPOTHESES = Path("work/learning/hypotheses.json")
 # The decision bar plus the research's three retries, with a little room for a slow cycle.
 ENTRY_WINDOW = timedelta(minutes=20)
 IMPORT_AFTER = time(15, 45)
@@ -89,7 +96,7 @@ class DayState:
 
 
 def custom_name(rule: EngineRule) -> str:
-    return paper_name(rule.key, rule.version)
+    return paper_name(rule.key, rule.version, rule.override)
 
 
 def quote_evidence(chain: OptionChain, strikes: Sequence[Decimal]) -> list[str]:
@@ -129,10 +136,13 @@ class NightRunner:
         rules: Sequence[EngineRule] = ENGINE_RULES,
         sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
         alert_email: str | None = None,
+        rules_source: Callable[[], Sequence[EngineRule]] | None = None,
     ) -> None:
         self.factory, self.provider, self.user_email = factory, provider, user_email
         self.database_urls, self.cache, self.open_trade = list(database_urls), cache, open_trade
         self.rules, self.sleep, self.alert_email = list(rules), sleep, alert_email
+        # With v2 applied, the learning ledger names the rules each morning.
+        self.rules_source = rules_source
         self.state = DayState(date.min)
         self.alerted: set[tuple[date, str]] = set()
 
@@ -192,11 +202,15 @@ class NightRunner:
         return [move for move in session_moves(market) if move.session < today]
 
     def _stopped(self, rule: EngineRule) -> str | None:
+        """Stopped by either loop: the v1 rule engine or, once applied, the v2 ledger."""
         with self.factory() as session:
-            stage = session.scalar(select(ResearchRuleVersion.stage).where(
+            stages = [session.scalar(select(ResearchRuleVersion.stage).where(
                 ResearchRuleVersion.rule_key == rule.key,
-                ResearchRuleVersion.version == rule.version))
-        return stage if stage in STOPPED_STAGES else None
+                ResearchRuleVersion.version == rule.version))]
+            if self.rules_source is not None:
+                stages.append(session.scalar(select(LearningHypothesis.stage).where(
+                    LearningHypothesis.key == rule.key)))
+        return next((stage for stage in stages if stage in STOPPED_STAGES), None)
 
     async def _decide(
         self, rule: EngineRule, chain: OptionChain, decided_at: datetime,
@@ -258,6 +272,10 @@ class NightRunner:
         today = exchange_today(now)
         if self.state.day != today:
             self.state = DayState(today)
+            if self.rules_source is not None:
+                self.rules = list(self.rules_source())
+                logger.info("Rules today: %s", ", ".join(rule.key for rule in self.rules)
+                            or "none")
         market = await self.provider.get_nfo_session(today)
         if market is None:
             return "NO_SESSION"
@@ -351,10 +369,18 @@ async def serve(config: Path, interval_seconds: float, once: bool) -> None:
     urls = [get_settings().database_url] + [
         f"sqlite:///{path.as_posix()}" for path in (WIDE_HISTORY, CACHE_DATABASE) if path.exists()
     ]
+    factory = build_session_factory()
+
+    def ledger_rules() -> list[EngineRule]:
+        with factory() as session:
+            return tradable_rules(session)
+
     runner = NightRunner(
-        build_session_factory(), get_market_data_provider(), user_email, urls,
+        factory, get_market_data_provider(), user_email, urls,
         build_session_factory(f"sqlite:///{CACHE_DATABASE.as_posix()}"),
         _open_paper_trade_with_provider, alert_email=get_settings().telegram_alert_user_email,
+        # v2 applied: once the hypothesis file exists, the ledger replaces the v1 override list.
+        rules_source=ledger_rules if HYPOTHESES.exists() else None,
     )
     while True:
         try:

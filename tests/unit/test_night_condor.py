@@ -275,3 +275,55 @@ def test_quote_evidence_reports_mid_and_age_for_each_leg():
     strikes = condor_strikes(_FULL, decided_at, 0.15)
     lines = quote_evidence(_chain(decided_at), strikes)
     assert len(lines) == 4 and all("ltp" in line and "age ?" in line for line in lines)
+
+
+def _ledger(session, key: str, stage: str, override: bool = False, **params) -> None:
+    from packages.database.models import LearningHypothesis
+
+    session.add(LearningHypothesis(
+        key=key, family="night", kind="rich_condor", origin="GRID", override=override,
+        params={**_rule(0.0).params, **params}, forward_from=date(2025, 1, 1), rationale="t",
+        preregistration={}, stage=stage, stage_since=datetime(2025, 1, 1, tzinfo=_IST),
+        latest_check={}, created_at=datetime(2025, 1, 1, tzinfo=_IST)))
+
+
+def test_the_probation_runner_trades_what_the_v2_ledger_allows(factory, tmp_path):
+    from packages.learning.engine import tradable_rules
+
+    setup(factory, tmp_path / "night.json", "night@tradepilot.test")
+    with factory() as session:
+        _ledger(session, "in_probation", "PROBATION")
+        _ledger(session, "owner_pick", "SHADOW", override=True, entry_time="09:30")
+        _ledger(session, "only_shadow", "SHADOW")
+        _ledger(session, "retired", "RETIRED", override=True)
+        _ledger(session, "same_day", "PROBATION", hold_overnight=False)
+        session.commit()
+        rules = tradable_rules(session)
+    assert [(rule.key, rule.override) for rule in rules] == [("in_probation", False),
+                                                             ("owner_pick", True)]
+
+    opened: list = []
+    runner = _runner(factory, tmp_path, opened, [])
+
+    def source():
+        with factory() as session:
+            return tradable_rules(session)
+
+    runner.rules_source = source
+    at_entry = datetime.combine(_TODAY, time(9, 21), tzinfo=_IST)
+    assert asyncio.run(runner.cycle(at_entry)) == "OPENED"
+    [(_body, _email, key, options)] = opened
+    assert key == "night_in_probation_v1_20250311"
+    assert options["custom_name"] == "Probation · in probation v1"
+    # Demoted in the ledger during the day: the 09:30 override is not traded.
+    with factory() as session:
+        from sqlalchemy import update
+
+        from packages.database.models import LearningHypothesis
+
+        session.execute(update(LearningHypothesis).where(LearningHypothesis.key == "owner_pick")
+                        .values(stage="DEMOTED"))
+        session.commit()
+    later = datetime.combine(_TODAY, time(9, 31), tzinfo=_IST)
+    assert asyncio.run(runner.cycle(later)) == "DECIDED"
+    assert len(opened) == 1

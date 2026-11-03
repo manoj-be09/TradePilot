@@ -56,6 +56,8 @@ class EngineRule:
     version: int
     forward_from: date
     params: dict[str, Any]
+    # Traded before it earned it, on the owner's word; its paper trades say "not promoted".
+    override: bool = True
 
     def runner(self) -> Callable[[Market], list[TradeResult]]:
         p = self.params

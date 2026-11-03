@@ -29,8 +29,10 @@ NIGHT_EXIT_POLICY = OptionExitPolicy(20, NEXT_SESSION_POLICY_VERSION)
 STOPPED_STAGES = frozenset({"DEMOTED", "RETIRED", "SUPERSEDED"})
 
 
-def paper_name(key: str, version: int) -> str:
+def paper_name(key: str, version: int, override: bool = True) -> str:
     """The paper trade's name; the v2 loop finds a hypothesis's paper fills by it."""
+    if not override:
+        return f"Probation · {key.replace('_', ' ')} v{version}"
     return f"Override · {key.replace('_', ' ')} v{version} · not promoted"
 
 

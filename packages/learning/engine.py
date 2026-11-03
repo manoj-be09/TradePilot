@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from packages.backtesting.candidate_algorithms import CURRENT_LOT
 from packages.backtesting.published_strategies import Market, TradeResult
 from packages.backtesting.rich_premium import WING_POINTS, run_rich_condor
+from packages.backtesting.rule_engine import EngineRule
 from packages.database.models import (
     LearningEvent,
     LearningHypothesis,
@@ -218,16 +219,17 @@ def record_observation(
 
 
 def link_paper_trades(session: Session, now: datetime, version: int = 1) -> int:
-    """Record each closed paper trade of an override hypothesis as a PAPER observation.
+    """Record each closed paper trade of a hypothesis as a PAPER observation.
 
-    The night runner names its trades with `paper_name`; a hypothesis key equals the research
-    rule key it traded. Returns how many were added.
+    The night runner names its trades with `paper_name`; a hypothesis key equals the rule key it
+    traded, under either name in case the owner's override was added or lifted. Returns how many
+    were added.
     """
     added = 0
-    for row in session.scalars(select(LearningHypothesis).where(
-            LearningHypothesis.override.is_(True))):
+    for row in session.scalars(select(LearningHypothesis)):
+        names = [paper_name(row.key, version, override) for override in (True, False)]
         trades = session.scalars(select(PaperTrade).where(
-            PaperTrade.strategy_name == paper_name(row.key, version),
+            PaperTrade.strategy_name.in_(names),
             PaperTrade.status == "CLOSED", PaperTrade.realized_pnl.is_not(None)))
         for trade in trades:
             credit = max(float(trade.entry_cash_flow), 1.0)
@@ -413,6 +415,23 @@ def _judge(session: Session, state: _State, states: dict[str, _State],
               f"Replaced by {row.key}", {"by": row.key}, now)
     return [_move(session, row, "APPROVED", "APPROVED", "PAPER_CONFIRMED",
                   f"{len(paper)} paper trades averaging ₹{mean(paper):,.0f}", check, now)]
+
+
+TRADED_STAGES = frozenset({"PROBATION", "APPROVED"})
+
+
+def tradable_rules(session: Session) -> list[EngineRule]:
+    """What the probation runner may paper trade: hypotheses in probation or approved, and the
+    owner's overrides until evidence stops them. Only rules the night runner can exit (held to the
+    next session) qualify; anything else fails closed."""
+    rules = []
+    for row in session.scalars(select(LearningHypothesis).where(
+            LearningHypothesis.kind == "rich_condor").order_by(LearningHypothesis.key)):
+        if not (row.stage in TRADED_STAGES or (row.override and row.stage == "SHADOW")):
+            continue
+        if row.params.get("hold_overnight") and row.params.get("into_expiry"):
+            rules.append(EngineRule(row.key, 1, row.forward_from, row.params, row.override))
+    return rules
 
 
 def budget_summary(session: Session) -> dict[str, Any]:

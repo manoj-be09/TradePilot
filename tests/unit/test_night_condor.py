@@ -327,3 +327,36 @@ def test_the_probation_runner_trades_what_the_v2_ledger_allows(factory, tmp_path
     later = datetime.combine(_TODAY, time(9, 31), tzinfo=_IST)
     assert asyncio.run(runner.cycle(later)) == "DECIDED"
     assert len(opened) == 1
+
+
+def test_point_in_time_features_and_filters_fail_closed():
+    from packages.learning.features import Context, features_at, passes, session_features
+
+    decided_at = datetime.combine(_TODAY, time(9, 20), tzinfo=_IST)
+    values = features_at(_FULL, None, decided_at, _past(), date(2025, 3, 12),
+                         Context(frozenset({date(2025, 3, 12)}), {date(2025, 3, 10): 14.5}))
+    assert values["realised_vol"] > 0 and values["skew"] > 0
+    assert values["term_gap"] is None and values["vix"] == 14.5
+    assert values["event_today"] is False and values["event_next"] is True
+    assert passes([{"feature": "vix", "max": 15}, {"feature": "event_next", "equals": True}],
+                  values)
+    assert not passes([{"feature": "vix", "min": 15}], values)
+    # Unreadable means no trade.
+    assert not passes([{"feature": "term_gap", "max": 2}], values)
+    by_day = session_features(Market([_FULL], 0.0), time(9, 20), Context())
+    assert by_day[_TODAY]["realised_vol"] == pytest.approx(values["realised_vol"])
+
+
+def test_the_runner_applies_a_hypothesis_filter_live(factory, tmp_path):
+    from packages.learning.features import Context
+
+    setup(factory, tmp_path / "night.json", "night@tradepilot.test")
+    opened: list = []
+    rule = EngineRule("filtered", 1, date(2025, 1, 1), {
+        **_rule(0.0).params, "filters": [{"feature": "event_today", "equals": False}]}, False)
+    runner = _runner(factory, tmp_path, opened, [rule])
+    runner.context = Context(frozenset({_TODAY}))
+    at_entry = datetime.combine(_TODAY, time(9, 21), tzinfo=_IST)
+    asyncio.run(runner.cycle(at_entry))
+    assert opened == []
+    assert "Filters not met" in runner.state.decisions["filtered"].reason

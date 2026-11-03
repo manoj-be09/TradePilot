@@ -51,6 +51,7 @@ from packages.history.importer import (
     list_expiries,
 )
 from packages.learning.engine import tradable_rules
+from packages.learning.features import Context, features_at, passes
 from packages.market_data.contracts import (
     MarketDataProvider,
     MarketDataProviderError,
@@ -143,6 +144,7 @@ class NightRunner:
         self.rules, self.sleep, self.alert_email = list(rules), sleep, alert_email
         # With v2 applied, the learning ledger names the rules each morning.
         self.rules_source = rules_source
+        self.context = Context()
         self.state = DayState(date.min)
         self.alerted: set[tuple[date, str]] = set()
 
@@ -224,7 +226,29 @@ class NightRunner:
         if previous is None or self.state.moves is None:
             return NightDecision(None, None, "No previous session found; no trade")
         book = chain_book(chain, decided_at, sessions)
+        filters = rule.params.get("filters", [])
+        if filters:
+            values = features_at(book, await self._following_book(chain, decided_at), decided_at,
+                                 self.state.moves, following, self.context)
+            if not passes(filters, values):
+                shown = {name: values.get(name) for name in {item["feature"] for item in filters}}
+                # No richness means a data gap, which alerts; an unmet filter does not.
+                gap = any(value is None for value in shown.values())
+                return NightDecision(None, None if gap else 0.0,
+                                     f"Filters not met {shown}; no trade")
         return decide(rule, self.state.moves, book, decided_at, previous, following)
+
+    async def _following_book(self, chain: OptionChain, decided_at: datetime) -> Book | None:
+        """The next expiry's chain as bars, for the term-structure feature; None if unreadable."""
+        contracts = await self.provider.get_option_contracts("NIFTY")
+        later = sorted({item.expiry for item in contracts if item.expiry > chain.expiry})
+        if not later:
+            return None
+        second = await self.provider.get_option_chain("NIFTY", later[0])
+        today = decided_at.date()
+        days = [today + timedelta(days=offset) for offset in range((later[0] - today).days + 1)]
+        days = [day for day in days if day == today or await self._trades(day)]
+        return chain_book(second, decided_at, days)
 
     async def _open(
         self, rule: EngineRule, expiry: date, decision: NightDecision, today: date,
@@ -274,6 +298,7 @@ class NightRunner:
             self.state = DayState(today)
             if self.rules_source is not None:
                 self.rules = list(self.rules_source())
+                self.context = Context.load(self.database_urls[0])
                 logger.info("Rules today: %s", ", ".join(rule.key for rule in self.rules)
                             or "none")
         market = await self.provider.get_nfo_session(today)

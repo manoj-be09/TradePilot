@@ -60,3 +60,21 @@ def test_history_wins_and_recorder_fills_only_sessions_history_lacks():
     [book] = merge_books(history, recorded)
     assert book.bars[key] == {old: Bar(1, 1, 1, 1), new: Bar(2, 2, 2, 2)}
     assert sorted(book.moments_by_day) == [old.date(), new.date()]
+
+
+def test_vix_closes_come_from_the_recorder(tmp_path):
+    from packages.learning.features import Context
+
+    url = f"sqlite:///{(tmp_path / 'rec.db').as_posix()}"
+    engine = create_engine(url)
+    Base.metadata.create_all(engine)
+    start = datetime(2026, 11, 4, 9, 0, tzinfo=timezone.utc)
+    with Session(engine) as session:
+        session.add_all([_minute("NSE_INDEX|India VIX", start, 13.0),
+                         _minute("NSE_INDEX|India VIX", start + timedelta(minutes=1), 13.4)])
+        session.commit()
+    events = tmp_path / "events.json"
+    events.write_text('[{"date": "2026-11-05", "name": "RBI policy"}]')
+    context = Context.load(url, events, tmp_path / "missing.json")
+    assert context.vix == {_DAY: 13.4}
+    assert context.events == frozenset({date(2026, 11, 5)})

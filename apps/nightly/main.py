@@ -33,6 +33,7 @@ from packages.database.models import PaperAccount, User
 from packages.database.session import build_session_factory
 from packages.database.sqlite_backup import BackupError, backup_database
 from packages.learning.engine import link_paper_trades, load_hypotheses, run_learning
+from packages.learning.features import Context
 from packages.learning.forward_bars import merge_books, recorded_books
 from packages.paper_trading.forward_plan import ForwardPlan, load_plan
 from packages.paper_trading.forward_report import build_report, render_markdown
@@ -136,7 +137,8 @@ def run_learning_loop(
     market = Market(merge_books(history.books, recorded), history.half_spread_pct)
     with factory() as session:
         link_paper_trades(session, now)
-        decisions = run_learning(session, market, now, load_hypotheses(hypotheses))
+        decisions = run_learning(session, market, now, load_hypotheses(hypotheses),
+                                 Context.load(get_settings().database_url))
         session.commit()
     for decision in decisions:
         logger.warning("Learning: %s", decision)

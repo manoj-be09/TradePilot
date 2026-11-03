@@ -192,3 +192,21 @@ def test_closed_override_paper_trades_become_paper_observations(session):
                                                       override=True)])
     gap = _row(session, "very_rich_night_condor").latest_check["paper_vs_shadow"]
     assert gap == {"sessions": 1, "paper_average": 1800.0, "shadow_average": 100.0}
+
+
+def test_filters_are_checked_and_an_unreadable_feature_records_nothing(session, tmp_path):
+    import json
+
+    from packages.learning.engine import load_hypotheses
+
+    filtered = _hypothesis("filtered", [100.0, 50.0])
+    filtered = Hypothesis(**{**filtered.__dict__, "params": {
+        **filtered.params, "filters": [{"feature": "event_today", "equals": False}]}})
+    run_learning(session, _MARKET, _NOW, [filtered])
+    assert session.scalars(select(LearningObservation)).all() == []
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps([{"key": "x", "family": "f", "kind": "rich_condor", "origin": "GRID",
+                                "params": {"filters": [{"feature": "moon"}]},
+                                "forward_from": "2026-11-02", "rationale": "r"}]))
+    with pytest.raises(ValueError):
+        load_hypotheses(bad)

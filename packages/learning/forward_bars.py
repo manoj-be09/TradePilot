@@ -44,8 +44,8 @@ def recorded_books(database_url: str, first_day: date) -> list[Book]:
         )
         for expiry, strike, kind, start, opened, high, low, closed in rows:
             moment = _ist(start)
-            if expiry is None or strike is None or kind not in ("CE", "PE") or not (
-                    _OPEN <= moment.time() < _CLOSE):
+            if expiry is None or strike is None or closed is None or kind not in ("CE", "PE") or (
+                    not _OPEN <= moment.time() < _CLOSE):
                 continue
             close = float(closed)
             minute = [float(opened or closed), float(high or closed), float(low or closed), close]

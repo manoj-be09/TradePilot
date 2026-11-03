@@ -38,6 +38,13 @@ from packages.database.models import (
 )
 from packages.learning.budget import alpha_for, remaining_after
 from packages.learning.evidence import Trade, futility_evidence, growth_evidence
+from packages.learning.features import (
+    Context,
+    Features,
+    passes,
+    session_features,
+    validate,
+)
 from packages.learning.power import power_check
 from packages.paper_trading.demotion import as_utc
 from packages.paper_trading.night_condor import paper_name
@@ -104,6 +111,7 @@ def load_hypotheses(path: Path) -> list[Hypothesis]:
     for row in rows:
         if row["kind"] not in KINDS or row["origin"] not in ("HUMAN", "GRID", "LLM"):
             raise ValueError(f"{row.get('key')}: unknown kind or origin")
+        validate(row["params"].get("filters", []))
         found.append(Hypothesis(
             key=row["key"], family=row["family"], kind=row["kind"], params=row["params"],
             forward_from=date.fromisoformat(row["forward_from"]), origin=row["origin"],
@@ -278,14 +286,23 @@ def _streak(values: Sequence[float]) -> int:
 
 def run_learning(
     session: Session, market: Market, now: datetime, hypotheses: Sequence[Hypothesis],
+    context: Context | None = None,
 ) -> list[str]:
     """Record new shadow trades and apply every due decision. The caller commits. Rerunnable."""
     states: dict[str, _State] = {}
+    features: dict[str, dict[date, Features]] = {}
     for hypothesis in hypotheses:
         row = register(session, hypothesis, now)
         if row.stage != "UNDERPOWERED":
             kind = KINDS[row.kind]
+            filters = row.params.get("filters", [])
+            entry = row.params.get("entry_time", "09:20")
+            if filters and entry not in features:
+                features[entry] = session_features(market, time.fromisoformat(entry),
+                                                   context or Context())
             for result in kind.run(row.params, market):
+                if filters and not passes(filters, features[entry].get(result.session, {})):
+                    continue
                 if result.session >= row.forward_from:
                     loss, gain = kind.bounds(row.params, result)
                     record_observation(session, row, result.session, "SHADOW", result.net_pnl,

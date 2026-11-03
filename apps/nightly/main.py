@@ -1,8 +1,9 @@
 """Run with python -m apps.nightly.main; after each close it backs up and checks the paper run.
 
 Each day after 16:30 IST it makes a verified database backup, checks the paper ledger,
-writes a forward report to work/forward-reports and runs the research rule engine over the
-imported history. A failed step is logged and the next step still runs. A ledger mismatch
+writes a forward report to work/forward-reports and runs the research rule engine and the v2
+learning loop (when work/learning/hypotheses.json exists) over the imported history. A failed
+step is logged and the next step still runs. A ledger mismatch
 already pauses new paper cash actions by itself; this job only reads the account, and places
 no orders.
 """
@@ -27,6 +28,7 @@ from packages.backtesting.rule_engine import run_engine
 from packages.database.models import PaperAccount, User
 from packages.database.session import build_session_factory
 from packages.database.sqlite_backup import BackupError, backup_database
+from packages.learning.engine import load_hypotheses, run_learning
 from packages.paper_trading.forward_plan import ForwardPlan, load_plan
 from packages.paper_trading.forward_report import build_report, render_markdown
 
@@ -40,6 +42,8 @@ DEFAULT_PLAN = Path("work/forward-paper.json")
 LOW_DISK_GB = 10.0
 # Beside the database: the far strikes the condors need, from scripts/import-far-strikes.py.
 WIDE_HISTORY_NAME = "history-wide.db"
+# Private: the v2 hypotheses and their pre-registered effects stay out of the repository.
+HYPOTHESES = Path("work/learning/hypotheses.json")
 
 
 def disk_free_gb(path: Path) -> float:
@@ -73,13 +77,35 @@ def run_rule_engine(factory: sessionmaker[Session], wide: Path, now: datetime) -
     """Score frozen research rules on newly imported sessions; simulated, places nothing."""
     if not wide.exists():
         return "SKIPPED_NO_WIDE_HISTORY"
-    books = load_books(get_settings().database_url, date.max,
-                       [f"sqlite:///{wide.as_posix()}"], regular_hours_only=True)
     with factory() as session:
-        decisions = run_engine(session, Market(books, recorded_spread("median_pct")), now)
+        decisions = run_engine(session, _research_market(wide), now)
         session.commit()
     for decision in decisions:
         logger.warning("Rule engine: %s", decision)
+    return f"{len(decisions)} decision(s)"
+
+
+def _research_market(wide: Path) -> Market:
+    books = load_books(get_settings().database_url, date.max,
+                       [f"sqlite:///{wide.as_posix()}"], regular_hours_only=True)
+    return Market(books, recorded_spread("median_pct"))
+
+
+def run_learning_loop(
+    factory: sessionmaker[Session], wide: Path, hypotheses: Path, now: datetime,
+) -> str:
+    """Judge the v2 hypotheses on forward sessions; simulated, places nothing."""
+    if not hypotheses.exists():
+        return "SKIPPED_NO_HYPOTHESES"
+    if not wide.exists():
+        return "SKIPPED_NO_WIDE_HISTORY"
+    # shortcut: loads the books again after the rule engine; share them if the night runs long.
+    market = _research_market(wide)
+    with factory() as session:
+        decisions = run_learning(session, market, now, load_hypotheses(hypotheses))
+        session.commit()
+    for decision in decisions:
+        logger.warning("Learning: %s", decision)
     return f"{len(decisions)} decision(s)"
 
 
@@ -111,6 +137,14 @@ def run_once(
     except Exception as error:  # noqa: BLE001 - one failed step must not stop the others
         logger.error("Rule engine failed: %s", type(error).__name__)
         results["rule_engine"] = "FAILED"
+    try:
+        results["learning"] = (
+            run_learning_loop(factory, database.parent / WIDE_HISTORY_NAME, HYPOTHESES, now)
+            if now.astimezone(IST).time() >= RUN_AFTER else "SKIPPED_BEFORE_CLOSE"
+        )
+    except Exception as error:  # noqa: BLE001 - one failed step must not stop the others
+        logger.error("Learning loop failed: %s", type(error).__name__)
+        results["learning"] = "FAILED"
     if results["ledger"] != "MATCHED":
         logger.error("Ledger needs review: %s", results["ledger"])
     free = disk_free_gb(database.parent)

@@ -25,7 +25,7 @@ _REGULAR_CLOSE = time(15, 30)
 
 def load_books(
     database_url: str, last_expiry: date, extra_database_urls: Sequence[str] = (),
-    regular_hours_only: bool = False,
+    regular_hours_only: bool = False, first_expiry: date = _FIRST_EXPIRY,
 ) -> list[Book]:
     bars: dict[date, dict[tuple[Decimal, Kind], dict[datetime, Bar]]] = {}
     moments: dict[datetime, datetime] = {}
@@ -41,7 +41,7 @@ def load_books(
                 ) & (HistoricalImportContract.interval == HistoricalOptionBar.interval))
                 .where(HistoricalOptionBar.interval == "5m",
                        HistoricalImportContract.status == "COMPLETE",
-                       HistoricalOptionBar.expiry >= _FIRST_EXPIRY,
+                       HistoricalOptionBar.expiry >= max(first_expiry, _FIRST_EXPIRY),
                        HistoricalOptionBar.expiry <= last_expiry)
             )
             for expiry, strike, kind, start, opened, high, low, closed in rows:
@@ -53,7 +53,6 @@ def load_books(
                 series = bars.setdefault(expiry, {}).setdefault((strike, cast(Kind, kind)), {})
                 series[moment] = Bar(float(opened), float(high), float(low), float(closed))
     return [Book(expiry, by_key) for expiry, by_key in sorted(bars.items())]
-
 
 
 def recorded_spread(band_field: str) -> Callable[[float], float]:

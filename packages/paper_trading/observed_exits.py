@@ -14,10 +14,15 @@ from packages.database.models import PaperTrade
 from packages.market_data.contracts import ExchangeSession
 from packages.paper_trading.exits import evaluate_exit
 from packages.paper_trading.option_policy import parse_option_exit_policy
-from packages.paper_trading.session import PaperSessionError, expiry_square_off_due
+from packages.paper_trading.session import (
+    PaperSessionError,
+    expiry_square_off_due,
+    next_session_square_off_due,
+)
 
 ReplayStatus = Literal["MATCHED", "INCOMPLETE", "MISMATCH"]
 _RULE_EXITS = frozenset({"STOP_LOSS", "TARGET", "TRAILING_STOP"})
+_TERMINAL = _RULE_EXITS | {"EXPIRY_SQUARE_OFF", "NEXT_SESSION_EXIT"}
 _CENT = Decimal("0.01")
 
 
@@ -80,7 +85,9 @@ def _observed_pnl(trade: PaperTrade, quotes: object) -> Decimal | None:
     return (trade.entry_cash_flow + close_flow).quantize(_CENT, rounding=ROUND_HALF_UP)
 
 
-def _square_off_due(trade: PaperTrade, snapshot: dict[str, Any]) -> bool | None:
+def _square_off_due(
+    trade: PaperTrade, snapshot: dict[str, Any], next_session: bool = False,
+) -> bool | None:
     saved_session = snapshot.get("nfo_session")
     evaluated_at = _aware(snapshot.get("evaluated_at"))
     if not isinstance(saved_session, dict) or evaluated_at is None:
@@ -94,6 +101,11 @@ def _square_off_due(trade: PaperTrade, snapshot: dict[str, Any]) -> bool | None:
     ):
         return None
     try:
+        if next_session:
+            return next_session_square_off_due(
+                trade.opened_at, ExchangeSession("NFO", start, end),
+                now=evaluated_at, minutes_before_close=minutes,
+            )
         return expiry_square_off_due(
             trade.expiry,
             ExchangeSession("NFO", start, end),
@@ -150,7 +162,7 @@ def replay_observed_exits(
             != policy.square_off_minutes_before_close
         ):
             return result("MISMATCH", "An exit observation used a different saved exit policy.")
-        if last_decision in _RULE_EXITS | {"EXPIRY_SQUARE_OFF"}:
+        if last_decision in _TERMINAL:
             return result("MISMATCH", "An exit check followed a terminal decision.")
         when = _aware(snapshot.get("market_as_of"))
         pnl = _decimal(snapshot.get("unrealized_pnl"))
@@ -193,10 +205,15 @@ def replay_observed_exits(
         if saved_peak != calculated.peak_pnl:
             return result("MISMATCH", "The recorded high-water mark differs from rule replay.")
         square_off_due = _square_off_due(trade, snapshot)
-        if decision == "EXPIRY_SQUARE_OFF" and square_off_due is None:
+        next_due = (_square_off_due(trade, snapshot, next_session=True)
+                    if policy.exits_next_session else False)
+        if (decision == "EXPIRY_SQUARE_OFF" and square_off_due is None) or (
+            decision == "NEXT_SESSION_EXIT" and next_due is None
+        ):
             return result("INCOMPLETE", "The square-off cutoff has no verified session evidence.")
         expected = calculated.reason or (
-            "EXPIRY_SQUARE_OFF" if square_off_due else "HOLD"
+            "EXPIRY_SQUARE_OFF" if square_off_due
+            else "NEXT_SESSION_EXIT" if next_due else "HOLD"
         )
         if decision != expected:
             return result("MISMATCH", "The recorded exit decision differs from rule replay.")
@@ -206,7 +223,7 @@ def replay_observed_exits(
         return result("INCOMPLETE", "No eligible exit decision was recorded.")
     if skipped:
         return result("INCOMPLETE", "One or more exit checks were skipped; the path has gaps.")
-    if trade.status != "CLOSED" or trade.exit_reason not in _RULE_EXITS | {"EXPIRY_SQUARE_OFF"}:
+    if trade.status != "CLOSED" or trade.exit_reason not in _TERMINAL:
         return result("INCOMPLETE", "This position has no replayable final rule exit.")
     if last_decision != trade.exit_reason or final_pnl != trade.realized_pnl:
         return result("MISMATCH", "The final decision or P&L differs from the saved trade.")

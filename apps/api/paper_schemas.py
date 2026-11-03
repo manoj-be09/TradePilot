@@ -448,7 +448,7 @@ class PaperTradeResponse(BaseModel):
     peak_unrealized_pnl: Decimal
     exit_reason: Literal[
         "STOP_LOSS", "TARGET", "TRAILING_STOP", "EXPIRY_SQUARE_OFF",
-        "MANUAL", "EXPIRY_SETTLEMENT"
+        "NEXT_SESSION_EXIT", "MANUAL", "EXPIRY_SETTLEMENT"
     ] | None
     realized_pnl: Decimal | None
     unrealized_pnl: Decimal | None = None

@@ -1,9 +1,10 @@
 """Run with python -m apps.supervisor.main; keeps the local paper processes running.
 
-Starts the API, web app, paper worker, forward runner, recorder, alert relay and nightly
-job, each with its own log under work/logs, and restarts one that crashes, waiting longer after each
-crash. A clean exit (code 0) is left alone: the relay is idle without Telegram settings and
-the runner finishes at the end of its period. It only starts this repository's own programs.
+Starts the API, web app, paper worker, forward runner, night runner, recorder, alert relay
+and nightly job, each with its own log under work/logs, and restarts one that crashes, waiting
+longer after each crash. A clean exit (code 0) is left alone: the relay is idle without Telegram
+settings, the night runner without its override config, and the forward runner finishes at the
+end of its period. It only starts this repository's own programs.
 """
 
 import argparse
@@ -44,6 +45,7 @@ def local_services(python: str) -> list[Service]:
         Service("web", _script("start-web-local.ps1")),
         Service("worker", _script("start-paper-worker-local.ps1")),
         Service("forward-runner", _script("start-forward-runner-local.ps1")),
+        Service("night-runner", _script("start-night-runner-local.ps1")),
         Service("recorder", (python, "-u", "-m", "apps.recorder.main",
                              "--data-dir", "work/recorder-data")),
         Service("alert-relay", (python, "-u", "-m", "apps.alert_relay.main")),

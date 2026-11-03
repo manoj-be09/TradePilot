@@ -81,6 +81,21 @@ def expiry_square_off_due(
     return instant >= cutoff
 
 
+
+def next_session_square_off_due(
+    opened_at: datetime,
+    session: ExchangeSession,
+    *,
+    now: datetime,
+    minutes_before_close: int,
+) -> bool:
+    """A position held for one night leaves at the cutoff of any later session than its entry."""
+    if opened_at.tzinfo is None:
+        opened_at = opened_at.replace(tzinfo=timezone.utc)
+    if exchange_today(now) <= exchange_today(opened_at):
+        return False
+    return now >= max(session.start, session.end - timedelta(minutes=minutes_before_close))
+
 def expiry_entry_window_closed(
     expiry: date,
     session: ExchangeSession | None,

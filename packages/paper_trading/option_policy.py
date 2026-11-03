@@ -5,6 +5,9 @@ from typing import Any
 
 OPTION_EXIT_POLICY_VERSION = "nifty-option-exit-v1"
 EXPIRY_TEST_POLICY_VERSION = "nifty-option-expiry-test-v1"
+# Also squares off at the cutoff of the first session after the entry day (the night condors).
+NEXT_SESSION_POLICY_VERSION = "nifty-option-next-session-v1"
+_VERSIONS = {OPTION_EXIT_POLICY_VERSION, EXPIRY_TEST_POLICY_VERSION, NEXT_SESSION_POLICY_VERSION}
 
 
 @dataclass(frozen=True)
@@ -13,7 +16,7 @@ class OptionExitPolicy:
     version: str = OPTION_EXIT_POLICY_VERSION
 
     def __post_init__(self) -> None:
-        if self.version not in {OPTION_EXIT_POLICY_VERSION, EXPIRY_TEST_POLICY_VERSION}:
+        if self.version not in _VERSIONS:
             raise ValueError("Unknown NIFTY option paper exit policy version")
         if (
             type(self.square_off_minutes_before_close) is not int
@@ -24,6 +27,10 @@ class OptionExitPolicy:
     @property
     def holds_for_expiry_test(self) -> bool:
         return self.version == EXPIRY_TEST_POLICY_VERSION
+
+    @property
+    def exits_next_session(self) -> bool:
+        return self.version == NEXT_SESSION_POLICY_VERSION
 
     def as_dict(self) -> dict[str, Any]:
         return {

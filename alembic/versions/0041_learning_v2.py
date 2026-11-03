@@ -13,7 +13,7 @@ depends_on = None
 _JSON = sa.JSON().with_variant(postgresql.JSONB(), "postgresql")
 # Copied, not imported: a migration must not change when the models do.
 LEARNING_STAGES = ("UNDERPOWERED", "SHADOW", "PROBATION", "APPROVED", "SUPERSEDED", "DEMOTED",
-                   "RETIRED", "BASELINE")
+                   "RETIRED", "BASELINE", "REJECTED")
 LEARNING_EVENTS = ("REGISTERED", "REFUSED", "TO_PROBATION", "APPROVED", "SUPERSEDED",
                    "DEMOTED", "ROLLED_BACK", "RETIRED")
 

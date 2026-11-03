@@ -65,7 +65,8 @@ def recorded_vix(database_url: str) -> dict[date, float]:
                 .where(MarketSnapshot1m.instrument_key == INDIA_VIX_KEY,
                        MarketSnapshot1m.ltp_close.is_not(None))
                 .order_by(MarketSnapshot1m.bucket_start)):
-            closes[day] = float(value)
+            if value is not None:
+                closes[day] = float(value)
     return closes
 
 

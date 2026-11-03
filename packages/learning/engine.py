@@ -1,6 +1,7 @@
 """The v2 learning loop: frozen forward hypotheses judged by always-valid evidence. Simulated only.
 
-Stages: a new hypothesis passes a power check before it spends any of the error budget, then runs
+Stages: a machine idea (GRID or LLM) first meets a reject-only backtest screen (screen.py). A
+new hypothesis then passes a power check before it spends any of the error budget, then runs
 in SHADOW on sessions after it was frozen. It moves to PROBATION (one paper lot in the probation
 account) once its shadow evidence reaches 1/alpha for its own budget slice, with at least 20
 trades, and beats its baseline (the same trade taken without the rule's filter). It is APPROVED
@@ -46,6 +47,7 @@ from packages.learning.features import (
     validate,
 )
 from packages.learning.power import power_check
+from packages.learning.screen import screen
 from packages.paper_trading.demotion import as_utc
 from packages.paper_trading.night_condor import paper_name
 from packages.paper_trading.session import exchange_today
@@ -158,7 +160,8 @@ def _frozen(hypothesis: Hypothesis) -> dict[str, Any]:
             "baseline_key": hypothesis.baseline_key}
 
 
-def register(session: Session, hypothesis: Hypothesis, now: datetime) -> LearningHypothesis:
+def register(session: Session, hypothesis: Hypothesis, now: datetime,
+             rejection: Sequence[str] = ()) -> LearningHypothesis:
     row = session.scalar(select(LearningHypothesis).where(
         LearningHypothesis.key == hypothesis.key))
     if row is not None:
@@ -180,6 +183,11 @@ def register(session: Session, hypothesis: Hypothesis, now: datetime) -> Learnin
     session.flush()
     if hypothesis.baseline:
         _event(session, row, "REGISTERED", "BASELINE", "Scored for comparison only", {}, now)
+        return row
+    if rejection:
+        row.stage = "REJECTED"
+        _event(session, row, "REFUSED", "BACKTEST_SCREEN", "; ".join(rejection),
+               {"reasons": list(rejection)}, now)
         return row
     spent = session.scalar(select(func.max(LearningHypothesis.budget_sequence))) or 0
     alpha = alpha_for(spent + 1)
@@ -291,18 +299,21 @@ def run_learning(
     """Record new shadow trades and apply every due decision. The caller commits. Rerunnable."""
     states: dict[str, _State] = {}
     features: dict[str, dict[date, Features]] = {}
+    results: dict[str, list[TradeResult]] = {}
     for hypothesis in hypotheses:
-        row = register(session, hypothesis, now)
-        if row.stage != "UNDERPOWERED":
+        filters = hypothesis.params.get("filters", [])
+        entry = hypothesis.params.get("entry_time", "09:20")
+        if filters and entry not in features:
+            features[entry] = session_features(market, time.fromisoformat(entry),
+                                               context or Context())
+        results[hypothesis.key] = [
+            result for result in KINDS[hypothesis.kind].run(hypothesis.params, market)
+            if not filters or passes(filters, features[entry].get(result.session, {}))]
+    for hypothesis in hypotheses:
+        row = register(session, hypothesis, now, _rejection(session, hypothesis, results, market))
+        if row.stage not in ("UNDERPOWERED", "REJECTED"):
             kind = KINDS[row.kind]
-            filters = row.params.get("filters", [])
-            entry = row.params.get("entry_time", "09:20")
-            if filters and entry not in features:
-                features[entry] = session_features(market, time.fromisoformat(entry),
-                                                   context or Context())
-            for result in kind.run(row.params, market):
-                if filters and not passes(filters, features[entry].get(result.session, {})):
-                    continue
+            for result in results[hypothesis.key]:
                 if result.session >= row.forward_from:
                     loss, gain = kind.bounds(row.params, result)
                     record_observation(session, row, result.session, "SHADOW", result.net_pnl,
@@ -322,6 +333,26 @@ def run_learning(
         decisions += _decide(session, members, states, now)
     session.flush()
     return decisions
+
+
+def _rejection(session: Session, hypothesis: Hypothesis, results: dict[str, list[TradeResult]],
+               market: Market) -> list[str]:
+    """Machine ideas meet the reject-only backtest screen once, before they are frozen."""
+    known = session.scalar(select(LearningHypothesis.id).where(
+        LearningHypothesis.key == hypothesis.key))
+    if (known is not None or hypothesis.origin == "HUMAN" or hypothesis.override
+            or hypothesis.baseline):
+        return []
+    before = [(item.session, item.net_pnl) for item in results[hypothesis.key]
+              if item.session < hypothesis.forward_from]
+    sessions = [day for day in market.sessions if day < hypothesis.forward_from]
+    trials = (session.scalar(select(func.count(LearningHypothesis.id)).where(
+        LearningHypothesis.family == hypothesis.family)) or 0) + 1
+    baseline = None
+    if hypothesis.baseline_key in results:
+        baseline = [item.net_pnl for item in results[hypothesis.baseline_key]
+                    if item.session < hypothesis.forward_from]
+    return screen(before, sessions, trials, baseline)
 
 
 def _same_sessions(observations: Sequence[LearningObservation], days: set[date]) -> list[float]:

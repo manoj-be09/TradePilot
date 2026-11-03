@@ -67,3 +67,32 @@ def test_power_check_refuses_ideas_that_could_not_finish_in_six_months():
     assert not weak.feasible and weak.sessions_needed > 125
     assert strong.feasible and strong.trades_needed < 125
     assert not power_check(-10.0, 6_000.0, 20_000.0, 1.0, alpha).feasible
+
+
+def test_the_backtest_screen_rejects_noise_and_keeps_a_steady_edge():
+    from datetime import date, timedelta
+
+    from packages.learning.screen import (
+        deflated_sharpe,
+        overfit_probability,
+        placebo_p,
+        screen,
+    )
+
+    rng = random.Random(3)
+    days = [date(2025, 1, 1) + timedelta(days=offset) for offset in range(200)]
+    noise = [(day, rng.gauss(0, 3_000)) for day in days]
+    edge = [(day, rng.gauss(1_500, 3_000)) for day in days]
+    assert screen(noise, days, trials=50)
+    assert screen(edge, days, trials=50) == []
+    assert screen(edge[:10], days, trials=1)[0].startswith("10 backtest trades")
+    # More trials raise the bar a lucky Sharpe has to clear.
+    values = [value for _, value in edge[:60]]
+    assert deflated_sharpe(values, 1000) < deflated_sharpe(values, 1)
+    every_day = [rng.gauss(0, 3_000) for _ in range(400)]
+    assert placebo_p(rng.sample(every_day, 50), every_day) > 0.05
+    assert placebo_p([5_000.0] * 50, every_day) < 0.01
+    variants = [[rng.gauss(0, 1) for _ in range(160)] for _ in range(10)]
+    assert overfit_probability(variants) > 0.2
+    steady = [[rng.gauss(1 if row == 0 else 0, 0.3) for _ in range(160)] for row in range(10)]
+    assert overfit_probability(steady) < 0.05

@@ -210,3 +210,12 @@ def test_filters_are_checked_and_an_unreadable_feature_records_nothing(session, 
                                 "forward_from": "2026-11-02", "rationale": "r"}]))
     with pytest.raises(ValueError):
         load_hypotheses(bad)
+
+
+def test_a_machine_idea_without_a_backtest_is_rejected_and_spends_nothing(session):
+    run_learning(session, _MARKET, _NOW, [_hypothesis("grid_idea", _WINNER, origin="GRID")])
+    row = _row(session, "grid_idea")
+    assert row.stage == "REJECTED" and row.budget_sequence is None
+    assert session.scalars(select(LearningObservation)).all() == []
+    [event] = session.scalars(select(LearningEvent)).all()
+    assert event.reason == "BACKTEST_SCREEN" and "backtest trades" in event.summary

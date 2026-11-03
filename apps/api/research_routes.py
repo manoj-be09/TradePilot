@@ -21,6 +21,10 @@ from packages.database.models import (
     ResearchStudy,
     ResearchTrial,
 )
+from packages.learning.engine import budget_summary as learning_budget
+from packages.learning.engine import events as learning_events
+from packages.learning.engine import hypotheses as learning_hypotheses
+from packages.learning.execution import current as current_cost_model
 from packages.paper_trading.demotion import as_utc
 from packages.regime.candidate_registry import (
     CandidateDefinition,
@@ -75,6 +79,29 @@ def get_rule_engine(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
             "event_type": event.event_type, "reason": event.reason, "summary": event.summary,
             "occurred_at": as_utc(event.occurred_at),
         } for event in rule_events(session)],
+    }
+
+
+@router.get("/learning")
+def get_learning(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
+    """The v2 loop: every forward hypothesis, the error budget left, and each decision.
+
+    Shared research records, not account data; all results are simulated.
+    """
+    return {
+        "budget": learning_budget(session),
+        "cost_model": current_cost_model(),
+        "hypotheses": [{
+            "key": row.key, "family": row.family, "origin": row.origin, "stage": row.stage,
+            "override": row.override, "baseline_key": row.baseline_key,
+            "forward_from": row.forward_from, "alpha": row.alpha,
+            "stage_since": as_utc(row.stage_since),
+            "checked_at": row.checked_at and as_utc(row.checked_at), "check": row.latest_check,
+        } for row in learning_hypotheses(session)],
+        "events": [{
+            "key": event.key, "event_type": event.event_type, "reason": event.reason,
+            "summary": event.summary, "occurred_at": as_utc(event.occurred_at),
+        } for event in learning_events(session)],
     }
 
 

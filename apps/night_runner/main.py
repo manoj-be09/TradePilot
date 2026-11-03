@@ -17,6 +17,7 @@ import argparse
 import asyncio
 import json
 import logging
+import random
 import secrets
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
@@ -32,12 +33,21 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from apps.api.paper_schemas import PaperTradeCreateRequest, PaperTradeCustomLegRequest
 from packages.backtesting.book_loader import load_books
+from packages.backtesting.candidate_algorithms import CURRENT_LOT
 from packages.backtesting.published_strategies import Bar, Book, Kind, Market
 from packages.backtesting.rich_premium import SessionMove, session_moves
 from packages.backtesting.rule_engine import ENGINE_RULES, EngineRule
 from packages.database.base import Base
 from packages.database.history_models import HistoricalImportContract, HistoricalOptionBar
-from packages.database.models import ResearchRuleVersion, User
+from packages.database.models import (
+    LearningHypothesis,
+    LearningObservation,
+    PaperAccount,
+    PaperTrade,
+    ResearchRuleVersion,
+    User,
+    UserNotification,
+)
 from packages.database.session import build_session_factory
 from packages.history.importer import (
     HistoryProvider,
@@ -45,6 +55,9 @@ from packages.history.importer import (
     import_expiry,
     list_expiries,
 )
+from packages.learning.allocation import Leg, refusal, saved_legs, thompson_draw
+from packages.learning.engine import tradable_rules
+from packages.learning.features import Context, features_at, passes
 from packages.market_data.contracts import (
     MarketDataProvider,
     MarketDataProviderError,
@@ -58,6 +71,7 @@ from packages.paper_trading.night_condor import (
     NightDecision,
     chain_book,
     decide,
+    paper_name,
 )
 from packages.paper_trading.session import exchange_today
 
@@ -66,6 +80,7 @@ IST = ZoneInfo("Asia/Kolkata")
 DEFAULT_CONFIG = Path("work/night-override.json")
 CACHE_DATABASE = Path("work/night-history.db")
 WIDE_HISTORY = Path("work/history-wide.db")
+HYPOTHESES = Path("work/learning/hypotheses.json")
 # The decision bar plus the research's three retries, with a little room for a slow cycle.
 ENTRY_WINDOW = timedelta(minutes=20)
 IMPORT_AFTER = time(15, 45)
@@ -88,7 +103,26 @@ class DayState:
 
 
 def custom_name(rule: EngineRule) -> str:
-    return f"Override · {rule.key.replace('_', ' ')} v{rule.version} · not promoted"
+    return paper_name(rule.key, rule.version, rule.override)
+
+
+def quote_evidence(chain: OptionChain, strikes: Sequence[Decimal]) -> list[str]:
+    """Last price, mid and quote age of each leg, to measure how far live drifts from research."""
+    kinds = ("CE", "PE", "CE", "PE")
+    found = {(item.strike, item.option_type): item for item in chain.contracts}
+    lines = []
+    for strike, kind in zip(strikes, kinds, strict=True):
+        item = found.get((strike, kind))
+        if item is None:
+            lines.append(f"{kind}{strike} missing")
+            continue
+        quote = item.quote
+        mid = (quote.bid + quote.ask) / 2 if quote.bid and quote.ask else None
+        traded = quote.last_trade_time
+        age = (chain.as_of - traded).total_seconds() if traded else None
+        lines.append(f"{kind}{strike} ltp {quote.last_price} mid {mid} age "
+                     f"{'?' if age is None else f'{age:.0f}s'}")
+    return lines
 
 
 def condor_request(expiry: date, strikes: Sequence[Decimal]) -> PaperTradeCreateRequest:
@@ -108,11 +142,35 @@ class NightRunner:
         database_urls: Sequence[str], cache: sessionmaker[Session], open_trade: OpenTrade,
         rules: Sequence[EngineRule] = ENGINE_RULES,
         sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
+        alert_email: str | None = None,
+        rules_source: Callable[[], Sequence[EngineRule]] | None = None,
     ) -> None:
         self.factory, self.provider, self.user_email = factory, provider, user_email
         self.database_urls, self.cache, self.open_trade = list(database_urls), cache, open_trade
-        self.rules, self.sleep = list(rules), sleep
+        self.rules, self.sleep, self.alert_email = list(rules), sleep, alert_email
+        # With v2 applied, the learning ledger names the rules each morning.
+        self.rules_source = rules_source
+        self.context = Context()
+        # Thompson sampling, not security.
+        self.rng = random.Random()  # nosec B311
         self.state = DayState(date.min)
+        self.alerted: set[tuple[date, str]] = set()
+
+    def alert(self, topic: str, title: str, message: str) -> None:
+        """One phone alert per topic per day, through the relay's account; logged regardless."""
+        logger.warning("%s: %s", title, message)
+        key = (self.state.day, topic)
+        if self.alert_email is None or key in self.alerted:
+            return
+        self.alerted.add(key)
+        with self.factory() as session:
+            user_id = session.scalar(select(User.id).where(
+                User.email == self.alert_email.strip().lower()))
+            if user_id is None:
+                return
+            session.add(UserNotification(user_id=user_id, event_type="night_runner." + topic,
+                                         title=title[:160], message=message[:512], details={}))
+            session.commit()
 
     async def _trades(self, day: date) -> bool:
         if day not in self.state.sessions:
@@ -154,11 +212,15 @@ class NightRunner:
         return [move for move in session_moves(market) if move.session < today]
 
     def _stopped(self, rule: EngineRule) -> str | None:
+        """Stopped by either loop: the v1 rule engine or, once applied, the v2 ledger."""
         with self.factory() as session:
-            stage = session.scalar(select(ResearchRuleVersion.stage).where(
+            stages = [session.scalar(select(ResearchRuleVersion.stage).where(
                 ResearchRuleVersion.rule_key == rule.key,
-                ResearchRuleVersion.version == rule.version))
-        return stage if stage in STOPPED_STAGES else None
+                ResearchRuleVersion.version == rule.version))]
+            if self.rules_source is not None:
+                stages.append(session.scalar(select(LearningHypothesis.stage).where(
+                    LearningHypothesis.key == rule.key)))
+        return next((stage for stage in stages if stage in STOPPED_STAGES), None)
 
     async def _decide(
         self, rule: EngineRule, chain: OptionChain, decided_at: datetime,
@@ -172,7 +234,29 @@ class NightRunner:
         if previous is None or self.state.moves is None:
             return NightDecision(None, None, "No previous session found; no trade")
         book = chain_book(chain, decided_at, sessions)
+        filters = rule.params.get("filters", [])
+        if filters:
+            values = features_at(book, await self._following_book(chain, decided_at), decided_at,
+                                 self.state.moves, following, self.context)
+            if not passes(filters, values):
+                shown = {name: values.get(name) for name in {item["feature"] for item in filters}}
+                # No richness means a data gap, which alerts; an unmet filter does not.
+                gap = any(value is None for value in shown.values())
+                return NightDecision(None, None if gap else 0.0,
+                                     f"Filters not met {shown}; no trade")
         return decide(rule, self.state.moves, book, decided_at, previous, following)
+
+    async def _following_book(self, chain: OptionChain, decided_at: datetime) -> Book | None:
+        """The next expiry's chain as bars, for the term-structure feature; None if unreadable."""
+        contracts = await self.provider.get_option_contracts("NIFTY")
+        later = sorted({item.expiry for item in contracts if item.expiry > chain.expiry})
+        if not later:
+            return None
+        second = await self.provider.get_option_chain("NIFTY", later[0])
+        today = decided_at.date()
+        days = [today + timedelta(days=offset) for offset in range((later[0] - today).days + 1)]
+        days = [day for day in days if day == today or await self._trades(day)]
+        return chain_book(second, decided_at, days)
 
     async def _open(
         self, rule: EngineRule, expiry: date, decision: NightDecision, today: date,
@@ -194,12 +278,13 @@ class NightRunner:
                 session.rollback()
                 if error.status_code in {404, 422}:
                     self.state.finished.add(rule.key)
-                logger.warning("%s not opened (%s): %s", rule.key, error.status_code,
-                               error.detail)
+                self.alert(f"blocked.{rule.key}", "Night condor not opened",
+                           f"{rule.key}: {error.status_code} {error.detail}")
                 return "BLOCKED"
         self.state.finished.add(rule.key)
-        logger.warning("%s opened a paper condor %s; %s", rule.key, decision.strikes,
-                       decision.reason)
+        self.alert(f"opened.{rule.key}", "Night condor opened (paper, not promoted)",
+                   f"{rule.key}: strikes {', '.join(map(str, decision.strikes))}; "
+                   f"{decision.reason}")
         return "OPENED"
 
     async def import_expired(self, today: date) -> None:
@@ -219,13 +304,22 @@ class NightRunner:
         today = exchange_today(now)
         if self.state.day != today:
             self.state = DayState(today)
+            if self.rules_source is not None:
+                self.rules = list(self.rules_source())
+                self.context = Context.load(self.database_urls[0])
+                logger.info("Rules today: %s", ", ".join(rule.key for rule in self.rules)
+                            or "none")
         market = await self.provider.get_nfo_session(today)
         if market is None:
             return "NO_SESSION"
         if now.astimezone(IST).time() >= IMPORT_AFTER:
             if not self.state.imported:
-                await self.import_expired(today)
                 self.state.imported = True
+                try:
+                    await self.import_expired(today)
+                except Exception as error:  # noqa: BLE001 - tomorrow still needs an alert
+                    self.alert("import", "Night runner cache import failed",
+                               f"{type(error).__name__}; tomorrow may lack past sessions")
             return "AFTER_CLOSE"
         if not market.start <= now <= market.end:
             return "CLOSED"
@@ -249,7 +343,8 @@ class NightRunner:
         if self.state.moves is None:
             # Fetched once a day at the open, before the first entry time.
             self.state.moves = await self._past_moves(today, chain.underlying_spot, contracts)
-        results = []
+        results: list[str] = []
+        ready: list[tuple[EngineRule, NightDecision]] = []
         for rule, decided_at in due:
             stage = self._stopped(rule)
             if stage is not None:
@@ -261,11 +356,67 @@ class NightRunner:
                 decision = self.state.decisions[rule.key] = await self._decide(
                     rule, chain, decided_at)
                 logger.warning("%s: %s", rule.key, decision.reason)
+                if decision.strikes is not None:
+                    logger.info("%s quotes: %s", rule.key,
+                                "; ".join(quote_evidence(chain, decision.strikes)))
+                elif decision.richness is None:
+                    # Gaps, not a quiet market: no trade for a data reason deserves a look.
+                    self.alert(f"data.{rule.key}", "Night condor skipped for missing data",
+                               f"{rule.key}: {decision.reason}")
             if decision.strikes is None:
                 self.state.finished.add(rule.key)
                 continue
+            ready.append((rule, decision))
+        for rule, decision in self._ordered(ready):
+            refused = self._refusal(chain, decision) if self.rules_source is not None else None
+            if refused is not None:
+                self.state.finished.add(rule.key)
+                self.alert(f"blocked.{rule.key}", "Night condor not opened",
+                           f"{rule.key}: {refused}")
+                results.append("BLOCKED")
+                continue
             results.append(await self._open(rule, chain.expiry, decision, today))
         return ", ".join(results) or ("DECIDED" if due else "READY")
+
+    def _ordered(self, ready: list[tuple[EngineRule, NightDecision]],
+                 ) -> list[tuple[EngineRule, NightDecision]]:
+        """Thompson order when the v2 ledger has results; otherwise as listed."""
+        if self.rules_source is None or len(ready) < 2:
+            return ready
+        with self.factory() as session:
+            draws = {}
+            for rule, _ in ready:
+                values = [float(value) for value in session.scalars(
+                    select(LearningObservation.net_pnl).join(LearningHypothesis).where(
+                        LearningHypothesis.key == rule.key))]
+                draws[rule.key] = thompson_draw(values, self.rng)
+        return sorted(ready, key=lambda item: -draws[item[0].key])
+
+    def _refusal(self, chain: OptionChain, decision: NightDecision) -> str | None:
+        """The portfolio caps of allocation.py over open trades plus this condor."""
+        if decision.strikes is None or chain.underlying_spot is None:
+            return "no strikes or spot"
+        greeks = {(item.strike, item.option_type): item.greeks for item in chain.contracts}
+        prices = {(item.strike, item.option_type): float(item.quote.last_price)
+                  for item in chain.contracts}
+        sides = (("CE", "SELL"), ("PE", "SELL"), ("CE", "BUY"), ("PE", "BUY"))
+        new = [Leg(kind, side, strike, CURRENT_LOT, prices.get((strike, kind), 0.0))
+               for (kind, side), strike in zip(sides, decision.strikes, strict=True)]
+        with self.factory() as session:
+            user = session.scalar(select(User).where(User.email == self.user_email))
+            if user is None:
+                return "the probation account is missing"
+            capital = session.scalar(select(PaperAccount.initial_cash).where(
+                PaperAccount.user_id == user.id))
+            if capital is None:
+                # The account is made on the first trade, with the configured capital.
+                from apps.api.settings import get_settings
+
+                capital = Decimal(get_settings().initial_paper_capital)
+            held = [leg for trade in session.scalars(select(PaperTrade).where(
+                        PaperTrade.user_id == user.id, PaperTrade.status == "OPEN"))
+                    for leg in saved_legs(trade.legs.get("items", []))]
+            return refusal(new, held, float(chain.underlying_spot), greeks, float(capital))
 
 
 def save_config(path: Path, user_email: str) -> None:
@@ -301,10 +452,18 @@ async def serve(config: Path, interval_seconds: float, once: bool) -> None:
     urls = [get_settings().database_url] + [
         f"sqlite:///{path.as_posix()}" for path in (WIDE_HISTORY, CACHE_DATABASE) if path.exists()
     ]
+    factory = build_session_factory()
+
+    def ledger_rules() -> list[EngineRule]:
+        with factory() as session:
+            return tradable_rules(session)
+
     runner = NightRunner(
-        build_session_factory(), get_market_data_provider(), user_email, urls,
+        factory, get_market_data_provider(), user_email, urls,
         build_session_factory(f"sqlite:///{CACHE_DATABASE.as_posix()}"),
-        _open_paper_trade_with_provider,
+        _open_paper_trade_with_provider, alert_email=get_settings().telegram_alert_user_email,
+        # v2 applied: once the hypothesis file exists, the ledger replaces the v1 override list.
+        rules_source=ledger_rules if HYPOTHESES.exists() else None,
     )
     while True:
         try:

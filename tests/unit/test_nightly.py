@@ -120,6 +120,7 @@ def test_low_disk_space_is_reported(tmp_path, factory, monkeypatch, caplog):
     )
     assert results["disk_free_gb"] == "4.0"
     assert results["rule_engine"] == "SKIPPED_NO_WIDE_HISTORY"
+    assert results["learning"] == "SKIPPED_NO_HYPOTHESES"
     assert "Low disk space" in caplog.text
     assert "Disk free: 4.0 GB. LOW" in (tmp_path / "reports" / "2026-11-03.md").read_text()
 
@@ -270,3 +271,62 @@ def test_no_account_is_reported_rather_than_raised(tmp_path, factory):
         factory, PLAN, tmp_path / "absent.db", tmp_path / "backups", tmp_path / "reports", NOW,
     )
     assert results["ledger"] == "NO_ACCOUNT"
+
+
+def test_history_import_runs_both_scripts_and_stops_at_the_first_failure():
+    from types import SimpleNamespace
+
+    from apps.nightly.main import import_recent_history
+
+    seen = []
+
+    def runner(command, **options):
+        seen.append(command[1])
+        return SimpleNamespace(returncode=0 if len(seen) == 1 else 1, stderr="boom")
+
+    assert import_recent_history(date(2026, 11, 20), runner) == "FAILED (import-far-strikes)"
+    assert seen == ["scripts/import-history.py", "scripts/import-far-strikes.py"]
+    assert import_recent_history(date(2026, 11, 20), lambda command, **options:
+                                 SimpleNamespace(returncode=0, stderr="")) == "OK"
+
+
+def test_the_learning_loop_judges_owner_and_generated_ideas_and_reports_on_fridays(
+        factory, tmp_path, monkeypatch):
+    import json
+
+    from packages.backtesting.published_strategies import Market, TradeResult
+    from packages.learning import engine, execution, report
+    from packages.learning.engine import Kind
+
+    monkeypatch.setitem(engine.KINDS, "rich_condor", Kind(
+        lambda params, market: [TradeResult(date(2026, 11, 3), date(2026, 11, 3), 900.0, 80.0,
+                                            2_000.0)],
+        lambda params, result: (20_000.0, 2_000.0)))
+    monkeypatch.setattr(nightly, "_research_market", lambda wide: Market([], 0.0))
+    monkeypatch.setattr(nightly, "recorded_books", lambda url, first: [])
+    monkeypatch.setattr(nightly.Context, "load", classmethod(lambda cls, url: cls()))
+    monkeypatch.setattr(nightly, "GENERATED", tmp_path / "generated.json")
+    monkeypatch.setattr(execution, "COST_MODEL", tmp_path / "cost.json")
+    monkeypatch.setattr(report, "REPORTS", tmp_path / "reports")
+    monkeypatch.setattr(report, "current", lambda: None)
+    monkeypatch.setattr(nightly, "write_weekly",
+                        lambda session, today: report.write_weekly(session, today,
+                                                                   tmp_path / "reports"))
+    owner = tmp_path / "hypotheses.json"
+    wide = tmp_path / "wide.db"
+    assert nightly.run_learning_loop(factory, wide, owner, NOW) == "SKIPPED_NO_HYPOTHESES"
+    owner.write_text(json.dumps([{
+        "key": "night_v1", "family": "night", "kind": "rich_condor", "origin": "HUMAN",
+        "params": {"short_delta": 0.15, "threshold": 1.1, "hold_overnight": True,
+                   "entry_time": "09:30", "into_expiry": True},
+        "forward_from": "2026-11-02", "rationale": "owner",
+        "preregistration": {"expected_mean": 3_000.0, "expected_sd": 4_000.0,
+                            "max_loss": 20_000.0, "trades_per_session": 1.0}}]))
+    assert nightly.run_learning_loop(factory, wide, owner, NOW) == "SKIPPED_NO_WIDE_HISTORY"
+    wide.write_bytes(b"")
+    friday = datetime(2026, 11, 6, 12, tzinfo=timezone.utc)
+    assert nightly.run_learning_loop(factory, wide, owner, friday) == "0 decision(s)"
+    written = (tmp_path / "reports" / "2026-11-06.md").read_text(encoding="utf-8")
+    assert "| night_v1 | HUMAN | SHADOW | 1 |" in written and "not" in written.lower()
+    # A rerun records nothing twice.
+    assert nightly.run_learning_loop(factory, wide, owner, friday) == "0 decision(s)"

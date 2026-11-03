@@ -97,6 +97,8 @@ class TradeResult:
     expiry: date
     gross_pnl: float
     charges: float
+    # Net premium received at entry for one lot (negative when paid); bounds the trade's gain.
+    credit: float = field(default=0.0, compare=False)
 
     @property
     def net_pnl(self) -> float:
@@ -230,7 +232,7 @@ def simulate(
         for day, side, price in fills
     )
     return TradeResult(entry_at.date(), book.expiry, round(realized * CURRENT_LOT, 2),
-                       round(charges, 2))
+                       round(charges, 2), round(credit * CURRENT_LOT, 2))
 
 
 class Market:

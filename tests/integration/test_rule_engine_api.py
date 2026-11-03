@@ -45,7 +45,7 @@ def test_learning_trail_is_authenticated_and_shows_the_budget(client, monkeypatc
                                           "max_loss": 20_000.0, "trades_per_session": 1.0})])
         session.commit()
     body = client.get("/research/learning", headers={"Authorization": f"Bearer {token}"}).json()
-    assert body["budget"]["hypotheses_tested"] == 1
+    assert body["budget"]["hypotheses_tested"] == 1 and "cost_model" in body
     assert body["budget"]["remaining_alpha"] < 0.05
     [row] = body["hypotheses"]
     assert row["stage"] == "SHADOW" and row["check"]["trades"] == 1

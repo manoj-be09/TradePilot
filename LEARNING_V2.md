@@ -37,22 +37,48 @@ Kept from v1: frozen versions, the append-only decision trail, champion/challeng
 - **A ₹3,000-a-trade loser:** dropped within 100 trades in most runs.
 - **Speed:** forward evidence is slow at these effect sizes. That is the cost of not fooling ourselves.
 
-## Still to build
+## Built on this branch
 
-1. **Probation runner:** generalise `apps/night_runner` to trade any PROBATION or override hypothesis from its definition, in the probation account.
-2. **Recorder → 5-minute forward bars:** shadow scoring from the private recorder data, with a wider strike range, so hundreds of candidates cost no API calls.
-3. **Point-in-time features and an event calendar:** India VIX, the weekly-vs-monthly IV gap, skew, realised vol; RBI, budget, CPI and Fed days.
-4. **Idea generator:**
-   - GRID: pre-declared neighbours of the rules doing well in shadow.
-   - LLM: written hypotheses with a rationale.
-   - Each enters with a pre-registration, and its rationale is stored.
-5. **Backtest screen (reject only):** purged cross-validation, probability of backtest overfitting, deflated Sharpe, and a placebo run on shuffled data.
-6. **Allocation across approved rules:** Thompson sampling inside the 2% and 10% limits, with portfolio Greek caps and a −5% gap stress test for night holds.
-7. **Execution learning:** weekly recalibration of the spread and slippage model from paper fills, with pinned cost-model versions.
-8. **Research page panel:** for `/research/learning`, and a weekly evidence report.
+1. **Probation runner** (`apps/night_runner`, `tradable_rules` in `engine.py`): once the hypothesis file exists, the night runner reads its rules each morning from the v2 ledger. It trades rules in probation or approved, and the owner's overrides until evidence stops them, in the same separate paper account (₹10 lakh). Non-override trades are named "Probation". A rule stopped by either loop is not traded.
+2. **Forward bars from the recorder** (`forward_bars.py`): recorder minutes fold into 5-minute IST bars. They fill sessions the history imports lack, and imported bars always win, so nightly shadow scoring makes no API calls. The recorder now keeps ±40 strikes.
+3. **Point-in-time features and an event calendar** (`features.py`):
+   - realised vol over the last 5 sessions;
+   - the previous session's India VIX close, from the recorder;
+   - the gap between weekly and next-expiry implied vol;
+   - 2% put/call skew;
+   - event days from the owner's private `work/learning/events.json`, a list of `{"date", "name"}`. Nothing is pre-filled.
+
+   Filters are frozen in a hypothesis's params. They apply alike in shadow scoring and the live runner, and an unreadable feature means no trade.
+4. **Idea generator** (`ideas.py`):
+   - GRID declares one-step neighbours of shadow rules with 20+ positive forward trades. It drops a batch whose backtests overfit, and pre-registers half the parent's average.
+   - Every Friday, Claude (`claude-opus-5-5`, optional `llm` extra plus `ANTHROPIC_API_KEY`) proposes up to 3 ideas. It is sent only the parameter space and aggregate shadow results, and each proposal is range-checked.
+   - New ideas go to the private `work/learning/generated.json` and are frozen from the next session.
+5. **Backtest screen, reject only** (`screen.py`): applies to machine ideas only. It checks 30+ trades, purged folds (positive in 4 of 5), the deflated Sharpe ratio against the family's trials, a placebo of random baseline days, and a CSCV overfitting probability for GRID batches. A rejected idea spends no budget.
+6. **Allocation** (`allocation.py`): rules due together are ordered by a Thompson draw. Each condor opens only if the whole book stays inside:
+   - a net delta cap;
+   - a net vega cap;
+   - a 5% overnight gap stress test at 10% of capital.
+
+   Unknown greeks fail closed. The open function's per-trade, portfolio, daily-loss and kill-switch checks still apply.
+7. **Execution learning** (`execution.py`): each Friday, the median paper-minus-shadow gap becomes a new version in the private `work/learning/cost-model.json`. New ideas freeze that slippage and pay it on every shadow trade, so counted evidence never changes.
+8. **Research page panel and weekly report**:
+   - `LearningLoop` on the research page reads `/research/learning`, which now includes the cost model.
+   - Every Friday, `report.py` writes `work/learning/reports/YYYY-MM-DD.md`.
+
+## Known limits
+
+- **One strategy family.** The generator and runner cover only `rich_condor` night holds, which the next-session exit supports. Other kinds can be scored in shadow, but the runner cannot trade them yet.
+- **VIX coverage.** VIX comes only from the recorder, so sessions before recording began have no VIX. A VIX filter fails closed on those sessions, which only affects backtests.
+- **Greek caps are fixed.** The caps (delta 40 index points, vega ₹3,000 a point) are starting values, not fitted ones.
+- **LLM data sharing.** LLM ideas send aggregate simulated results to the Anthropic API. Leave `ANTHROPIC_API_KEY` unset to keep them off.
 
 ## Applying v2 later
 
 1. Merge this branch. Migration `0041_learning_v2` adds three tables and changes nothing existing.
-2. Write `work/learning/hypotheses.json` with the two condors, keyed like the v1 rules (`very_rich_night_condor`, `very_rich_night_condor_920`), with `override: true`, their pre-registered effects, and an every-day baseline.
-3. Restart the stack outside market hours. v1 keeps running beside v2 until the owner retires it.
+2. Write `work/learning/hypotheses.json` with the two condors:
+   - keyed like the v1 rules (`very_rich_night_condor`, `very_rich_night_condor_920`);
+   - with `override: true`, their pre-registered effects, and an every-day baseline.
+3. Optionally:
+   - write `work/learning/events.json`;
+   - install the `llm` extra and set `ANTHROPIC_API_KEY` for Claude's weekly ideas.
+4. Restart the stack outside market hours. The night runner then trades from the v2 ledger instead of the v1 list, in the same account.

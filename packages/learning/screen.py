@@ -80,7 +80,8 @@ def placebo_p(values: Sequence[float], baseline: Sequence[float], seed: int = 0)
     """Share of random same-size draws from the baseline whose average is at least as good."""
     if not baseline or len(values) > len(baseline):
         return 1.0
-    rng = random.Random(seed)
+    # A reproducible placebo draw, not security.
+    rng = random.Random(seed)  # nosec B311
     target = mean(values)
     wins = sum(mean(rng.sample(list(baseline), len(values))) >= target
                for _ in range(PLACEBO_DRAWS))

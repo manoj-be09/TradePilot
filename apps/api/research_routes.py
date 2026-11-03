@@ -24,6 +24,7 @@ from packages.database.models import (
 from packages.learning.engine import budget_summary as learning_budget
 from packages.learning.engine import events as learning_events
 from packages.learning.engine import hypotheses as learning_hypotheses
+from packages.learning.execution import current as current_cost_model
 from packages.paper_trading.demotion import as_utc
 from packages.regime.candidate_registry import (
     CandidateDefinition,
@@ -89,6 +90,7 @@ def get_learning(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
     """
     return {
         "budget": learning_budget(session),
+        "cost_model": current_cost_model(),
         "hypotheses": [{
             "key": row.key, "family": row.family, "origin": row.origin, "stage": row.stage,
             "override": row.override, "baseline_key": row.baseline_key,

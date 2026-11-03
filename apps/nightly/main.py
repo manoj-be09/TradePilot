@@ -37,6 +37,7 @@ from packages.learning.execution import calibrate, current
 from packages.learning.features import Context
 from packages.learning.forward_bars import merge_books, recorded_books
 from packages.learning.ideas import GENERATED, generate, save_generated
+from packages.learning.report import write_weekly
 from packages.paper_trading.forward_plan import ForwardPlan, load_plan
 from packages.paper_trading.forward_report import build_report, render_markdown
 
@@ -157,6 +158,9 @@ def run_learning_loop(
         decisions = run_learning(session, market, now, known + fresh,
                                  Context.load(get_settings().database_url))
         session.commit()
+        report = write_weekly(session, today)
+        if report is not None:
+            logger.info("Learning: weekly evidence report at %s", report)
     for decision in decisions:
         logger.warning("Learning: %s", decision)
     return f"{len(decisions)} decision(s)"

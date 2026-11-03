@@ -151,7 +151,8 @@ class NightRunner:
         # With v2 applied, the learning ledger names the rules each morning.
         self.rules_source = rules_source
         self.context = Context()
-        self.rng = random.Random()
+        # Thompson sampling, not security.
+        self.rng = random.Random()  # nosec B311
         self.state = DayState(date.min)
         self.alerted: set[tuple[date, str]] = set()
 
@@ -393,7 +394,8 @@ class NightRunner:
 
     def _refusal(self, chain: OptionChain, decision: NightDecision) -> str | None:
         """The portfolio caps of allocation.py over open trades plus this condor."""
-        assert decision.strikes is not None and chain.underlying_spot is not None
+        if decision.strikes is None or chain.underlying_spot is None:
+            return "no strikes or spot"
         greeks = {(item.strike, item.option_type): item.greeks for item in chain.contracts}
         prices = {(item.strike, item.option_type): float(item.quote.last_price)
                   for item in chain.contracts}

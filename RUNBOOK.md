@@ -154,4 +154,4 @@ run no longer counts as an untouched test.
 The forward-only rules in that file are scored after the fact. Import new expiries with `scripts/import-history.py`, then
 their far strikes with `scripts/import-far-strikes.py --first-expiry 2026-11-01`, then run
 `scripts/run-published-strategies.py --study night --forward --extra-database work/history-wide.db`. All three need
-`DATABASE_URL="sqlite:///./work/nifty-local.db"` and `PYTHONPATH=.`. The extra database is private and stays out of git.
+`DATABASE_URL="sqlite:///./work/nifty-local.db"` and `PYTHONPATH=.`. The extra database is private and stays out of git. Once the expiries and far strikes are imported, the nightly job (`apps/nightly/main.py`) runs the research rule engine over them after 16:30 IST when `work/history-wide.db` exists; its decisions are on Research under "Research rule engine". `python -m apps.nightly.main --once` runs it at once.

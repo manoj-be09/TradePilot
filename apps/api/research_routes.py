@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from apps.api.auth import CurrentUser, SessionDep
 from packages.backtesting.contracts import ScheduledOptionsBacktestResult
+from packages.backtesting.rule_engine import T_BAR, TRIALS_TESTED, rule_events, rule_versions
 from packages.database.models import (
     BacktestRun,
     ResearchCandidate,
@@ -20,6 +21,7 @@ from packages.database.models import (
     ResearchStudy,
     ResearchTrial,
 )
+from packages.paper_trading.demotion import as_utc
 from packages.regime.candidate_registry import (
     CandidateDefinition,
     TrialManifest,
@@ -52,6 +54,28 @@ from packages.regime.research_recommendations import (
 from packages.regime.research_studies import freeze_nifty_study, study_view
 
 router = APIRouter(prefix="/research", tags=["research registry"])
+
+
+@router.get("/rule-engine")
+def get_rule_engine(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
+    """Where each frozen research rule stands and every engine decision, newest first.
+
+    Shared research records, not account data; all results are simulated.
+    """
+    return {
+        "t_bar": round(T_BAR, 2),
+        "trials_tested": TRIALS_TESTED,
+        "rules": [{
+            "rule_key": row.rule_key, "version": row.version, "stage": row.stage,
+            "forward_from": row.forward_from, "stage_since": as_utc(row.stage_since),
+            "checked_at": row.checked_at and as_utc(row.checked_at), "check": row.latest_check,
+        } for row in rule_versions(session)],
+        "events": [{
+            "rule_key": event.rule_key, "version": event.version,
+            "event_type": event.event_type, "reason": event.reason, "summary": event.summary,
+            "occurred_at": as_utc(event.occurred_at),
+        } for event in rule_events(session)],
+    }
 
 
 class NiftyReplayRecordRequest(BaseModel):

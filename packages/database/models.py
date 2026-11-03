@@ -739,3 +739,69 @@ class StrategyEligibilityEvent(Base):
     summary: Mapped[str] = mapped_column(String(256))
     details: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ResearchRuleVersion(Base):
+    """One frozen version of a research rule and where the rule engine has it now."""
+
+    __tablename__ = "research_rule_versions"
+    __table_args__ = (
+        UniqueConstraint("rule_key", "version", name="uq_research_rule_version"),
+        CheckConstraint(
+            "stage IN ('SHADOW', 'PAPER_APPROVED', 'SUPERSEDED', 'DEMOTED', 'RETIRED')",
+            name="ck_research_rule_stage",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    rule_key: Mapped[str] = mapped_column(String(64))
+    version: Mapped[int] = mapped_column(Integer)
+    params: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    forward_from: Mapped[date] = mapped_column(Date)
+    stage: Mapped[str] = mapped_column(String(16))
+    stage_since: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    latest_check: Mapped[dict[str, Any]] = mapped_column(PortableJSON, default=dict)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ResearchShadowTrade(Base):
+    """A simulated trade of a frozen rule on a session after it was frozen. Never a fill."""
+
+    __tablename__ = "research_shadow_trades"
+    __table_args__ = (
+        UniqueConstraint("rule_version_id", "session", name="uq_research_shadow_trade_session"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    rule_version_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("research_rule_versions.id"))
+    session: Mapped[date] = mapped_column(Date)
+    expiry: Mapped[date] = mapped_column(Date)
+    gross_pnl: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    charges: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    net_pnl: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ResearchRuleEvent(Base):
+    """Append-only trail of every rule engine decision, with the evidence it used."""
+
+    __tablename__ = "research_rule_events"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('REGISTERED', 'PROMOTED', 'SUPERSEDED', 'DEMOTED', 'ROLLED_BACK', "
+            "'RETIRED')",
+            name="ck_research_rule_event_type",
+        ),
+        Index("ix_research_rule_events_time", "occurred_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    rule_version_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("research_rule_versions.id"))
+    rule_key: Mapped[str] = mapped_column(String(64))
+    version: Mapped[int] = mapped_column(Integer)
+    event_type: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(String(32))
+    summary: Mapped[str] = mapped_column(String(256))
+    details: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

@@ -29,6 +29,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy import Engine, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from apps.api.paper_schemas import PaperTradeCreateRequest, PaperTradeCustomLegRequest
@@ -58,6 +59,7 @@ from packages.history.importer import (
 from packages.learning.allocation import Leg, refusal, saved_legs, thompson_draw
 from packages.learning.engine import tradable_rules
 from packages.learning.features import Context, features_at, passes
+from packages.learning.forward_bars import merge_books, recorded_books
 from packages.market_data.contracts import (
     MarketDataProvider,
     MarketDataProviderError,
@@ -208,7 +210,15 @@ class NightRunner:
                     series[moment] = Bar(float(bar.open), float(bar.high), float(bar.low),
                                          float(bar.close))
             await self.sleep(PAUSE_SECONDS)
-        market = Market([Book(expiry, by_key) for expiry, by_key in bars.items()], lambda _: 0.0)
+        books = [Book(expiry, by_key) for expiry, by_key in bars.items()]
+        try:
+            # The history API lags a day at times; recorder minutes fill sessions it lacks.
+            recorded = recorded_books(self.database_urls[0], today - ACTIVE_LOOKBACK)
+            books = merge_books(books, [book for book in recorded if book.expiry >= today
+                                        - LOOKBACK])
+        except SQLAlchemyError as error:
+            logger.warning("Recorder bars unavailable: %s", type(error).__name__)
+        market = Market(books, lambda _: 0.0)
         return [move for move in session_moves(market) if move.session < today]
 
     def _stopped(self, rule: EngineRule) -> str | None:

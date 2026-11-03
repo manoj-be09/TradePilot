@@ -10,8 +10,9 @@ from test_paper_trading import FakeUpstoxProvider, _token
 from apps.api.services.paper_monitor import monitor_exits
 from apps.api.settings import get_settings
 from apps.paper_worker.main import run_cycle
-from packages.database.models import AuditEvent, PaperOrder, PaperTrade, WorkerLease
+from packages.database.models import AuditEvent, PaperOrder, PaperTrade, User, WorkerLease
 from packages.market_data.contracts import ExchangeSession, UnconfiguredMarketDataProvider
+from packages.paper_trading.night_condor import NIGHT_EXIT_POLICY
 from packages.paper_trading.official_index_close import OfficialIndexClose, archive_url
 from packages.paper_trading.session import exchange_today
 from packages.paper_trading.transactions import lock_account
@@ -956,3 +957,67 @@ def test_closed_nfo_session_blocks_paper_fills_and_marks(client, monkeypatch):
     with factory() as session:
         assert session.get(PaperTrade, UUID(trade["id"])).status == "OPEN"
         assert len(list(session.scalars(select(PaperOrder)))) == 1
+
+
+@pytest.mark.parametrize("opened_days_ago", [0, 1])
+def test_night_policy_squares_off_at_the_next_session_cutoff_only(
+    client, monkeypatch, opened_days_ago,
+):
+    provider, headers, _, trade, factory = setup_position(client, monkeypatch)
+    with factory() as session:
+        saved = session.get(PaperTrade, UUID(trade["id"]))
+        saved.opened_at = datetime.now(timezone.utc) - timedelta(days=opened_days_ago)
+        saved.entry_rule_snapshot = {**saved.entry_rule_snapshot,
+                                     "exit_policy": NIGHT_EXIT_POLICY.as_dict()}
+        session.commit()
+
+    async def closing_session(_trading_day):
+        now = datetime.now(timezone.utc)
+        return ExchangeSession("NFO", now - timedelta(hours=6), now + timedelta(minutes=10))
+
+    monkeypatch.setattr(provider, "get_nfo_session", closing_session)
+    assert asyncio.run(run_cycle(factory, provider, get_settings())) == "HEALTHY"
+    assert asyncio.run(run_cycle(factory, provider, get_settings())) == "HEALTHY"
+    with factory() as session:
+        saved = session.get(PaperTrade, UUID(trade["id"]))
+        if not opened_days_ago:
+            # Opened today: the expiry is later, so nothing closes it at today's cutoff.
+            assert saved.status == "OPEN"
+            return
+        assert saved.status == "CLOSED"
+        assert saved.exit_reason == "NEXT_SESSION_EXIT"
+        assert len(list(session.scalars(select(PaperOrder)))) == 2
+    report = client.get(f"/paper/trades/{trade['id']}/exit-reconciliation", headers=headers)
+    assert report.json()["status"] == "MATCHED", report.json()
+    assert report.json()["last_decision"] == "NEXT_SESSION_EXIT"
+
+
+def test_night_runner_condor_opens_through_the_guarded_path_with_its_name_and_exit(
+    client, monkeypatch,
+):
+    from apps.api.main import _open_paper_trade_with_provider
+    from apps.night_runner.main import condor_request
+
+    provider = FakeUpstoxProvider()
+    monkeypatch.setattr("apps.api.main.get_market_data_provider", lambda: provider)
+    _token(client)
+    factory = client.app.state.test_session_factory
+    body = condor_request(provider.expiry, [Decimal(25050), Decimal(24950), Decimal(25100),
+                                            Decimal(24900)])
+    with factory() as session:
+        user = session.scalars(select(User)).one()
+        opened = asyncio.run(_open_paper_trade_with_provider(
+            body, user, session, "night_test_key", provider,
+            exit_policy=NIGHT_EXIT_POLICY, custom_name="Override · test v1 · not promoted",
+        ))
+        again = asyncio.run(_open_paper_trade_with_provider(
+            body, user, session, "night_test_key", provider,
+            exit_policy=NIGHT_EXIT_POLICY, custom_name="Override · test v1 · not promoted",
+        ))
+    assert again.id == opened.id
+    with factory() as session:
+        [saved] = session.scalars(select(PaperTrade)).all()
+        assert saved.strategy_name == "Override · test v1 · not promoted"
+        assert saved.entry_rule_snapshot["exit_policy"] == NIGHT_EXIT_POLICY.as_dict()
+        assert len(saved.legs["items"]) == 4
+        assert saved.max_loss <= Decimal(20_000)

@@ -2715,6 +2715,7 @@ async def _open_paper_trade_with_provider(
     lease: LeaseToken | None = None,
     deployment_id: UUID | None = None,
     exit_policy: OptionExitPolicy | None = None,
+    custom_name: str | None = None,
 ) -> PaperTradeResponse:
     request_hash = hashlib.sha256(
         json.dumps(
@@ -3058,7 +3059,7 @@ async def _open_paper_trade_with_provider(
                 )
             selected.append((contract, leg.side, body.lots * leg.ratio))
         strategy_key = "custom"
-        strategy_name = "Custom options structure"
+        strategy_name = custom_name or "Custom options structure"
         reference_strike = body.reference_strike or custom_legs[0].strike
     else:
         if strategy is None or body.reference_strike is None:

@@ -35,6 +35,7 @@ from packages.paper_trading.session import (
     exchange_today,
     expiry_has_passed,
     expiry_square_off_due,
+    next_session_square_off_due,
     require_derivatives_session_open,
 )
 from packages.paper_trading.transactions import (
@@ -523,6 +524,14 @@ async def monitor_exits(
             )
         ):
             decision = ExitDecision(decision.peak_pnl, "EXPIRY_SQUARE_OFF")
+        if (
+            decision.reason is None and exit_policy.exits_next_session
+            and next_session_square_off_due(
+                trade.opened_at, nfo_session, now=evaluation_instant,
+                minutes_before_close=exit_policy.square_off_minutes_before_close,
+            )
+        ):
+            decision = ExitDecision(decision.peak_pnl, "NEXT_SESSION_EXIT")
         _record_exit_observation(session, user_id, trade.id, {
             "version": 1,
             "provider": provider.provider_id,

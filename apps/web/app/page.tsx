@@ -285,7 +285,7 @@ type PaperTrade = {
   target_profit_amount: string | null;
   trailing_stop_amount: string | null;
   peak_unrealized_pnl: string;
-  exit_reason: "STOP_LOSS" | "TARGET" | "TRAILING_STOP" | "EXPIRY_SQUARE_OFF" | "MANUAL" | "EXPIRY_SETTLEMENT" | null;
+  exit_reason: "STOP_LOSS" | "TARGET" | "TRAILING_STOP" | "EXPIRY_SQUARE_OFF" | "NEXT_SESSION_EXIT" | "MANUAL" | "EXPIRY_SETTLEMENT" | null;
   realized_pnl: string | null;
   unrealized_pnl: string | null;
   status: "OPEN" | "CLOSED";

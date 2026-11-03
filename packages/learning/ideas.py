@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from packages.backtesting.published_strategies import Market
 from packages.database.models import LearningHypothesis, LearningObservation
 from packages.learning.engine import KINDS, MIN_TRADES, Hypothesis
+from packages.learning.execution import pinned
 from packages.learning.features import validate
 from packages.learning.screen import PBO_BAR, overfit_probability
 
@@ -102,7 +103,8 @@ def _matrix(params: Sequence[dict[str, Any]], market: Market, before: date) -> l
     return rows
 
 
-def grid_ideas(session: Session, market: Market, today: date, taken: set[str]) -> list[Hypothesis]:
+def grid_ideas(session: Session, market: Market, today: date, taken: set[str],
+               cost: dict[str, Any] | None = None) -> list[Hypothesis]:
     ideas: list[Hypothesis] = []
     start = today + timedelta(days=1)
     for parent in parent_stats(session):
@@ -122,7 +124,7 @@ def grid_ideas(session: Session, market: Market, today: date, taken: set[str]) -
                   "trades_per_session": min(1.0, parent["trades"] / days)}
         for key, params in batch:
             ideas.append(Hypothesis(
-                key=key, family=row.family, kind="rich_condor", params=params,
+                key=key, family=row.family, kind="rich_condor", params=pinned(params, cost),
                 forward_from=start, origin="GRID", preregistration=prereg,
                 rationale=f"Neighbour of {row.key} ({parent['trades']} shadow trades), "
                           f"overfit probability {overfit:.2f}",
@@ -205,7 +207,8 @@ def _anthropic_client() -> Any | None:
 
 
 def llm_ideas(session: Session, today: date, taken: set[str],
-              client_factory: Callable[[], Any | None] = _anthropic_client) -> list[Hypothesis]:
+              client_factory: Callable[[], Any | None] = _anthropic_client,
+              cost: dict[str, Any] | None = None) -> list[Hypothesis]:
     client = client_factory()
     if client is None:
         logger.info("LLM ideas are off: no Anthropic SDK or credentials")
@@ -237,7 +240,8 @@ def llm_ideas(session: Session, today: date, taken: set[str],
             logger.warning("LLM idea %s refused: out of range or taken", key)
             continue
         ideas.append(Hypothesis(
-            key=key, family="night", kind="rich_condor", params=params, forward_from=start,
+            key=key, family="night", kind="rich_condor", params=pinned(params, cost),
+            forward_from=start,
             origin="LLM", rationale=item["rationale"][:2_000],
             preregistration={"expected_mean": float(item["expected_mean"]),
                              "expected_sd": float(item["expected_sd"]),
@@ -258,14 +262,15 @@ def save_generated(path: Path, ideas: Sequence[Hypothesis]) -> None:
 
 
 def generate(session: Session, market: Market, today: date, known: set[str],
-             client_factory: Callable[[], Any | None] = _anthropic_client) -> list[Hypothesis]:
+             client_factory: Callable[[], Any | None] = _anthropic_client,
+             cost: dict[str, Any] | None = None) -> list[Hypothesis]:
     taken = set(known) | set(session.scalars(select(LearningHypothesis.key)))
-    ideas = grid_ideas(session, market, today, taken)
+    ideas = grid_ideas(session, market, today, taken, cost)
     taken |= {idea.key for idea in ideas}
     asked = any(key.startswith(f"llm_{today:%Y%m%d}") for key in taken)
     if today.weekday() == LLM_WEEKDAY and not asked:
         try:
-            ideas += llm_ideas(session, today, taken, client_factory)
+            ideas += llm_ideas(session, today, taken, client_factory, cost)
         except Exception as error:  # noqa: BLE001 - a failed call only costs this week's ideas
             logger.error("LLM ideas failed: %s", type(error).__name__)
     return ideas

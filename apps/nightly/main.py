@@ -33,6 +33,7 @@ from packages.database.models import PaperAccount, User
 from packages.database.session import build_session_factory
 from packages.database.sqlite_backup import BackupError, backup_database
 from packages.learning.engine import link_paper_trades, load_hypotheses, run_learning
+from packages.learning.execution import calibrate, current
 from packages.learning.features import Context
 from packages.learning.forward_bars import merge_books, recorded_books
 from packages.learning.ideas import GENERATED, generate, save_generated
@@ -144,8 +145,14 @@ def run_learning_loop(
         if len({item.key for item in known}) != len(known):
             raise ValueError("A generated hypothesis reuses an owner's key")
         # Ideas from the ledger as it stood; they are frozen from the next session.
-        fresh = generate(session, market, now.astimezone(IST).date(),
-                         {item.key for item in known})
+        today = now.astimezone(IST).date()
+        calibrated = calibrate(session, today)
+        if calibrated:
+            logger.warning("Learning: cost model v%s, ₹%s slippage a trade from %s pairs",
+                           calibrated["version"], calibrated["slippage_per_trade"],
+                           calibrated["pairs"])
+        fresh = generate(session, market, today, {item.key for item in known},
+                         cost=current())
         save_generated(GENERATED, fresh)
         decisions = run_learning(session, market, now, known + fresh,
                                  Context.load(get_settings().database_url))

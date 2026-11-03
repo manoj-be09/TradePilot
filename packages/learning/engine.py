@@ -17,7 +17,7 @@ APPROVED clears a hypothesis for paper trading; this module places nothing.
 
 import json
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -306,8 +306,11 @@ def run_learning(
         if filters and entry not in features:
             features[entry] = session_features(market, time.fromisoformat(entry),
                                                context or Context())
+        # The execution cost frozen with the hypothesis (execution.py), charged per trade.
+        slippage = float(hypothesis.params.get("slippage", 0.0))
         results[hypothesis.key] = [
-            result for result in KINDS[hypothesis.kind].run(hypothesis.params, market)
+            replace(result, charges=result.charges + slippage) if slippage else result
+            for result in KINDS[hypothesis.kind].run(hypothesis.params, market)
             if not filters or passes(filters, features[entry].get(result.session, {}))]
     for hypothesis in hypotheses:
         row = register(session, hypothesis, now, _rejection(session, hypothesis, results, market))

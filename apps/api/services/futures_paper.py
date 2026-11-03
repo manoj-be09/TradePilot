@@ -75,7 +75,9 @@ from packages.recorder.universe import nifty_futures
 
 EXCHANGE = "NFO"
 UNDERLYING = "NIFTY"
-MAX_WAITING_PAPER_STRATEGIES = 26  # Shared with armed option templates.
+# Shared with armed option templates. Owner raised it from 26 on 3 Nov 2026 to run more paper tests;
+# every fill still passes the per-trade and daily loss limits.
+MAX_WAITING_PAPER_STRATEGIES = 100
 
 
 class FuturesError(Exception):

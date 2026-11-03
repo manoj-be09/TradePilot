@@ -82,7 +82,7 @@ from apps.api.schemas import (
     TokenResponse,
     UserResponse,
 )
-from apps.api.services.futures_paper import monitor_futures_exits
+from apps.api.services.futures_paper import MAX_WAITING_PAPER_STRATEGIES, monitor_futures_exits
 from apps.api.services.paper_monitor import monitor_exits
 from apps.api.services.strategy_eligibility import StrategyNotEligible, eligibility_refusal
 from apps.api.settings import get_settings
@@ -270,7 +270,6 @@ async def security_headers(
 
 AdminUser = Annotated[User, Depends(require_roles(Role.ADMIN))]
 _CENT = Decimal("0.01")
-MAX_WAITING_PAPER_STRATEGIES = 26  # The reviewed first-release NIFTY template set.
 
 
 def _new_auth_session(
@@ -2472,7 +2471,9 @@ async def arm_paper_deployment(
         PaperDeployment.status == "WAITING_FOR_ENTRY",
     )).all()
     if len(waiting) >= MAX_WAITING_PAPER_STRATEGIES:
-        raise HTTPException(409, "At most 26 paper strategies can wait for entry")
+        raise HTTPException(
+            409, f"At most {MAX_WAITING_PAPER_STRATEGIES} paper strategies can wait for entry"
+        )
     if any(
         existing.request_data.get("strategy_key") == body.strategy_key
         and existing.request_data.get("underlying", "NIFTY") == index.symbol

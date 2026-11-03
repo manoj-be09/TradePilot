@@ -80,6 +80,7 @@ def _chain(decided_at: datetime) -> OptionChain:
             option_type=kind, quote=Quote(instrument_token=f"NSE_FO|{kind}{strike}",
                                           timestamp=decided_at,
                                           last_price=Decimal(str(series[moment].close))),
+            greeks={"delta": Decimal("0.1" if kind == "CE" else "-0.1"), "vega": Decimal(2)},
         )
         for (strike, kind), series in _FULL.bars.items()
     ]

@@ -17,6 +17,7 @@ import argparse
 import asyncio
 import json
 import logging
+import random
 import secrets
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
@@ -32,6 +33,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from apps.api.paper_schemas import PaperTradeCreateRequest, PaperTradeCustomLegRequest
 from packages.backtesting.book_loader import load_books
+from packages.backtesting.candidate_algorithms import CURRENT_LOT
 from packages.backtesting.published_strategies import Bar, Book, Kind, Market
 from packages.backtesting.rich_premium import SessionMove, session_moves
 from packages.backtesting.rule_engine import ENGINE_RULES, EngineRule
@@ -39,6 +41,9 @@ from packages.database.base import Base
 from packages.database.history_models import HistoricalImportContract, HistoricalOptionBar
 from packages.database.models import (
     LearningHypothesis,
+    LearningObservation,
+    PaperAccount,
+    PaperTrade,
     ResearchRuleVersion,
     User,
     UserNotification,
@@ -50,6 +55,7 @@ from packages.history.importer import (
     import_expiry,
     list_expiries,
 )
+from packages.learning.allocation import Leg, refusal, saved_legs, thompson_draw
 from packages.learning.engine import tradable_rules
 from packages.learning.features import Context, features_at, passes
 from packages.market_data.contracts import (
@@ -145,6 +151,7 @@ class NightRunner:
         # With v2 applied, the learning ledger names the rules each morning.
         self.rules_source = rules_source
         self.context = Context()
+        self.rng = random.Random()
         self.state = DayState(date.min)
         self.alerted: set[tuple[date, str]] = set()
 
@@ -335,7 +342,8 @@ class NightRunner:
         if self.state.moves is None:
             # Fetched once a day at the open, before the first entry time.
             self.state.moves = await self._past_moves(today, chain.underlying_spot, contracts)
-        results = []
+        results: list[str] = []
+        ready: list[tuple[EngineRule, NightDecision]] = []
         for rule, decided_at in due:
             stage = self._stopped(rule)
             if stage is not None:
@@ -357,8 +365,56 @@ class NightRunner:
             if decision.strikes is None:
                 self.state.finished.add(rule.key)
                 continue
+            ready.append((rule, decision))
+        for rule, decision in self._ordered(ready):
+            refused = self._refusal(chain, decision) if self.rules_source is not None else None
+            if refused is not None:
+                self.state.finished.add(rule.key)
+                self.alert(f"blocked.{rule.key}", "Night condor not opened",
+                           f"{rule.key}: {refused}")
+                results.append("BLOCKED")
+                continue
             results.append(await self._open(rule, chain.expiry, decision, today))
         return ", ".join(results) or ("DECIDED" if due else "READY")
+
+    def _ordered(self, ready: list[tuple[EngineRule, NightDecision]],
+                 ) -> list[tuple[EngineRule, NightDecision]]:
+        """Thompson order when the v2 ledger has results; otherwise as listed."""
+        if self.rules_source is None or len(ready) < 2:
+            return ready
+        with self.factory() as session:
+            draws = {}
+            for rule, _ in ready:
+                values = [float(value) for value in session.scalars(
+                    select(LearningObservation.net_pnl).join(LearningHypothesis).where(
+                        LearningHypothesis.key == rule.key))]
+                draws[rule.key] = thompson_draw(values, self.rng)
+        return sorted(ready, key=lambda item: -draws[item[0].key])
+
+    def _refusal(self, chain: OptionChain, decision: NightDecision) -> str | None:
+        """The portfolio caps of allocation.py over open trades plus this condor."""
+        assert decision.strikes is not None and chain.underlying_spot is not None
+        greeks = {(item.strike, item.option_type): item.greeks for item in chain.contracts}
+        prices = {(item.strike, item.option_type): float(item.quote.last_price)
+                  for item in chain.contracts}
+        sides = (("CE", "SELL"), ("PE", "SELL"), ("CE", "BUY"), ("PE", "BUY"))
+        new = [Leg(kind, side, strike, CURRENT_LOT, prices.get((strike, kind), 0.0))
+               for (kind, side), strike in zip(sides, decision.strikes, strict=True)]
+        with self.factory() as session:
+            user = session.scalar(select(User).where(User.email == self.user_email))
+            if user is None:
+                return "the probation account is missing"
+            capital = session.scalar(select(PaperAccount.initial_cash).where(
+                PaperAccount.user_id == user.id))
+            if capital is None:
+                # The account is made on the first trade, with the configured capital.
+                from apps.api.settings import get_settings
+
+                capital = Decimal(get_settings().initial_paper_capital)
+            held = [leg for trade in session.scalars(select(PaperTrade).where(
+                        PaperTrade.user_id == user.id, PaperTrade.status == "OPEN"))
+                    for leg in saved_legs(trade.legs.get("items", []))]
+            return refusal(new, held, float(chain.underlying_spot), greeks, float(capital))
 
 
 def save_config(path: Path, user_email: str) -> None:

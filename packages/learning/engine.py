@@ -29,10 +29,18 @@ from sqlalchemy.orm import Session
 from packages.backtesting.candidate_algorithms import CURRENT_LOT
 from packages.backtesting.published_strategies import Market, TradeResult
 from packages.backtesting.rich_premium import WING_POINTS, run_rich_condor
-from packages.database.models import LearningEvent, LearningHypothesis, LearningObservation
+from packages.database.models import (
+    LearningEvent,
+    LearningHypothesis,
+    LearningObservation,
+    PaperTrade,
+)
 from packages.learning.budget import alpha_for, remaining_after
 from packages.learning.evidence import Trade, futility_evidence, growth_evidence
 from packages.learning.power import power_check
+from packages.paper_trading.demotion import as_utc
+from packages.paper_trading.night_condor import paper_name
+from packages.paper_trading.session import exchange_today
 
 POLICY_ID = "learning-v2"
 MIN_TRADES = 20
@@ -209,6 +217,27 @@ def record_observation(
     return True
 
 
+def link_paper_trades(session: Session, now: datetime, version: int = 1) -> int:
+    """Record each closed paper trade of an override hypothesis as a PAPER observation.
+
+    The night runner names its trades with `paper_name`; a hypothesis key equals the research
+    rule key it traded. Returns how many were added.
+    """
+    added = 0
+    for row in session.scalars(select(LearningHypothesis).where(
+            LearningHypothesis.override.is_(True))):
+        trades = session.scalars(select(PaperTrade).where(
+            PaperTrade.strategy_name == paper_name(row.key, version),
+            PaperTrade.status == "CLOSED", PaperTrade.realized_pnl.is_not(None)))
+        for trade in trades:
+            credit = max(float(trade.entry_cash_flow), 1.0)
+            added += record_observation(
+                session, row, exchange_today(as_utc(trade.opened_at)), "PAPER",
+                float(trade.realized_pnl or 0), float(trade.max_loss) + LOSS_SLACK, credit, now)
+    session.flush()
+    return added
+
+
 @dataclass
 class _State:
     row: LearningHypothesis
@@ -324,6 +353,14 @@ def _judge(session: Session, state: _State, states: dict[str, _State],
         "evidence": round(growth, 3), "bar": round(bar, 1), "futility": round(futility, 3),
         "paper_trades": len(state.paper), "needs": [],
     }
+    if state.paper:
+        # The gap between simulated and filled results on the same sessions.
+        twin_days = {item.session for item in state.paper}
+        twin = _same_sessions(state.shadow, twin_days)
+        check["paper_vs_shadow"] = {
+            "sessions": len(twin_days), "paper_average": round(mean(_values(state.paper)), 2),
+            "shadow_average": round(mean(twin), 2) if twin else None,
+        }
     row.latest_check, row.checked_at = check, now
     limit = breach(values)
     if limit or futility >= FUTILITY_BAR:

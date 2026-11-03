@@ -158,3 +158,37 @@ def test_override_skips_the_power_check_but_never_its_evidence(session):
                                                       override=True)])
     row = _row(session, "owner")
     assert row.stage == "SHADOW" and row.override and row.budget_sequence == 1
+
+
+def test_closed_override_paper_trades_become_paper_observations(session):
+    from decimal import Decimal
+    from uuid import uuid4
+
+    from packages.database.models import PaperTrade
+    from packages.learning.engine import link_paper_trades
+    from packages.paper_trading.night_condor import paper_name
+
+    run_learning(session, _MARKET, _NOW, [_hypothesis("very_rich_night_condor", [100.0],
+                                                      override=True)])
+    common = dict(account_id=uuid4(), user_id=uuid4(), strategy_key="custom", underlying="NIFTY",
+                  expiry=_START, reference_strike=Decimal(24000), lots=1, lot_size=65,
+                  max_loss=Decimal(17000), entry_cash_flow=Decimal(2500), entry_rule_snapshot={},
+                  legs={}, opened_at=datetime(2026, 11, 2, 4, 0, tzinfo=timezone.utc))
+    session.add_all([
+        PaperTrade(strategy_name=paper_name("very_rich_night_condor", 1), status="CLOSED",
+                   realized_pnl=Decimal(1800), **common),
+        PaperTrade(strategy_name=paper_name("very_rich_night_condor", 1), status="OPEN",
+                   **common),
+        PaperTrade(strategy_name="Iron condor", status="CLOSED", realized_pnl=Decimal(1),
+                   **common),
+    ])
+    session.flush()
+    assert link_paper_trades(session, _NOW) == 1
+    assert link_paper_trades(session, _NOW) == 0
+    [paper] = session.scalars(select(LearningObservation).where(
+        LearningObservation.source == "PAPER")).all()
+    assert paper.session == _START and float(paper.net_pnl) == 1800.0
+    run_learning(session, _MARKET, _NOW, [_hypothesis("very_rich_night_condor", [100.0],
+                                                      override=True)])
+    gap = _row(session, "very_rich_night_condor").latest_check["paper_vs_shadow"]
+    assert gap == {"sessions": 1, "paper_average": 1800.0, "shadow_average": 100.0}

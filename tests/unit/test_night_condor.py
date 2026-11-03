@@ -249,3 +249,29 @@ def test_the_override_trades_only_the_two_engine_rules():
     assert NIGHT_EXIT_POLICY.exits_next_session
     with pytest.raises(ValueError):
         type(NIGHT_EXIT_POLICY)(20, "unknown")
+
+
+def test_runner_alerts_the_relay_account_once_per_topic_per_day(factory, tmp_path):
+    from sqlalchemy import select
+
+    from packages.database.models import UserNotification
+
+    setup(factory, tmp_path / "relay.json", "phone@tradepilot.test")
+    runner = _runner(factory, tmp_path, [], [_rule(0.0)])
+    runner.alert_email = "Phone@TradePilot.test"
+    runner.state.day = _TODAY
+    runner.alert("data.x", "Skipped", "gap")
+    runner.alert("data.x", "Skipped", "gap again")
+    runner.alert("opened.x", "Opened", "strikes")
+    with factory() as session:
+        titles = [row.title for row in session.scalars(select(UserNotification))]
+    assert sorted(titles) == ["Opened", "Skipped"]
+
+
+def test_quote_evidence_reports_mid_and_age_for_each_leg():
+    from apps.night_runner.main import quote_evidence
+
+    decided_at = datetime.combine(_TODAY, time(9, 20), tzinfo=_IST)
+    strikes = condor_strikes(_FULL, decided_at, 0.15)
+    lines = quote_evidence(_chain(decided_at), strikes)
+    assert len(lines) == 4 and all("ltp" in line and "age ?" in line for line in lines)

@@ -271,3 +271,20 @@ def test_no_account_is_reported_rather_than_raised(tmp_path, factory):
         factory, PLAN, tmp_path / "absent.db", tmp_path / "backups", tmp_path / "reports", NOW,
     )
     assert results["ledger"] == "NO_ACCOUNT"
+
+
+def test_history_import_runs_both_scripts_and_stops_at_the_first_failure():
+    from types import SimpleNamespace
+
+    from apps.nightly.main import import_recent_history
+
+    seen = []
+
+    def runner(command, **options):
+        seen.append(command[1])
+        return SimpleNamespace(returncode=0 if len(seen) == 1 else 1, stderr="boom")
+
+    assert import_recent_history(date(2026, 11, 20), runner) == "FAILED (import-far-strikes)"
+    assert seen == ["scripts/import-history.py", "scripts/import-far-strikes.py"]
+    assert import_recent_history(date(2026, 11, 20), lambda command, **options:
+                                 SimpleNamespace(returncode=0, stderr="")) == "OK"

@@ -29,6 +29,11 @@ NIGHT_EXIT_POLICY = OptionExitPolicy(20, NEXT_SESSION_POLICY_VERSION)
 STOPPED_STAGES = frozenset({"DEMOTED", "RETIRED", "SUPERSEDED"})
 
 
+def paper_name(key: str, version: int) -> str:
+    """The paper trade's name; the v2 loop finds a hypothesis's paper fills by it."""
+    return f"Override · {key.replace('_', ' ')} v{version} · not promoted"
+
+
 @dataclass(frozen=True)
 class NightDecision:
     # Sold call, sold put, bought call, bought put; None means no trade today.

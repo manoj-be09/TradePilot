@@ -12,9 +12,13 @@ import argparse
 import logging
 import shutil
 import sqlite3
+import subprocess  # nosec B404
+import sys
 import time as clock
-from datetime import date, datetime, time, timezone
+from collections.abc import Callable
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -28,7 +32,7 @@ from packages.backtesting.rule_engine import run_engine
 from packages.database.models import PaperAccount, User
 from packages.database.session import build_session_factory
 from packages.database.sqlite_backup import BackupError, backup_database
-from packages.learning.engine import load_hypotheses, run_learning
+from packages.learning.engine import link_paper_trades, load_hypotheses, run_learning
 from packages.paper_trading.forward_plan import ForwardPlan, load_plan
 from packages.paper_trading.forward_report import build_report, render_markdown
 
@@ -85,6 +89,30 @@ def run_rule_engine(factory: sessionmaker[Session], wide: Path, now: datetime) -
     return f"{len(decisions)} decision(s)"
 
 
+IMPORT_LOOKBACK_DAYS = 45
+IMPORT_TIMEOUT_SECONDS = 3600
+
+
+def import_recent_history(today: date, runner: Callable[..., Any] = subprocess.run) -> str:
+    """Import newly expired expiries and their far strikes, so the shadow ledger keeps growing.
+
+    Read-only provider calls through the repository's own scripts; both skip finished contracts.
+    """
+    first = (today - timedelta(days=IMPORT_LOOKBACK_DAYS)).isoformat()
+    commands = (
+        [sys.executable, "scripts/import-history.py", "--from", first, "--to",
+         today.isoformat(), "--interval", "5m"],
+        [sys.executable, "scripts/import-far-strikes.py", "--first-expiry", first],
+    )
+    for command in commands:
+        done = runner(command, timeout=IMPORT_TIMEOUT_SECONDS, check=False,
+                      capture_output=True, text=True)
+        if done.returncode != 0:
+            logger.error("%s failed: %s", command[1], (done.stderr or "")[-300:])
+            return f"FAILED ({Path(command[1]).stem})"
+    return "OK"
+
+
 def _research_market(wide: Path) -> Market:
     books = load_books(get_settings().database_url, date.max,
                        [f"sqlite:///{wide.as_posix()}"], regular_hours_only=True)
@@ -102,6 +130,7 @@ def run_learning_loop(
     # shortcut: loads the books again after the rule engine; share them if the night runs long.
     market = _research_market(wide)
     with factory() as session:
+        link_paper_trades(session, now)
         decisions = run_learning(session, market, now, load_hypotheses(hypotheses))
         session.commit()
     for decision in decisions:
@@ -129,6 +158,17 @@ def run_once(
     except (SQLAlchemyError, OSError) as error:
         logger.error("Report failed: %s", type(error).__name__)
         results["ledger"] = "FAILED"
+    try:
+        wide = database.parent / WIDE_HISTORY_NAME
+        results["import"] = (
+            "SKIPPED_BEFORE_CLOSE" if now.astimezone(IST).time() < RUN_AFTER
+            # Only where the far-strike history was set up by hand once (RUNBOOK.md).
+            else "SKIPPED_NO_WIDE_HISTORY" if not wide.exists()
+            else import_recent_history(now.astimezone(IST).date())
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        logger.error("History import failed: %s", type(error).__name__)
+        results["import"] = "FAILED"
     try:
         results["rule_engine"] = (
             run_rule_engine(factory, database.parent / WIDE_HISTORY_NAME, now)

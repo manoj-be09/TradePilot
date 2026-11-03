@@ -37,7 +37,7 @@ from packages.backtesting.rich_premium import SessionMove, session_moves
 from packages.backtesting.rule_engine import ENGINE_RULES, EngineRule
 from packages.database.base import Base
 from packages.database.history_models import HistoricalImportContract, HistoricalOptionBar
-from packages.database.models import ResearchRuleVersion, User
+from packages.database.models import ResearchRuleVersion, User, UserNotification
 from packages.database.session import build_session_factory
 from packages.history.importer import (
     HistoryProvider,
@@ -58,6 +58,7 @@ from packages.paper_trading.night_condor import (
     NightDecision,
     chain_book,
     decide,
+    paper_name,
 )
 from packages.paper_trading.session import exchange_today
 
@@ -88,7 +89,26 @@ class DayState:
 
 
 def custom_name(rule: EngineRule) -> str:
-    return f"Override · {rule.key.replace('_', ' ')} v{rule.version} · not promoted"
+    return paper_name(rule.key, rule.version)
+
+
+def quote_evidence(chain: OptionChain, strikes: Sequence[Decimal]) -> list[str]:
+    """Last price, mid and quote age of each leg, to measure how far live drifts from research."""
+    kinds = ("CE", "PE", "CE", "PE")
+    found = {(item.strike, item.option_type): item for item in chain.contracts}
+    lines = []
+    for strike, kind in zip(strikes, kinds, strict=True):
+        item = found.get((strike, kind))
+        if item is None:
+            lines.append(f"{kind}{strike} missing")
+            continue
+        quote = item.quote
+        mid = (quote.bid + quote.ask) / 2 if quote.bid and quote.ask else None
+        traded = quote.last_trade_time
+        age = (chain.as_of - traded).total_seconds() if traded else None
+        lines.append(f"{kind}{strike} ltp {quote.last_price} mid {mid} age "
+                     f"{'?' if age is None else f'{age:.0f}s'}")
+    return lines
 
 
 def condor_request(expiry: date, strikes: Sequence[Decimal]) -> PaperTradeCreateRequest:
@@ -108,11 +128,29 @@ class NightRunner:
         database_urls: Sequence[str], cache: sessionmaker[Session], open_trade: OpenTrade,
         rules: Sequence[EngineRule] = ENGINE_RULES,
         sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
+        alert_email: str | None = None,
     ) -> None:
         self.factory, self.provider, self.user_email = factory, provider, user_email
         self.database_urls, self.cache, self.open_trade = list(database_urls), cache, open_trade
-        self.rules, self.sleep = list(rules), sleep
+        self.rules, self.sleep, self.alert_email = list(rules), sleep, alert_email
         self.state = DayState(date.min)
+        self.alerted: set[tuple[date, str]] = set()
+
+    def alert(self, topic: str, title: str, message: str) -> None:
+        """One phone alert per topic per day, through the relay's account; logged regardless."""
+        logger.warning("%s: %s", title, message)
+        key = (self.state.day, topic)
+        if self.alert_email is None or key in self.alerted:
+            return
+        self.alerted.add(key)
+        with self.factory() as session:
+            user_id = session.scalar(select(User.id).where(
+                User.email == self.alert_email.strip().lower()))
+            if user_id is None:
+                return
+            session.add(UserNotification(user_id=user_id, event_type="night_runner." + topic,
+                                         title=title[:160], message=message[:512], details={}))
+            session.commit()
 
     async def _trades(self, day: date) -> bool:
         if day not in self.state.sessions:
@@ -194,12 +232,13 @@ class NightRunner:
                 session.rollback()
                 if error.status_code in {404, 422}:
                     self.state.finished.add(rule.key)
-                logger.warning("%s not opened (%s): %s", rule.key, error.status_code,
-                               error.detail)
+                self.alert(f"blocked.{rule.key}", "Night condor not opened",
+                           f"{rule.key}: {error.status_code} {error.detail}")
                 return "BLOCKED"
         self.state.finished.add(rule.key)
-        logger.warning("%s opened a paper condor %s; %s", rule.key, decision.strikes,
-                       decision.reason)
+        self.alert(f"opened.{rule.key}", "Night condor opened (paper, not promoted)",
+                   f"{rule.key}: strikes {', '.join(map(str, decision.strikes))}; "
+                   f"{decision.reason}")
         return "OPENED"
 
     async def import_expired(self, today: date) -> None:
@@ -224,8 +263,12 @@ class NightRunner:
             return "NO_SESSION"
         if now.astimezone(IST).time() >= IMPORT_AFTER:
             if not self.state.imported:
-                await self.import_expired(today)
                 self.state.imported = True
+                try:
+                    await self.import_expired(today)
+                except Exception as error:  # noqa: BLE001 - tomorrow still needs an alert
+                    self.alert("import", "Night runner cache import failed",
+                               f"{type(error).__name__}; tomorrow may lack past sessions")
             return "AFTER_CLOSE"
         if not market.start <= now <= market.end:
             return "CLOSED"
@@ -261,6 +304,13 @@ class NightRunner:
                 decision = self.state.decisions[rule.key] = await self._decide(
                     rule, chain, decided_at)
                 logger.warning("%s: %s", rule.key, decision.reason)
+                if decision.strikes is not None:
+                    logger.info("%s quotes: %s", rule.key,
+                                "; ".join(quote_evidence(chain, decision.strikes)))
+                elif decision.richness is None:
+                    # Gaps, not a quiet market: no trade for a data reason deserves a look.
+                    self.alert(f"data.{rule.key}", "Night condor skipped for missing data",
+                               f"{rule.key}: {decision.reason}")
             if decision.strikes is None:
                 self.state.finished.add(rule.key)
                 continue
@@ -304,7 +354,7 @@ async def serve(config: Path, interval_seconds: float, once: bool) -> None:
     runner = NightRunner(
         build_session_factory(), get_market_data_provider(), user_email, urls,
         build_session_factory(f"sqlite:///{CACHE_DATABASE.as_posix()}"),
-        _open_paper_trade_with_provider,
+        _open_paper_trade_with_provider, alert_email=get_settings().telegram_alert_user_email,
     )
     while True:
         try:

@@ -51,7 +51,7 @@ Kept from v1: frozen versions, the append-only decision trail, champion/challeng
    Filters are frozen in a hypothesis's params. They apply alike in shadow scoring and the live runner, and an unreadable feature means no trade.
 4. **Idea generator** (`ideas.py`):
    - GRID declares one-step neighbours of shadow rules with 20+ positive forward trades. It drops a batch whose backtests overfit, and pre-registers half the parent's average.
-   - Every Friday, Claude (`claude-opus-5-5`, optional `llm` extra plus `ANTHROPIC_API_KEY`) proposes up to 3 ideas. It is sent only the parameter space and aggregate shadow results, and each proposal is range-checked.
+   - Every Friday, an LLM proposes up to 3 ideas: Claude (`claude-opus-5-5`) when the `llm` extra and `ANTHROPIC_API_KEY` are set, otherwise a free local Ollama model (`OLLAMA_MODEL`, default `qwen2.5:7b`; pull it once with `ollama pull qwen2.5:7b`). It is sent only the parameter space and aggregate shadow results, and each proposal is range-checked.
    - New ideas go to the private `work/learning/generated.json` and are frozen from the next session.
 5. **Backtest screen, reject only** (`screen.py`): applies to machine ideas only. It checks 30+ trades, purged folds (positive in 4 of 5), the deflated Sharpe ratio against the family's trials, a placebo of random baseline days, and a CSCV overfitting probability for GRID batches. A rejected idea spends no budget.
 6. **Allocation** (`allocation.py`): rules due together are ordered by a Thompson draw. Each condor opens only if the whole book stays inside:
@@ -70,7 +70,7 @@ Kept from v1: frozen versions, the append-only decision trail, champion/challeng
 - **One strategy family.** The generator and runner cover only `rich_condor` night holds, which the next-session exit supports. Other kinds can be scored in shadow, but the runner cannot trade them yet.
 - **VIX coverage.** VIX comes only from the recorder, so sessions before recording began have no VIX. A VIX filter fails closed on those sessions, which only affects backtests.
 - **Greek caps are fixed.** The caps (delta 40 index points, vega ₹3,000 a point) are starting values, not fitted ones.
-- **LLM data sharing.** LLM ideas send aggregate simulated results to the Anthropic API. Leave `ANTHROPIC_API_KEY` unset to keep them off.
+- **LLM data sharing.** With a key, LLM ideas send aggregate simulated results to the Anthropic API; the local Ollama model keeps them on this machine. With neither, LLM ideas are off.
 
 ## How v2 was applied
 

@@ -270,6 +270,7 @@ async def security_headers(
 
 AdminUser = Annotated[User, Depends(require_roles(Role.ADMIN))]
 _CENT = Decimal("0.01")
+ENTRY_SPREAD_MULTIPLE = 2
 
 
 def _new_auth_session(
@@ -3097,11 +3098,15 @@ async def _open_paper_trade_with_provider(
         )
     margin_years = years_to_expiry(body.expiry)
     margin_expires_today = is_expiry_day(body.expiry)
+    spread_cost = Decimal(0)
     for option_contract, side, leg_lots in selected:
         quantity_units = leg_lots * lot_size
         fill_price, market_contract = _require_quote(
             chain, option_contract.instrument_key, side, quantity_units
         )
+        # A missing side counts as a full-price spread, so the gate fails closed.
+        spread_cost += ((market_contract.quote.ask or Decimal(0))
+                        - (market_contract.quote.bid or Decimal(0))) * quantity_units
         margin_legs.append(
             MarginLeg(
                 instrument="CE" if option_contract.option_type == "CE" else "PE",
@@ -3164,6 +3169,15 @@ async def _open_paper_trade_with_provider(
             }
         )
     cash_flow = cash_flow.quantize(_CENT, rounding=ROUND_HALF_UP)
+    if deployment_id is not None:
+        # An armed entry waits while crossing bid/ask would eat half its stop or target,
+        # as at the open: otherwise the spread, not the market, decides the trade.
+        for label, limit in (("stop", body.stop_loss_amount),
+                             ("target", body.target_profit_amount)):
+            if limit is not None and limit < spread_cost * ENTRY_SPREAD_MULTIPLE:
+                raise HTTPException(409, (
+                    f"Entry spread ₹{spread_cost:.2f} is over half the {label} of "
+                    f"₹{limit}; waiting for a narrower book"))
     selected_strikes = [contract.strike for contract, _, _ in selected]
     spot = chain.underlying_spot or Decimal(1)
     payoff = calculate_expiry_payoff(

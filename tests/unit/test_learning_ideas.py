@@ -108,7 +108,11 @@ def test_llm_ideas_are_checked_against_the_allowed_space(session):
     assert client.sent["output_config"]["format"]["type"] == "json_schema"
     refused = _Client({"ideas": [_idea("x")]}, stop="refusal")
     assert ideas.llm_ideas(session, _TODAY, set(), lambda: refused) == []
-    assert ideas.llm_ideas(session, _TODAY, set(), lambda: None) == []
+    assert ideas.llm_ideas(session, _TODAY, set(), lambda: None, local=lambda _: None) == []
+    # No Anthropic key: the free local model answers in the same JSON shape.
+    local = ideas.llm_ideas(session, _TODAY, set(), lambda: None,
+                            local=lambda _: client.beta.messages.create().content[0].text)
+    assert [idea.key for idea in local] == [idea.key for idea in found]
 
 
 def test_ideas_are_saved_once_and_the_llm_runs_only_on_fridays(session, tmp_path, monkeypatch):

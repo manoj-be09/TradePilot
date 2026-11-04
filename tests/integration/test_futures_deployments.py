@@ -199,11 +199,11 @@ def test_arm_is_idempotent_and_refuses_duplicates_and_unknown_templates(client, 
 
 def test_arm_refuses_a_stop_above_the_per_trade_cap(client, setup):
     _, headers, _ = setup
-    # 120 points x 75 x 3 lots = 27,000, above 2% of 1,000,000.
-    refused = _arm(client, headers, lots=3)
+    # 120 points x 75 x 5 lots = 45,000, above 4% of 1,000,000.
+    refused = _arm(client, headers, lots=5)
     assert refused.status_code == 409
-    assert "per-trade risk cap of ₹20000.00" in refused.json()["detail"]
-    assert _arm(client, headers, lots=2).status_code == 201
+    assert "per-trade risk cap of ₹40000.00" in refused.json()["detail"]
+    assert _arm(client, headers, lots=4).status_code == 201
 
 
 def test_kill_switch_blocks_arming_and_fills_but_never_exits(client, setup):

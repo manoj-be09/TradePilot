@@ -32,6 +32,8 @@ def test_selected_index_entry_close_and_ledger(
                "reference_strike": "25000", "expiry": provider.expiry.isoformat()}
     route = "/paper/trades" if entry_mode == "manual" else "/paper/deployments"
     if entry_mode == "automatic":
+        # A 1-rupee target forces the exit; the entry spread gate is tested elsewhere.
+        monkeypatch.setattr("apps.api.main.ENTRY_SPREAD_MULTIPLE", 0)
         payload.update(entry_conditions=[{
             "metric": "underlying_spot", "operator": "GT", "threshold": "25000",
         }], stop_loss_amount="100", target_profit_amount="1", trailing_stop_amount="50")

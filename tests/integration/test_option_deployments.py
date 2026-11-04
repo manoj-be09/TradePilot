@@ -52,6 +52,8 @@ def test_educational_automatic_entry_and_exit_keep_unverified_provenance(client,
 
     provider.get_option_chain = educational_chain
     payload.update(stop_loss_amount="1", target_profit_amount="1", trailing_stop_amount="1")
+    # Tiny exits force the close; the entry spread gate is tested on its own below.
+    monkeypatch.setattr("apps.api.main.ENTRY_SPREAD_MULTIPLE", 0)
     armed = client.post("/paper/deployments", headers=headers, json=payload)
     assert armed.status_code == 201, armed.text
     for _ in range(3):
@@ -810,3 +812,15 @@ def test_armed_entry_stays_waiting_while_its_strategy_is_paused(client, monkeypa
         deployment = session.get(PaperDeployment, UUID(armed.json()["id"]))
         assert deployment.status == "WAITING_FOR_ENTRY"
         assert "a test drawdown" in deployment.detail
+
+
+def test_an_armed_entry_waits_while_the_spread_would_eat_its_stop(client, monkeypatch):
+    provider, headers, payload, factory = armed_setup(client, monkeypatch)
+    payload.update(stop_loss_amount="1", target_profit_amount="1", trailing_stop_amount="1")
+    armed = client.post("/paper/deployments", headers=headers, json=payload)
+    assert armed.status_code == 201, armed.text
+    asyncio.run(run_cycle(factory, provider, get_settings()))
+    with factory() as session:
+        deployment = session.get(PaperDeployment, UUID(armed.json()["id"]))
+        assert deployment.status == "WAITING_FOR_ENTRY"
+        assert deployment.detail.startswith("Entry spread ₹")

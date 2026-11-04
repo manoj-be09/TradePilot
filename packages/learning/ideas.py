@@ -19,6 +19,7 @@ from pathlib import Path
 from statistics import mean, pstdev
 from typing import Any
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -35,6 +36,9 @@ MAX_GRID_A_NIGHT = 6
 MAX_LLM_A_WEEK = 3
 LLM_WEEKDAY = 4  # Friday night, after the week's sessions.
 LLM_MODEL = "claude-opus-5-5"
+# Free fallback: a local Ollama model, so nothing leaves the machine.
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
 # Neighbours rarely do as well as the rule they came from; expect half its forward average.
 SHRINK = 0.5
 RANGES: dict[str, tuple[float, float]] = {"short_delta": (0.05, 0.35), "threshold": (0.6, 2.0)}
@@ -206,27 +210,46 @@ def _anthropic_client() -> Any | None:
     return anthropic.Anthropic()
 
 
+def _ollama_text(prompt: str) -> str | None:
+    """The local model's JSON answer, or None when Ollama or the model is not available."""
+    try:
+        response = httpx.post(f"{OLLAMA_URL}/api/chat", timeout=1_800, json={
+            "model": OLLAMA_MODEL, "stream": False, "format": _SCHEMA,
+            "messages": [{"role": "user", "content": prompt}]})
+        response.raise_for_status()
+    except httpx.HTTPError as error:
+        logger.info("LLM ideas are off: no Anthropic key and no local %s (%s)", OLLAMA_MODEL,
+                    type(error).__name__)
+        return None
+    return str(response.json()["message"]["content"])
+
+
 def llm_ideas(session: Session, today: date, taken: set[str],
               client_factory: Callable[[], Any | None] = _anthropic_client,
-              cost: dict[str, Any] | None = None) -> list[Hypothesis]:
-    client = client_factory()
-    if client is None:
-        logger.info("LLM ideas are off: no Anthropic SDK or credentials")
-        return []
+              cost: dict[str, Any] | None = None,
+              local: Callable[[str], str | None] = _ollama_text) -> list[Hypothesis]:
     prompt = _PROMPT.format(
         delta_low=RANGES["short_delta"][0], delta_high=RANGES["short_delta"][1],
         threshold_low=RANGES["threshold"][0], threshold_high=RANGES["threshold"][1],
         first=FIRST_ENTRY, last=LAST_ENTRY, summary=_summary(session), count=MAX_LLM_A_WEEK)
-    response = client.beta.messages.create(
-        model=LLM_MODEL, max_tokens=16000, betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
-        output_config={"effort": "high", "format": {"type": "json_schema", "schema": _SCHEMA}},
-        messages=[{"role": "user", "content": prompt}],
-    )
-    if response.stop_reason != "end_turn":
-        logger.warning("LLM ideas skipped: stop reason %s", response.stop_reason)
-        return []
-    text = next(block.text for block in response.content if block.type == "text")
+    client = client_factory()
+    if client is None:
+        found = local(prompt)
+        if found is None:
+            return []
+        text = found
+    else:
+        response = client.beta.messages.create(
+            model=LLM_MODEL, max_tokens=16000, betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+            output_config={"effort": "high",
+                           "format": {"type": "json_schema", "schema": _SCHEMA}},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        if response.stop_reason != "end_turn":
+            logger.warning("LLM ideas skipped: stop reason %s", response.stop_reason)
+            return []
+        text = next(block.text for block in response.content if block.type == "text")
     ideas = []
     start = today + timedelta(days=1)
     for item in json.loads(text)["ideas"][:MAX_LLM_A_WEEK]:

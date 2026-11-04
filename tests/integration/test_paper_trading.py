@@ -334,6 +334,9 @@ def test_paper_events_create_user_scoped_notifications(client, monkeypatch):
 
 
 def test_paper_risk_cap_rejects_excessive_position_size(client, monkeypatch):
+    from apps.api.settings import get_settings
+
+    monkeypatch.setattr(get_settings(), "paper_max_trade_risk_pct", 2)
     provider = FakeUpstoxProvider()
     monkeypatch.setattr("apps.api.main.get_market_data_provider", lambda: provider)
     headers = _token(client)

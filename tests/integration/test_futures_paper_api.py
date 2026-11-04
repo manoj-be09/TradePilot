@@ -99,7 +99,7 @@ def test_open_blocks_margin_replays_and_reconciles(client, monkeypatch):
 
 def test_stop_loss_must_fit_the_per_trade_risk_cap(client, monkeypatch):
     _, headers = _setup(client, monkeypatch)
-    response = _open(client, headers, stop_loss_amount="25000")
+    response = _open(client, headers, stop_loss_amount="45000")
     assert response.status_code == 409
     assert "per-trade risk cap" in response.json()["detail"]
 

@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     paper_index_execution_enabled: bool = False
     initial_paper_capital: int = Field(default=1_000_000, gt=0)
     initial_equity_paper_capital: int = Field(default=1_000_000, gt=0)
-    paper_max_trade_risk_pct: int = Field(default=2, gt=0, le=100)
+    paper_max_trade_risk_pct: int = Field(default=4, gt=0, le=100)
     paper_max_portfolio_risk_pct: int = Field(default=10, gt=0, le=100)
     paper_daily_loss_limit_pct: int = Field(default=5, gt=0, le=100)
     paper_max_open_trades: int = Field(default=26, gt=0, le=100)

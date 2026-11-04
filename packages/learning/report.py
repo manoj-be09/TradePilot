@@ -1,7 +1,9 @@
 """The weekly evidence report, written privately each Friday night. Simulated, not advice.
 
 It lists the error budget, every hypothesis's stage, forward evidence and what it still needs,
-the paper-vs-shadow gap, the week's decisions and the current cost model, in
+the paper-vs-shadow gap, the week's decisions, the current cost model and, from all closed
+paper trades in the last 30 days, the strategies whose stop or target sits inside the entry
+spread, in
 `work/learning/reports/YYYY-MM-DD.md`. The folder is private: results stay out of the repository.
 """
 
@@ -15,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from packages.database.models import LearningEvent
 from packages.learning.engine import budget_summary, hypotheses
-from packages.learning.execution import current
+from packages.learning.execution import SPREAD_MULTIPLE, current, frictions
 
 REPORTS = Path("work/learning/reports")
 REPORT_WEEKDAY = 4
@@ -57,6 +59,16 @@ def weekly_report(session: Session, today: date, cost: dict[str, Any] | None) ->
     lines += ["", "## Decisions this week", ""]
     lines += [f"- {event.key}: {event.event_type.lower().replace('_', ' ')} ({event.reason}) "
               f"{event.summary}" for event in week] or ["- none"]
+    lines += ["", "## Execution friction, closed paper trades in the last 30 days", "",
+              f"A stop or target under {SPREAD_MULTIPLE:g}× the entry spread is decided by the "
+              "spread. Quick exits closed within 10 minutes.", "",
+              "| Strategy | Trades | Median entry spread | Stop | Target | Quick exits "
+              "| Too tight |",
+              "|---|---|---|---|---|---|---|"]
+    lines += [f"| {row['strategy']} | {row['trades']} | {_money(row['median_spread'])} | "
+              f"{_money(row['stop'])} | {_money(row['target'])} | {row['quick_exits']} | "
+              f"{', '.join(row['tight']) or '-'} |"
+              for row in frictions(session, today - timedelta(days=30))] or ["| none |"]
     return "\n".join(lines) + "\n"
 
 

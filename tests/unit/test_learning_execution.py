@@ -1,6 +1,7 @@
 """Paper-vs-shadow gaps become append-only cost versions, frozen into new ideas only."""
 
 from datetime import date, datetime, timedelta, timezone
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -8,10 +9,11 @@ from sqlalchemy.orm import Session
 
 from packages.backtesting.published_strategies import Market, TradeResult
 from packages.database.base import Base
-from packages.database.models import LearningHypothesis, LearningObservation
+from packages.database.models import LearningHypothesis, LearningObservation, PaperTrade
 from packages.learning import engine
 from packages.learning.engine import Hypothesis, Kind, record_observation, run_learning
-from packages.learning.execution import calibrate, current, paper_gaps, pinned
+from packages.learning.execution import calibrate, current, frictions, paper_gaps, pinned
+from packages.learning.report import weekly_report
 
 _NOW = datetime(2026, 12, 4, 12, tzinfo=timezone.utc)
 _FRIDAY = date(2026, 12, 4)
@@ -67,3 +69,29 @@ def test_a_pinned_slippage_is_charged_on_every_shadow_trade(session):
     run_learning(session, Market([], 0.0), _NOW, [_hypothesis("costed", slippage=250.0)])
     values = [float(item.net_pnl) for item in session.scalars(select(LearningObservation))]
     assert values == [750.0, 750.0, 750.0]
+
+
+def _trade(key: str, stop: int, minutes: int, bid: str = "100", ask: str = "102") -> PaperTrade:
+    opened = datetime(2026, 11, 4, 3, 46)
+    leg = {"entry_bid": bid, "entry_ask": ask, "quantity_units": 65}
+    return PaperTrade(
+        account_id=uuid4(), user_id=uuid4(), strategy_key=key, strategy_name=key,
+        underlying="NIFTY", expiry=date(2026, 11, 9), reference_strike=23_650, lots=1,
+        lot_size=65, max_loss=500, entry_cash_flow=0, entry_rule_snapshot={}, status="CLOSED",
+        legs={"items": [leg, leg]}, stop_loss_amount=stop, target_profit_amount=1_000,
+        opened_at=opened, closed_at=opened + timedelta(minutes=minutes), realized_pnl=-stop)
+
+
+def test_a_stop_inside_the_entry_spread_is_flagged(session):
+    # Two legs at a 2-point spread on 65 units: ₹260 paid crossing the book.
+    session.add_all([_trade("butterfly", 140, 1), _trade("butterfly", 140, 30),
+                     _trade("straddle", 5_000, 300), _trade("no_quote", 100, 1, bid=None)])
+    session.commit()
+    rows = {row["strategy"]: row for row in frictions(session, date(2026, 11, 2))}
+    assert rows["butterfly"]["median_spread"] == 260
+    assert rows["butterfly"]["tight"] == ["stop"] and rows["butterfly"]["quick_exits"] == 1
+    assert rows["straddle"]["tight"] == [] and rows["straddle"]["quick_exits"] == 0
+    assert "no_quote" not in rows
+    assert frictions(session, date(2026, 11, 5)) == []
+    assert "| butterfly | 2 | ₹260 | ₹140 | ₹1,000 | 1 | stop |" in weekly_report(
+        session, date(2026, 11, 6), None)

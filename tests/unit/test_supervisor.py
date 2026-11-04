@@ -144,3 +144,9 @@ def test_the_supervisor_logs_to_stdout_and_its_own_file_never_stderr(tmp_path, c
         for handler in logging.getLogger().handlers:
             handler.close()
         logging.getLogger().handlers[:] = previous
+
+
+def test_the_supervised_api_never_auto_reloads():
+    # A uvicorn reload sends Ctrl+C to the shared console, which stopped every service.
+    [api] = [service for service in local_services("python") if service.name == "api"]
+    assert api.command[-2:] == ("scripts/start-api-local.ps1", "-NoReload")

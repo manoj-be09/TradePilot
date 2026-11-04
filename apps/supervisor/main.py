@@ -32,16 +32,16 @@ class Service:
     command: tuple[str, ...]
 
 
-def _script(name: str) -> tuple[str, ...]:
+def _script(name: str, *args: str) -> tuple[str, ...]:
     return (
         "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-        "-File", f"scripts/{name}",
+        "-File", f"scripts/{name}", *args,
     )
 
 
 def local_services(python: str) -> list[Service]:
     return [
-        Service("api", _script("start-api-local.ps1")),
+        Service("api", _script("start-api-local.ps1", "-NoReload")),
         Service("web", _script("start-web-local.ps1")),
         Service("worker", _script("start-paper-worker-local.ps1")),
         Service("forward-runner", _script("start-forward-runner-local.ps1")),

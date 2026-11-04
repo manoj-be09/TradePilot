@@ -1,6 +1,8 @@
 param(
     [ValidateRange(1024, 65535)]
-    [int]$Port = 8000
+    [int]$Port = 8000,
+    # The supervisor passes this: a reload sends Ctrl+C to the shared console and stops every service.
+    [switch]$NoReload
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,5 +31,6 @@ if ($LASTEXITCODE -ne 0) {
     throw "Local database initialization failed with exit code $LASTEXITCODE."
 }
 
-& $pythonExe -m uvicorn apps.api.main:app --host 127.0.0.1 --port $Port --reload
+$reloadArgs = if ($NoReload) { @() } else { @("--reload") }
+& $pythonExe -m uvicorn apps.api.main:app --host 127.0.0.1 --port $Port @reloadArgs
 exit $LASTEXITCODE

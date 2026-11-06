@@ -1310,6 +1310,12 @@ a.sidebar-action-button { display: flex; align-items: center; justify-content: c
 .detail-rule-state--met { color: var(--green); }
 .detail-rule-state--unmet { color: #a33d31; }
 .strategy-details-notes li { margin-top: 5px; color: var(--ink-muted); font-size: 12px; }
+.strategy-explainer { padding: 12px 18px 12px; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.45; }
+.strategy-explainer summary { cursor: pointer; font-size: 14px; font-weight: 600; }
+.strategy-explainer p { margin: 8px 0 0; }
+.strategy-explainer h5 { margin: 10px 0 0; font-size: 13px; }
+.strategy-explainer-example li { padding: 4px 0 4px 14px; position: relative; }
+.strategy-explainer-example li::before { content: "•"; position: absolute; left: 2px; color: var(--ink-muted); }
 .strategy-details-foot { display: flex; align-items: center; justify-content: flex-end; gap: 14px; border-top: 1px solid var(--line); padding: 12px 18px; font-size: 13px; }
 .strategy-play { display: grid; flex: none; width: 36px; height: 36px; place-items: center; border: 0; border-radius: 50%; background: var(--green); padding: 0 0 0 2px; color: #fff; font-size: 12px; cursor: pointer; }
 .strategy-play:hover:not(:disabled) { filter: brightness(1.15); }

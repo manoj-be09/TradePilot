@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
+import { EXAMPLE_NOTE, STRATEGY_EXPLAINERS } from "./strategyExplainers";
 
 export type DetailFigure = { label: string; value: string; tone?: "profit" | "loss" };
 // met is left out for rules with no live reading to compare against.
@@ -12,7 +13,8 @@ function ruleState(rule: DetailRule) {
   return <small className={`detail-rule-state detail-rule-state--${rule.met ? "met" : "unmet"}`}>{rule.met ? "Met now" : "Not met now"}{rule.now ? `: ${rule.now}` : ""}</small>;
 }
 
-export function StrategyDetails({ name, summary, tone, context, figures, evidence, legs, entry, exit, notes, action, onClose }: {
+export function StrategyDetails({ strategyKey, name, summary, tone, context, figures, evidence, legs, entry, exit, notes, action, onClose }: {
+  strategyKey: string;
   name: string;
   summary: string;
   tone: string;
@@ -27,6 +29,7 @@ export function StrategyDetails({ name, summary, tone, context, figures, evidenc
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const explainer = STRATEGY_EXPLAINERS[strategyKey];
   useEffect(() => {
     if (dialog.current && !dialog.current.open) dialog.current.showModal();
   }, []);
@@ -47,6 +50,14 @@ export function StrategyDetails({ name, summary, tone, context, figures, evidenc
         <div className="strategy-details-figures">
           {figures.map((figure) => <div key={figure.label}><span>{figure.label}</span><strong className={figure.tone ? `detail-${figure.tone}` : undefined}>{figure.value}</strong></div>)}
         </div>
+        {explainer ? <details className="strategy-explainer" open>
+          <summary>How it works, in plain words</summary>
+          <p><strong>{explainer.idea}</strong> {explainer.how}</p>
+          <h5>Example</h5>
+          <ul className="strategy-explainer-example">{explainer.example.map((line) => <li key={line}>{line}</li>)}</ul>
+          <p><strong>Helps:</strong> {explainer.helps} <strong>Main risk:</strong> {explainer.risk}</p>
+          <p className="strategy-details-lead">{EXAMPLE_NOTE}</p>
+        </details> : null}
         {legs?.length ? <section><h4>Position</h4><ul className="strategy-details-legs">{legs.map((leg) => <li key={leg}>{leg}</li>)}</ul></section> : null}
         {evidence ? <section>
           <h4>Past test</h4>

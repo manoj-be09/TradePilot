@@ -2425,6 +2425,7 @@ export default function Home() {
     const pastTest = strategy.past_test;
     const winShare = pastTest ? Number(pastTest.win_rate_pct) / 100 : 0;
     return <StrategyDetails
+      strategyKey={strategy.key}
       action={open ? <span>Open now. See it under Running.</span> : waiting ? <span>Waiting for entry. Cancel it under Running.</span> : <>
         <button className="text-link" disabled={paperBusy || !policy} onClick={() => { close(); const details = document.getElementById("paper-strategy-builder"); if (details instanceof HTMLDetailsElement) details.open = true; if (payoff) applyStrategyToPaperTicket(strategy, payoff); }} type="button">Edit rules</button>
         <button className="primary-button" disabled={paperBusy || !policy || !!paperAccount?.kill_switch_enabled} onClick={() => { close(); void startPaperStrategy(strategy.key); }} type="button">▶ Start in paper</button>

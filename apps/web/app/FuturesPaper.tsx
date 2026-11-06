@@ -219,6 +219,7 @@ export function FuturesPaper({ token, apiUrl, waitingKeys, entriesPaused, onChan
         })}
       </ul>
       {detail ? <StrategyDetails
+        strategyKey={detail.key}
         action={waitingKeys.includes(detail.key) ? <span>Waiting for entry. Cancel it under Running.</span> : <button className="primary-button" disabled={busy || entriesPaused || !frontContract} onClick={() => { setDetailKey(""); void startStrategy(detail); }} type="button">▶ Start in paper</button>}
         context={`${frontContract?.trading_symbol ?? "Contract unavailable"}, ${strategyLots} lot${strategyLots === 1 ? "" : "s"}. Simulated.`}
         entry={[

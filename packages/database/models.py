@@ -884,3 +884,17 @@ class LearningEvent(Base):
     summary: Mapped[str] = mapped_column(String(256))
     details: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class LiveHaltEvent(Base):
+    """Append-only live kill switch: the latest row decides; no row means halted."""
+
+    __tablename__ = "live_halt_events"
+    __table_args__ = (Index("ix_live_halt_events_time", "occurred_at"),)
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    halted: Mapped[bool] = mapped_column(Boolean)
+    actor: Mapped[str] = mapped_column(String(64))
+    reason: Mapped[str] = mapped_column(String(256))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                  default=monotonic_utc_now)

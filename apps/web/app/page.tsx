@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
+import { LiveStatus } from "./LiveStatus";
 import { WorkerStatus } from "./WorkerStatus";
 import { PaperStrategyResults } from "./ObservedStrategyPerformance";
 import { LearningLoop } from "./Learning";
@@ -2861,6 +2862,7 @@ export default function Home() {
           Entries {paperAccount.kill_switch_enabled ? "paused" : "on"}
           <button className="status-chip-action" disabled={paperBusy} onClick={() => void togglePaperKillSwitch()} type="button">{paperAccount.kill_switch_enabled ? "Resume" : "Pause"}</button>
         </span> : <span className="status-chip">Entries: unavailable</span>}
+        <LiveStatus token={token} apiUrl={API_URL} />
       </section>}
 
       {!token && <section className="intro">

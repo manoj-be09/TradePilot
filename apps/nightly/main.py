@@ -9,7 +9,9 @@ no orders.
 """
 
 import argparse
+import asyncio
 import logging
+import os
 import shutil
 import sqlite3
 import subprocess  # nosec B404
@@ -29,6 +31,8 @@ from apps.api.settings import get_settings
 from packages.backtesting.book_loader import load_books, recorded_spread
 from packages.backtesting.published_strategies import Market
 from packages.backtesting.rule_engine import run_engine
+from packages.broker_upstox.ledger import expected_positions
+from packages.broker_upstox.portfolio import PortfolioReader, reconcile_positions
 from packages.database.models import PaperAccount, User
 from packages.database.session import build_session_factory
 from packages.database.sqlite_backup import BackupError, backup_database
@@ -38,6 +42,7 @@ from packages.learning.features import Context
 from packages.learning.forward_bars import merge_books, recorded_books
 from packages.learning.ideas import GENERATED, generate, save_generated
 from packages.learning.report import write_weekly
+from packages.market_data.contracts import MarketDataProviderError
 from packages.paper_trading.forward_plan import ForwardPlan, load_plan
 from packages.paper_trading.forward_report import build_report, render_markdown
 
@@ -166,6 +171,23 @@ def run_learning_loop(
     return f"{len(decisions)} decision(s)"
 
 
+def run_live_reconcile(factory: sessionmaker[Session]) -> str:
+    """Broker F&O positions vs the live ledger; read-only, and skipped without a read token."""
+    token = os.environ.get("UPSTOX_LIVE_READ_TOKEN", "").strip()
+    if not token:
+        return "SKIPPED_NO_TOKEN"
+    try:
+        broker = asyncio.run(PortfolioReader(token).fo_positions())
+    except MarketDataProviderError as error:
+        logger.error("Live reconciliation could not read the broker: %s", error)
+        return "FAILED"
+    with factory() as session:
+        differences = reconcile_positions(broker, expected_positions(session))
+    for difference in differences:
+        logger.error("Live position differs: %s", difference)
+    return "MATCHED" if not differences else f"MISMATCH ({len(differences)})"
+
+
 def run_once(
     factory: sessionmaker[Session], plan: ForwardPlan, database: Path, backups: Path,
     reports: Path, now: datetime,
@@ -213,6 +235,11 @@ def run_once(
     except Exception as error:  # noqa: BLE001 - one failed step must not stop the others
         logger.error("Learning loop failed: %s", type(error).__name__)
         results["learning"] = "FAILED"
+    try:
+        results["live_reconcile"] = run_live_reconcile(factory)
+    except SQLAlchemyError as error:
+        logger.error("Live reconciliation failed: %s", type(error).__name__)
+        results["live_reconcile"] = "FAILED"
     if results["ledger"] != "MATCHED":
         logger.error("Ledger needs review: %s", results["ledger"])
     free = disk_free_gb(database.parent)

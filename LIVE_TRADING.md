@@ -4,8 +4,13 @@ Status: **foundations built (7 November 2026), still no send path. No code in th
 place, modify or cancel a real order.** `packages/broker_upstox` holds the order state machine,
 hedge-first leg ordering and flatten plan (L2), pre-trade controls (L4), the live kill switch
 (`live_halt_events`, fails closed; `scripts/live-halt.py`) and read-only positions/funds reads with
-a reconciliation check (L3, `scripts/live-reconcile.py`). Order-book reads, send and cancel are not
-built: the trading guard hook blocks them, and only the owner may change it, before L5.
+a reconciliation check (L3, `scripts/live-reconcile.py`, also a nightly step that skips itself
+without `UPSTOX_LIVE_READ_TOKEN`). The L5 locks are built too: a live order ledger with an alert on
+every state change, owner-signed release records and per-release arming (`scripts/live-release.py`,
+key from `LIVE_RELEASE_SIGNING_KEY`), `send_blockers` combining all locks, and a dashboard **Halt**
+button (halting only; releasing stays on the command line). Order-book reads, send and cancel, and
+the live runtime that would use them, are not built: the trading guard hook blocks them, and only
+the owner may change it. Telegram commands and the Upstox daily login flow are also not built.
 `Settings.effective_live_trading_enabled` returns `False` regardless of configuration, and the
 Upstox adapter refuses every non-GET call except the margin calculation. This document exists
 so that, once the paper evidence and the owner decide to go live, the remaining work is a short,

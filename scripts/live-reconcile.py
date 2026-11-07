@@ -4,8 +4,9 @@ Usage (the token is the owner's order-scoped Upstox token, read from the environ
 one command and never stored):
   UPSTOX_LIVE_READ_TOKEN=... PYTHONPATH=. python scripts/live-reconcile.py
 
-Read-only GET calls. TradePilot has no live trades yet, so every open F&O position in the
-account counts as a difference: use an account that holds nothing else. Exit code 1 on any
+Read-only GET calls. Expected positions come from the live order ledger, so any F&O
+position opened outside TradePilot counts as a difference: use an account that holds
+nothing else. Exit code 1 on any
 difference, 2 if the broker could not be read. Contract notes are compared by hand for now.
 """
 
@@ -14,7 +15,10 @@ import json
 import os
 import sys
 
+from apps.api.settings import get_settings
+from packages.broker_upstox.ledger import expected_positions
 from packages.broker_upstox.portfolio import PortfolioReader, reconcile_positions
+from packages.database.session import build_session_factory
 from packages.market_data.contracts import MarketDataProviderError
 
 
@@ -30,7 +34,8 @@ async def run() -> int:
     except MarketDataProviderError as error:
         print(f"Could not read the broker: {error}", file=sys.stderr)
         return 2
-    differences = reconcile_positions(positions, expected={})
+    with build_session_factory(get_settings().database_url)() as session:
+        differences = reconcile_positions(positions, expected_positions(session))
     print(json.dumps({
         "status": "MATCHED" if not differences else "MISMATCH",
         "available_margin": str(funds),

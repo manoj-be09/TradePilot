@@ -1,6 +1,11 @@
 # Live trading: design and switch-on plan
 
-Status: **design only. No code in this repository can place, modify or cancel a real order.**
+Status: **foundations built (7 November 2026), still no send path. No code in this repository can
+place, modify or cancel a real order.** `packages/broker_upstox` holds the order state machine,
+hedge-first leg ordering and flatten plan (L2), pre-trade controls (L4), the live kill switch
+(`live_halt_events`, fails closed; `scripts/live-halt.py`) and read-only positions/funds reads with
+a reconciliation check (L3, `scripts/live-reconcile.py`). Order-book reads, send and cancel are not
+built: the trading guard hook blocks them, and only the owner may change it, before L5.
 `Settings.effective_live_trading_enabled` returns `False` regardless of configuration, and the
 Upstox adapter refuses every non-GET call except the margin calculation. This document exists
 so that, once the paper evidence and the owner decide to go live, the remaining work is a short,

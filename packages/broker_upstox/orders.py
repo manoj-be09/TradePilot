@@ -77,7 +77,8 @@ def state_from_broker(status: str, quantity: int, filled_quantity: int) -> Order
 def client_tag(deployment_id: UUID, leg: int, attempt: int) -> str:
     """Deterministic order tag, so a restart can find its own orders before acting."""
     tag = f"tp-{deployment_id.hex[:16]}-{leg}-{attempt}"
-    assert len(tag) <= TAG_MAX_LENGTH
+    if len(tag) > TAG_MAX_LENGTH:
+        raise ValueError("Order tag is longer than Upstox allows")
     return tag
 
 

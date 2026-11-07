@@ -33,6 +33,7 @@ from apps.api.backtest_schemas import (
 from apps.api.capabilities import CapabilityMatrix, current_capabilities
 from apps.api.equity_routes import router as equity_router
 from apps.api.futures_routes import router as futures_router
+from apps.api.live_routes import router as live_router
 from apps.api.login_throttle import (
     LoginThrottleUnavailable,
     get_login_throttle,
@@ -246,6 +247,7 @@ app.include_router(equity_router)
 app.include_router(futures_router)
 app.include_router(research_router)
 app.include_router(market_outlook_router)
+app.include_router(live_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().cors_origin_list,

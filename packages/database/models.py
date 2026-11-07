@@ -898,3 +898,71 @@ class LiveHaltEvent(Base):
     reason: Mapped[str] = mapped_column(String(256))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
                                                   default=monotonic_utc_now)
+
+
+class LiveRelease(Base):
+    """Owner-signed permission naming one strategy, its lots and loss caps. Revoke, never edit."""
+
+    __tablename__ = "live_releases"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    owner_user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    strategy_key: Mapped[str] = mapped_column(String(64))
+    max_lots: Mapped[int] = mapped_column(Integer)
+    max_trade_loss: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    daily_loss_cap: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    valid_until: Mapped[date] = mapped_column(Date)
+    signature: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                 default=monotonic_utc_now)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class LiveArmEvent(Base):
+    """Append-only owner arm per release: the latest row decides; no row means disarmed."""
+
+    __tablename__ = "live_arm_events"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    release_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("live_releases.id"), index=True)
+    armed: Mapped[bool] = mapped_column(Boolean)
+    actor: Mapped[str] = mapped_column(String(64))
+    reason: Mapped[str] = mapped_column(String(256))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                  default=monotonic_utc_now)
+
+
+class LiveOrder(Base):
+    """One live broker order, kept apart from the paper ledger."""
+
+    __tablename__ = "live_orders"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    release_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("live_releases.id"), index=True)
+    tag: Mapped[str] = mapped_column(String(40), unique=True)
+    instrument_key: Mapped[str] = mapped_column(String(64))
+    side: Mapped[str] = mapped_column(String(4))
+    quantity: Mapped[int] = mapped_column(Integer)
+    limit_price: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    state: Mapped[str] = mapped_column(String(16))
+    filled_quantity: Mapped[int] = mapped_column(Integer, default=0)
+    average_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    broker_order_id: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                 default=monotonic_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                 default=monotonic_utc_now)
+
+
+class LiveOrderEvent(Base):
+    """Append-only trail of every live order state change."""
+
+    __tablename__ = "live_order_events"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    order_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("live_orders.id"), index=True)
+    state: Mapped[str] = mapped_column(String(16))
+    filled_quantity: Mapped[int] = mapped_column(Integer)
+    broker_status: Mapped[str | None] = mapped_column(String(64))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                  default=monotonic_utc_now)

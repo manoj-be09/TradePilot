@@ -44,3 +44,16 @@ def test_each_candle_is_learned_once_and_missing_vix_skips() -> None:
     fresh = Learner()
     play(fresh, bars, [])
     assert fresh.played == 0  # no VIX, no guess: fail closed rather than invent a feature
+
+
+def test_page_shows_the_next_call_or_waits() -> None:
+    from packages.learning.learning_candle_page import render
+
+    bars = _bars([i % 2 for i in range(75)], days=3)
+    learner = Learner()
+    play(learner, bars, _vix(bars))
+    now = datetime(2026, 11, 5, 10, 0, tzinfo=IST)
+    page = render(learner, 0.62, now, now)
+    assert "Candle starting 10:00" in page and ">Green<" in page and "simulated" in page.lower()
+    assert page.count('class="tile') == 60  # last 60 scored candles
+    assert "Waiting" in render(learner, None, None, now)

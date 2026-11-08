@@ -15,12 +15,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from packages.learning.learning_candle import IST, Learner, Turn, play
+from packages.learning.learning_candle_page import render
 from packages.market_data.contracts import HistoricalBar
 from packages.market_data.provider import get_market_data_provider
 from packages.market_data.upstox import UpstoxMarketDataProvider
 from packages.recorder.universe import INDIA_VIX_KEY, NIFTY_INDEX_KEY
 
 STATE = Path("data/learning_candle/state.json")
+PAGE = STATE.with_name("index.html")
 FIVE = timedelta(minutes=5)
 
 
@@ -64,6 +66,10 @@ async def main(args: argparse.Namespace) -> None:
         vix = await history(provider, INDIA_VIX_KEY, args.days)
         turns = play(learner, nifty, vix)
         learner.save(STATE)
+        pending = turns[-1] if turns and turns[-1].timestamp is None else None
+        PAGE.write_text(render(learner, pending.p_green if pending else None,
+                               nifty[-1].timestamp + FIVE if nifty else None,
+                               datetime.now(IST)), encoding="utf-8")
         report(learner, turns, 1 if args.live and learner.played else args.show)
         if not args.live:
             return

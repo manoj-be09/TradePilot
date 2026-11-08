@@ -23,6 +23,7 @@ FEATURES = (
 )
 _WARMUP = 21  # bars needed before the slow EMA and RSI mean anything
 _RECENT = 100
+_KEEP = 500  # guesses kept for the page
 _LAST_CANDLE = time(15, 25)
 
 
@@ -102,6 +103,7 @@ class Learner:
     right: int = 0
     repeat_right: int = 0  # baseline: "next candle repeats the last one's colour"
     recent: list[int] = field(default_factory=list)
+    history: list[list[Any]] = field(default_factory=list)  # [start ISO, p_green, actual]
     rate: float = 0.02
     l2: float = 0.001
 
@@ -186,6 +188,7 @@ def play(learner: Learner, bars: list[HistoricalBar], vix_bars: list[HistoricalB
             break
         if actual is not None:
             learner.score(int(p >= 0.5), actual, color(bars[i]))
+            learner.history = [*learner.history, [nxt.timestamp.isoformat(), p, actual]][-_KEEP:]
             learner.learn(z, actual, p)
         learner.learned_until = nxt.timestamp.isoformat()
     return turns

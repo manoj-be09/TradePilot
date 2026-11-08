@@ -1,12 +1,12 @@
-"""Next-candle game for NIFTY 5-minute candles: guess green/red before each candle, learn after.
+"""L-Earning Candle for NIFTY 5-minute candles: guess green/red before each candle, learn after.
 
 Usage:
-  PYTHONPATH=. python scripts/play-candle-game.py --days 90      # learn from recent history
-  PYTHONPATH=. python scripts/play-candle-game.py --live         # keep playing during market hours
-  PYTHONPATH=. python scripts/play-candle-game.py --reset ...    # forget everything learned
+  PYTHONPATH=. python scripts/play-learning-candle.py --days 90   # learn from history
+  PYTHONPATH=. python scripts/play-learning-candle.py --live      # play during market hours
+  PYTHONPATH=. python scripts/play-learning-candle.py --reset ... # forget everything
 
-Read-only Upstox candle GETs. What it learned is kept in data/candle_game/state.json, so each run
-continues from the last one. Simulated research only: not a signal and not investment advice.
+Read-only Upstox candle GETs. What it learned is kept in data/learning_candle/state.json, so
+each run continues from the last one. Simulated research only: not a signal or investment advice.
 """
 
 import argparse
@@ -14,13 +14,13 @@ import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from packages.learning.candle_game import IST, Learner, Turn, play
+from packages.learning.learning_candle import IST, Learner, Turn, play
 from packages.market_data.contracts import HistoricalBar
 from packages.market_data.provider import get_market_data_provider
 from packages.market_data.upstox import UpstoxMarketDataProvider
 from packages.recorder.universe import INDIA_VIX_KEY, NIFTY_INDEX_KEY
 
-STATE = Path("data/candle_game/state.json")
+STATE = Path("data/learning_candle/state.json")
 FIVE = timedelta(minutes=5)
 
 

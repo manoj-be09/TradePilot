@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from packages.learning.candle_game import IST, Learner, play
+from packages.learning.learning_candle import IST, Learner, play
 from packages.market_data.contracts import HistoricalBar
 
 

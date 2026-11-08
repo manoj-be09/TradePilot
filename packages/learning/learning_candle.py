@@ -1,4 +1,4 @@
-"""Next-candle game: before each NIFTY 5-minute candle, guess green or red, then learn from it.
+"""L-Earning Candle: before each NIFTY 5-minute candle, guess green or red, then learn from it.
 
 An online logistic regression. Each completed candle is scored on the guess made before it was
 seen (so the accuracy is honest, out-of-sample), then the weights move by the error: a confident

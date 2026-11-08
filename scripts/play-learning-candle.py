@@ -14,7 +14,7 @@ import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from packages.learning.learning_candle import IST, Learner, Turn, play
+from packages.learning.learning_candle import IST, PASS_BELOW, Learner, Turn, play
 from packages.learning.learning_candle_page import render
 from packages.market_data.contracts import HistoricalBar
 from packages.market_data.provider import get_market_data_provider
@@ -42,7 +42,8 @@ async def history(provider: UpstoxMarketDataProvider, key: str, days: int) -> li
 
 def report(learner: Learner, turns: list[Turn], show: int) -> None:
     for turn in turns[-show:]:
-        guess = "GREEN" if turn.p_green >= 0.5 else "RED  "
+        guess = ("PASS " if abs(turn.p_green - 0.5) < PASS_BELOW
+                 else "GREEN" if turn.p_green >= 0.5 else "RED  ")
         if turn.timestamp is None:
             print(f"  next candle    : guess {guess} (p_green {turn.p_green:.2f})")
         else:

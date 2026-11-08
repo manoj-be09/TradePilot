@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from packages.learning.learning_candle import FEATURES, IST, Learner
+from packages.learning.learning_candle import FEATURES, IST, PASS_BELOW, Learner
 
 _LABELS = {
     "body": "Last candle body", "upper_wick": "Upper wick", "lower_wick": "Lower wick",
@@ -10,7 +10,9 @@ _LABELS = {
     "streak": "Colour streak", "rsi_14": "RSI 14", "ema_9_21_gap": "EMA 9 vs 21",
     "day_position": "Place in day range", "from_day_open": "Move from day open",
     "time_of_day": "Time of day", "range_expansion": "Range expansion",
-    "vix_change": "VIX change", "vix_level": "VIX level",
+    "vix_change": "VIX change", "vix_level": "VIX level", "last_colour": "Opposite of last colour",
+    "day_extreme": "Near day high or low", "move_x_range": "Move x range expansion",
+    "move_size": "Size of last move", "slot_green_rate": "Green rate at this time",
 }
 _WINDOW = 50
 
@@ -67,6 +69,12 @@ def render(learner: Learner, next_p: float | None, next_at: datetime | None,
     if next_p is None or next_at is None:
         hero = ('<div class="call idle">Waiting</div><p class="muted">No candle to call right '
                 'now. The next guess comes when the market is open.</p>')
+    elif abs(next_p - 0.5) < PASS_BELOW:
+        hero = (f'<p class="eyebrow">Candle starting {next_at.astimezone(IST):%H:%M}</p>'
+                f'<div class="call idle">Pass</div>'
+                f'<div class="meter"><i style="width:{100 * next_p:.0f}%"></i></div>'
+                f'<p class="muted">Chance of green {next_p:.0%} &middot; too close to call, '
+                f'so it sits this one out</p>')
     else:
         green = next_p >= 0.5
         sure = abs(next_p - 0.5) * 2
@@ -141,12 +149,14 @@ footer {{ margin-top:24px; font-size:12px; color:var(--muted); }}
 <div class="grid">
 <section class="card"><h2>Next call</h2>{hero}</section>
 <section class="card"><h2>Scoreboard</h2><div class="stats">
-<div class="stat"><b>{_pct(learner.right, learner.played)}</b><span>right, all time</span></div>
+<div class="stat"><b>{_pct(learner.calls_right, learner.calls)}</b>
+<span>right when it calls ({_pct(learner.calls, learner.played)} of candles)</span></div>
+<div class="stat"><b>{_pct(learner.right, learner.played)}</b>
+<span>right on every candle</span></div>
 <div class="stat"><b>{_pct(sum(recent), len(recent))}</b>
-<span>right, last {len(recent)}</span></div>
+<span>right on the last {len(recent)} candles</span></div>
 <div class="stat"><b>{_pct(learner.repeat_right, learner.played)}</b>
-<span>&ldquo;repeat last colour&rdquo; baseline</span></div>
-<div class="stat"><b>{learner.played:,}</b><span>candles called</span></div>
+<span>&ldquo;repeat last colour&rdquo; baseline, {learner.played:,} candles</span></div>
 </div></section>
 <section class="card wide"><h2>Recent calls</h2><div class="strip">{_strip(learner.history)}</div>
 <p class="legend">Each tile is a finished candle in its real colour. Faded with &times; means the

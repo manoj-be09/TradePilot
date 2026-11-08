@@ -1,9 +1,13 @@
 """L-Earning Candle: before each NIFTY 5-minute candle, guess green or red, then learn from it.
 
-An online logistic regression. Each completed candle is scored on the guess made before it was
-seen (so the accuracy is honest, out-of-sample), then the weights move by the error: a confident
-right guess barely changes them, a confident wrong guess changes them most. Each candle is learned
-once; replaying the same window does not count twice. Simulated research only — not advice.
+An online logistic regression with AdaGrad steps. Each completed candle is scored on the guess
+made before it was seen (so the accuracy is honest, out-of-sample), then the weights move by the
+error: a confident right guess barely changes them, a confident wrong guess changes them most.
+When the model is less than 55/45 sure it passes; calls and passes are scored separately. Each
+candle is learned once; replaying the same window does not count twice. Simulated research only.
+
+Chosen on 2 years of NIFTY 5m candles: tuned on Nov 2024-May 2026, then checked once on the
+following six months (53.1% on every candle, 55.1% on calls; the old plain-SGD model 51.3%).
 """
 
 import json
@@ -19,12 +23,15 @@ IST = timezone(timedelta(hours=5, minutes=30))
 FEATURES = (
     "body", "upper_wick", "lower_wick", "ret_1", "ret_3", "ret_6", "streak", "rsi_14",
     "ema_9_21_gap", "day_position", "from_day_open", "time_of_day", "range_expansion",
-    "vix_change", "vix_level",
+    "vix_change", "vix_level", "last_colour", "day_extreme", "move_x_range", "move_size",
+    "slot_green_rate",
 )
 _WARMUP = 21  # bars needed before the slow EMA and RSI mean anything
 _RECENT = 100
 _KEEP = 500  # guesses kept for the page
 _LAST_CANDLE = time(15, 25)
+_WINDOW = 110  # one whole session (75 bars) plus warm-up; keeps each step O(1)
+PASS_BELOW = 0.05  # |p_green - 0.5| under this is a pass, not a call
 
 
 def _bps(now: float, before: float) -> float:
@@ -73,19 +80,25 @@ def features(bars: list[HistoricalBar], vix: dict[Any, HistoricalBar]) -> list[f
         streak += 1 if side else -1
     ranges = [float(bar.high - bar.low) for bar in bars[-13:-1]]
     clock = last.timestamp.astimezone(IST)
+    position = (c - day_low) / (day_high - day_low) if day_high > day_low else 0.5
+    move = _bps(c, closes[-2])
+    expansion = span / (sum(ranges) / len(ranges)) if sum(ranges) else 1.0
+    last_colour = color(last)
     return [
         (c - o) / span if span else 0.0,
         (h - max(o, c)) / span if span else 0.0,
         (min(o, c) - low) / span if span else 0.0,
-        _bps(c, closes[-2]), _bps(c, closes[-4]), _bps(c, closes[-7]),
+        move, _bps(c, closes[-4]), _bps(c, closes[-7]),
         float(streak), _rsi(closes),
         _bps(_ema(closes, 9), _ema(closes, 21)),
-        (c - day_low) / (day_high - day_low) if day_high > day_low else 0.5,
+        position,
         _bps(c, float(today[0].open)),
         ((clock.hour - 9) * 60 + clock.minute - 15) / 375,
-        span / (sum(ranges) / len(ranges)) if sum(ranges) else 1.0,
+        expansion,
         _bps(float(vix_now.close), float(vix_before.close)),
         float(vix_now.close),
+        0.0 if last_colour is None else 1.0 - 2 * last_colour,
+        abs(position - 0.5), move * expansion, abs(move),
     ]
 
 
@@ -104,7 +117,11 @@ class Learner:
     repeat_right: int = 0  # baseline: "next candle repeats the last one's colour"
     recent: list[int] = field(default_factory=list)
     history: list[list[Any]] = field(default_factory=list)  # [start ISO, p_green, actual]
-    rate: float = 0.02
+    calls: int = 0
+    calls_right: int = 0
+    squares: list[float] = field(default_factory=lambda: [1e-8] * len(FEATURES))
+    slots: dict[str, list[float]] = field(default_factory=dict)  # "HH:MM" -> [greens, seen]
+    rate: float = 0.05
     l2: float = 0.001
 
     def _scale(self, x: list[float], update: bool = True) -> list[float]:
@@ -123,13 +140,23 @@ class Learner:
 
     def learn(self, z: list[float], green: int, p: float) -> None:
         error = green - p  # large when confidently wrong, tiny when confidently right
-        self.weights = [w + self.rate * (error * v - self.l2 * w)
-                        for w, v in zip(self.weights, z, strict=True)]
-        self.bias += self.rate * error
+        for i, (w, v) in enumerate(zip(self.weights, z, strict=True)):
+            step = error * v - self.l2 * w
+            self.squares[i] += step * step  # AdaGrad: features that keep moving get smaller steps
+            self.weights[i] = w + self.rate * step / math.sqrt(self.squares[i])
+        self.bias += self.rate * 0.1 * error
 
-    def score(self, guess: int, actual: int, last_color: int | None) -> None:
+    def slot_rate(self, slot: str) -> float:
+        greens, seen = self.slots.get(slot, [1.0, 2.0])
+        return greens / seen - 0.5
+
+    def score(self, p: float, actual: int, last_color: int | None) -> None:
+        guess = int(p >= 0.5)
         self.played += 1
         self.right += guess == actual
+        if abs(p - 0.5) >= PASS_BELOW:
+            self.calls += 1
+            self.calls_right += guess == actual
         self.repeat_right += last_color == actual
         self.recent = [*self.recent, int(guess == actual)][-_RECENT:]
 
@@ -139,8 +166,10 @@ class Learner:
         pct = 100 * self.right / self.played
         recent = 100 * sum(self.recent) / len(self.recent)
         repeat = 100 * self.repeat_right / self.played
+        called = 100 * self.calls_right / self.calls if self.calls else 0.0
         return (f"{self.played} candles: {pct:.1f}% right overall, {recent:.1f}% over the last "
-                f"{len(self.recent)}; 'repeat last colour' baseline {repeat:.1f}%")
+                f"{len(self.recent)}; {called:.1f}% on {self.calls} confident calls; "
+                f"'repeat last colour' baseline {repeat:.1f}%")
 
     def top_weights(self, n: int = 5) -> list[tuple[str, float]]:
         return sorted(zip(FEATURES, self.weights, strict=True), key=lambda kv: -abs(kv[1]))[:n]
@@ -151,7 +180,12 @@ class Learner:
 
     @classmethod
     def load(cls, path: Path) -> "Learner":
-        return cls(**json.loads(path.read_text())) if path.exists() else cls()
+        if not path.exists():
+            return cls()
+        saved = json.loads(path.read_text())
+        if len(saved.get("weights", [])) != len(FEATURES):
+            return cls()  # older model with other features: start over rather than misalign
+        return cls(**saved)
 
 
 @dataclass(frozen=True)
@@ -177,9 +211,11 @@ def play(learner: Learner, bars: list[HistoricalBar], vix_bars: list[HistoricalB
             break  # session over: there is no next candle to guess
         same_day = nxt is None or (nxt.timestamp.astimezone(IST).date()
                                    == bars[i].timestamp.astimezone(IST).date())
-        x = features(bars[:i + 1], vix) if same_day else None
+        x = features(bars[max(0, i + 1 - _WINDOW):i + 1], vix) if same_day else None
         if x is None:
             continue
+        slot = (bars[i].timestamp + timedelta(minutes=5)).astimezone(IST).strftime("%H:%M")
+        x.append(learner.slot_rate(slot))
         z = learner._scale(x, update=nxt is not None)
         p = learner.probability(z)
         actual = None if nxt is None else color(nxt)
@@ -187,8 +223,10 @@ def play(learner: Learner, bars: list[HistoricalBar], vix_bars: list[HistoricalB
         if nxt is None:
             break
         if actual is not None:
-            learner.score(int(p >= 0.5), actual, color(bars[i]))
+            learner.score(p, actual, color(bars[i]))
             learner.history = [*learner.history, [nxt.timestamp.isoformat(), p, actual]][-_KEEP:]
             learner.learn(z, actual, p)
+            seen = learner.slots.setdefault(slot, [1.0, 2.0])
+            seen[0], seen[1] = seen[0] + actual, seen[1] + 1
         learner.learned_until = nxt.timestamp.isoformat()
     return turns

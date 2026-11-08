@@ -230,3 +230,29 @@ def play(learner: Learner, bars: list[HistoricalBar], vix_bars: list[HistoricalB
             seen[0], seen[1] = seen[0] + actual, seen[1] + 1
         learner.learned_until = nxt.timestamp.isoformat()
     return turns
+
+
+def late_calls(minutes: list[HistoricalBar], after: int = 2,
+               min_move_bps: float = 2.0) -> list[Turn]:
+    """The "late call" game: call each 5-minute candle `after` minutes in, not before it opens.
+
+    Calls the direction so far (minute `after` close vs the candle's open) and passes (p 0.5)
+    when that move is under `min_move_bps`. Chosen on Nov 2025-Jul 2026 1-minute candles and
+    checked on the next four months: after 2 minutes with a 2 bps pass, 80.7% then 84.1% right
+    on about half the candles. It watches part of the candle, so it is not a forecast.
+    """
+    buckets: dict[Any, list[HistoricalBar]] = {}
+    for bar in minutes:
+        moment = bar.timestamp.astimezone(IST)
+        buckets.setdefault(moment.replace(minute=moment.minute - moment.minute % 5), []).append(bar)
+    turns = []
+    for start, bars in sorted(buckets.items()):
+        if len(bars) < after or bars[0].timestamp != start or bars[0].open <= 0:
+            continue  # missing minutes: no call rather than a guess
+        move = _bps(float(bars[after - 1].close), float(bars[0].open))
+        p = 0.5 if abs(move) < min_move_bps else float(move > 0)
+        whole = len(bars) == 5
+        actual = (None if not whole or bars[-1].close == bars[0].open
+                  else int(bars[-1].close > bars[0].open))
+        turns.append(Turn(start, p, actual))
+    return turns

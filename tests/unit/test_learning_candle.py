@@ -68,3 +68,21 @@ def test_unsure_calls_are_passes_and_scored_apart() -> None:
     assert (learner.played, learner.right, learner.calls, learner.calls_right) == (2, 1, 1, 0)
     now = datetime(2026, 11, 5, 10, 0, tzinfo=IST)
     assert ">Pass<" in render(learner, 0.52, now, now)
+
+
+def test_late_call_follows_the_move_so_far_and_passes_on_tiny_moves() -> None:
+    from packages.learning.learning_candle import late_calls
+
+    start = datetime(2026, 11, 5, 10, 0, tzinfo=IST)
+
+    def minute(i: int, o: str, c: str) -> HistoricalBar:
+        return HistoricalBar(timestamp=start + timedelta(minutes=i), open=Decimal(o),
+                             high=max(Decimal(o), Decimal(c)), low=min(Decimal(o), Decimal(c)),
+                             close=Decimal(c), volume=0)
+
+    up = [minute(0, "24000", "24004"), minute(1, "24004", "24010"), minute(2, "24010", "23990"),
+          minute(3, "23990", "23995"), minute(4, "23995", "23998")]  # +4 bps at minute 2, ends red
+    flat = [minute(5, "24000", "24001"), minute(6, "24001", "24002")]  # under 2 bps, in progress
+    turns = late_calls(up + flat, after=2)
+    assert [(t.p_green, t.actual) for t in turns] == [(1.0, 0), (0.5, None)]
+    assert late_calls(up[1:], after=2) == []  # first minute missing: no call

@@ -12,10 +12,13 @@ class StrategyLeg:
     side: TradeSide
     strike_offset: int
     quantity_ratio: int = 1
+    expiry_offset: int = 0  # 0: the trade's expiry; 1: the next listed expiry after it
 
     def __post_init__(self) -> None:
         if self.quantity_ratio < 1:
             raise ValueError("Strategy leg quantity ratio must be at least one")
+        if self.expiry_offset not in (0, 1):
+            raise ValueError("A strategy leg may only use the trade's or the next expiry")
 
 
 @dataclass(frozen=True)
@@ -40,9 +43,12 @@ class StrategyRegistry:
         if any(not strategy.legs for strategy in strategies):
             raise ValueError("Every strategy must define at least one option leg")
         for strategy in strategies:
-            if strategy.expiry_scope != "SAME_EXPIRY":
+            multi = any(leg.expiry_offset for leg in strategy.legs)
+            if multi != (strategy.expiry_scope == "MULTI_EXPIRY"):
+                raise ValueError(f"Strategy {strategy.key!r} has an inconsistent expiry scope")
+            if multi and not _is_long_calendar(strategy):
                 raise ValueError(
-                    f"Strategy {strategy.key!r} requires unsupported multi-expiry execution"
+                    f"Multi-expiry strategy {strategy.key!r} must be a long call calendar"
                 )
             if strategy.risk_profile == "DEFINED_RISK" and _call_tail_slope(strategy) < 0:
                 raise ValueError(
@@ -52,10 +58,29 @@ class StrategyRegistry:
         self._by_key = by_key
 
     def list(self) -> tuple[StrategyDefinition, ...]:
-        return self._strategies
+        """Same-expiry templates: every backtest, ranking and research path assumes one expiry."""
+        return tuple(item for item in self._strategies if item.expiry_scope == "SAME_EXPIRY")
+
+    def calendars(self) -> tuple[StrategyDefinition, ...]:
+        """Multi-expiry templates; only paper entry, exits and the forward runner handle them."""
+        return tuple(item for item in self._strategies if item.expiry_scope == "MULTI_EXPIRY")
 
     def get(self, key: str) -> StrategyDefinition | None:
         return self._by_key.get(key)
+
+
+def _is_long_calendar(strategy: StrategyDefinition) -> bool:
+    """Each near call sold has the same call bought on the next expiry, and nothing else.
+
+    At the near expiry the far call is worth at least the near one's intrinsic value, so the
+    most it can lose is the debit paid. Puts are left out: a European put can trade below
+    intrinsic, which would break that bound.
+    """
+    near = sorted((leg.strike_offset, leg.quantity_ratio) for leg in strategy.legs
+                  if leg.expiry_offset == 0 and leg.side == "SELL" and leg.option_type == "CE")
+    far = sorted((leg.strike_offset, leg.quantity_ratio) for leg in strategy.legs
+                 if leg.expiry_offset == 1 and leg.side == "BUY" and leg.option_type == "CE")
+    return bool(near) and near == far and len(near) + len(far) == len(strategy.legs)
 
 
 def _call_tail_slope(strategy: StrategyDefinition) -> int:
@@ -109,6 +134,18 @@ STRATEGY_REGISTRY = StrategyRegistry(
                 StrategyLeg("PE", "SELL", -1),
                 StrategyLeg("CE", "SELL", 1),
                 StrategyLeg("CE", "BUY", 2),
+            ),
+        ),
+        StrategyDefinition(
+            "range_iron_condor",
+            "Range iron condor",
+            "Sell the put and call six strikes out, protected six strikes further on each "
+            "side, for a range-bound market with rich option prices.",
+            (
+                StrategyLeg("PE", "BUY", -12),
+                StrategyLeg("PE", "SELL", -6),
+                StrategyLeg("CE", "SELL", 6),
+                StrategyLeg("CE", "BUY", 12),
             ),
         ),
         StrategyDefinition(
@@ -310,6 +347,14 @@ STRATEGY_REGISTRY = StrategyRegistry(
             "Long put",
             "Buy one put at the reference strike. Maximum loss is the premium paid.",
             (StrategyLeg("PE", "BUY", 0),),
+        ),
+        StrategyDefinition(
+            "call_calendar",
+            "Call calendar",
+            "Sell the reference-strike call on this expiry and buy the same call on the next "
+            "expiry. Maximum loss is the debit paid.",
+            (StrategyLeg("CE", "SELL", 0), StrategyLeg("CE", "BUY", 0, expiry_offset=1)),
+            expiry_scope="MULTI_EXPIRY",
         ),
     )
 )

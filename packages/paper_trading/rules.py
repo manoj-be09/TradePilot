@@ -7,6 +7,7 @@ RuleMetric = Literal[
     "put_call_ratio_oi",
     "put_call_ratio_volume",
     "atm_iv_skew_put_minus_call_points",
+    "atm_iv_pct",
     "largest_call_oi_share_pct",
     "largest_put_oi_share_pct",
     "median_relative_spread_pct",

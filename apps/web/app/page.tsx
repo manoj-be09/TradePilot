@@ -352,6 +352,7 @@ type RuleMetric =
   | "put_call_ratio_oi"
   | "put_call_ratio_volume"
   | "atm_iv_skew_put_minus_call_points"
+  | "atm_iv_pct"
   | "largest_call_oi_share_pct"
   | "largest_put_oi_share_pct"
   | "median_relative_spread_pct"
@@ -382,6 +383,7 @@ const ENTRY_RULE_METRICS: { key: RuleMetric; label: string; unit: string }[] = [
   { key: "put_call_ratio_oi", label: "Put/call ratio (OI)", unit: "ratio" },
   { key: "put_call_ratio_volume", label: "Put/call ratio (volume)", unit: "ratio" },
   { key: "atm_iv_skew_put_minus_call_points", label: "ATM IV skew (put − call)", unit: "IV points" },
+  { key: "atm_iv_pct", label: "ATM implied volatility", unit: "%" },
   { key: "largest_call_oi_share_pct", label: "Largest call OI share", unit: "%" },
   { key: "largest_put_oi_share_pct", label: "Largest put OI share", unit: "%" },
   { key: "median_relative_spread_pct", label: "Median option spread", unit: "%" },
@@ -399,6 +401,11 @@ function ruleMetricValue(
 ): string | null {
   if (metric === "underlying_spot") return chain?.underlying_spot ?? null;
   if (!features) return null;
+  if (metric === "atm_iv_pct") {
+    // The server averages the at-the-money call and put IV the same way.
+    const call = features.atm_call_iv_pct, put = features.atm_put_iv_pct;
+    return call == null || put == null ? null : String((Number(call) + Number(put)) / 2);
+  }
   return features[metric];
 }
 
@@ -516,7 +523,8 @@ function paperTemplatePolicy(strategyKey: string, payoff: PayoffEstimate) {
   const trailingStop = Math.max(1, targetProfit * 0.35);
   const bullish = new Set(["bull_call_spread", "bull_put_spread", "long_call"]);
   const bearish = new Set(["bear_put_spread", "bear_call_spread", "long_put"]);
-  const neutral = new Set(["iron_condor"]);
+  const neutral = new Set(["iron_condor", "range_iron_condor"]);
+  const richPremium = new Set(["range_iron_condor"]);
   const conditions: EntryConditionDraft[] = [
     ...(bullish.has(strategyKey) ? [{ metric: "put_call_ratio_oi" as RuleMetric, operator: "GTE" as RuleOperator, threshold: "1.00" }] : []),
     ...(bearish.has(strategyKey) ? [{ metric: "put_call_ratio_oi" as RuleMetric, operator: "LTE" as RuleOperator, threshold: "1.00" }] : []),
@@ -524,6 +532,7 @@ function paperTemplatePolicy(strategyKey: string, payoff: PayoffEstimate) {
       { metric: "put_call_ratio_oi" as RuleMetric, operator: "GTE" as RuleOperator, threshold: "0.80" },
       { metric: "put_call_ratio_oi" as RuleMetric, operator: "LTE" as RuleOperator, threshold: "1.20" },
     ] : []),
+    ...(richPremium.has(strategyKey) ? [{ metric: "atm_iv_pct" as RuleMetric, operator: "GTE" as RuleOperator, threshold: "16.00" }] : []),
     { metric: "median_relative_spread_pct", operator: "LTE", threshold: "10.00" },
   ];
   return { conditions, stopLoss: Number(stopLoss.toFixed(2)), targetProfit: Number(targetProfit.toFixed(2)), trailingStop: Number(trailingStop.toFixed(2)) };

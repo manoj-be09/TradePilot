@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from functools import cache
+from math import sqrt
 from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo
 
@@ -428,11 +429,23 @@ def _run_template_expiry(
             continue
         results = evaluate_entry_conditions(conditions, {
             "put_call_ratio_oi": ratios.get(moment),
+            "atm_iv_pct": _straddle_iv_pct(calls, puts, spot, close_dt - moment),
             "median_relative_spread_pct": config.half_spread_pct * 2,
         })
         if all(result.passed for result in results):
             return _simulate(history, config, closes, legs, moment, spot, reference)
     return SkippedExpiry(history.expiry, "entry rules did not pass before the entry cutoff")
+
+
+def _straddle_iv_pct(calls: dict[Decimal, Decimal], puts: dict[Decimal, Decimal],
+                     spot: Decimal, remaining: timedelta) -> Decimal | None:
+    """ATM IV from the straddle, which is about 0.8 x spot x IV x sqrt(years) near the money."""
+    strike = min(calls.keys() & puts.keys(), key=lambda item: abs(item - spot), default=None)
+    years = remaining.total_seconds() / (365 * 86400)
+    if strike is None or years <= 0 or spot <= 0:
+        return None
+    straddle = calls[strike] + puts[strike]
+    return straddle / (Decimal("0.7979") * spot * Decimal(sqrt(years))) * 100
 
 
 def _select_legs(
@@ -604,6 +617,8 @@ def _before_expiry_day(moments: list[datetime], expiry: date) -> list[datetime]:
 def run_backtest(histories: Sequence[ExpiryHistory], config: BacktestConfig) -> BacktestReport:
     if config.lots < 1:
         raise ValueError("Backtest needs at least one lot")
+    if config.strategy.expiry_scope != "SAME_EXPIRY":
+        raise ValueError("History replay prices one expiry; calendars need their own study")
     report = BacktestReport(config=config)
     for history in sorted(histories, key=lambda item: item.expiry):
         outcome = run_expiry(history, config)

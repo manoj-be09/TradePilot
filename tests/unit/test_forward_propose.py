@@ -83,3 +83,37 @@ def test_a_failed_chain_saves_nothing():
     else:
         raise AssertionError("expected the failed chain to be refused")
     assert requests == []
+
+
+def test_a_template_filter_saves_only_those_templates_for_a_separate_account():
+    requests = []
+
+    async def create(body, _user, _session):
+        requests.append(body)
+
+    wide = _Provider(strikes=[Decimal(22000 + 50 * step) for step in range(41)])
+    saved, skipped = asyncio.run(propose(None, object(), wide, create, TODAY,
+                                         frozenset({"range_iron_condor"})))
+    assert (saved, skipped) == (["range_iron_condor"], [])
+    rules = {(item.metric, item.operator, item.threshold) for item in requests[0].entry_conditions}
+    assert ("atm_iv_pct", "GTE", Decimal(16)) in rules
+
+
+def test_a_calendar_is_proposed_only_when_named_and_priced_by_its_debit():
+    class _TwoExpiries(_Provider):
+        async def get_option_contracts(self, _underlying="NIFTY", _expiry=None):
+            later = SimpleNamespace(expiry=date(2026, 11, 17), lot_size=65)
+            return [*await super().get_option_contracts(), later]
+
+    requests = []
+
+    async def create(body, _user, _session):
+        requests.append(body)
+
+    assert "call_calendar" not in _run(_TwoExpiries())[1]
+    saved, _ = asyncio.run(propose(None, object(), _TwoExpiries(), create, TODAY,
+                                   frozenset({"call_calendar"})))
+    assert saved == ["call_calendar"]
+    # Buy the far 23000 call at 101, sell the near one at 99: a debit of 2 x 65. The stop is
+    # capped at that debit, the most a long call calendar can lose.
+    assert requests[0].stop_loss_amount == Decimal("130.00")

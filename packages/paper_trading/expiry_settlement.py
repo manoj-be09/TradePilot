@@ -44,6 +44,9 @@ def calculate_expiry_settlement(
         if not isinstance(raw, dict):
             raise ValueError("Saved option leg is malformed")
         leg: dict[str, Any] = raw
+        if leg.get("expiry"):
+            # A calendar's later leg still has time value; intrinsic would misprice it.
+            raise ValueError("A leg on a later expiry cannot be settled at intrinsic value")
         option_type = leg.get("option_type")
         side = leg.get("side")
         instrument_key = leg.get("instrument_key")

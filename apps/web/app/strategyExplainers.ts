@@ -93,6 +93,17 @@ export const STRATEGY_EXPLAINERS: Record<string, StrategyExplainer> = {
     helps: "A quiet market that stays in a narrow range.",
     risk: "A big move either way. Wins are often small and losses come in one go.",
   },
+  range_iron_condor: {
+    idea: "An iron condor with a much wider range, entered only when options are expensive. You get paid for NIFTY staying inside about 1.2% either way.",
+    how: "Sell a put and a call six strikes (300 points) either side of NIFTY, and buy protection six strikes further out on each side. It only enters when at-the-money implied volatility is 16% or more.",
+    example: [
+      "NIFTY at 25,000: sell 24,700 put and 25,300 call, buy 24,400 put and 25,600 call: you receive ₹70, or ₹4,550.",
+      "NIFTY ends between 24,700 and 25,300: everything expires and you keep ₹4,550.",
+      "NIFTY ends below 24,400 or above 25,600: you lose ₹14,950. That is the most.",
+    ],
+    helps: "A choppy market that swings but stays in a band, while option prices fall back from a high.",
+    risk: "A strong trend or gap through a short strike. The loss is about three times the most it can make.",
+  },
   iron_butterfly: {
     idea: "Like an iron condor, but betting NIFTY finishes very close to where it is now. More paid, narrower target.",
     how: "Sell a put and a call at NIFTY's strike, and buy protection one strike out on each side.",

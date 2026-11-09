@@ -10,6 +10,7 @@ before any simulated fill. It places no broker orders. Freeze a period once with
 import argparse
 import asyncio
 import logging
+import secrets
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -40,8 +41,8 @@ from packages.paper_trading.forward_plan import (
     save_new_plan,
 )
 from packages.paper_trading.session import exchange_today
-from packages.paper_trading.strategies import STRATEGIES
-from packages.paper_trading.template_policy import template_policy
+from packages.paper_trading.strategies import STRATEGIES, STRATEGY_REGISTRY, StrategyDefinition
+from packages.paper_trading.template_policy import TemplatePolicy, template_policy
 
 logger = logging.getLogger("forward_runner")
 DEFAULT_PLAN = Path("work/forward-paper.json")
@@ -76,12 +77,12 @@ CreateVersion = Callable[[StrategyVersionCreateRequest, User, Session], Awaitabl
 
 async def propose(
     session: Session, user: User, provider: MarketDataProvider, create: CreateVersion,
-    today: date,
+    today: date, templates: frozenset[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Save a 1-lot version of each template, with exits sized from the next expiry's quotes.
 
     Returns the templates saved and those skipped because quotes or a finite loss are missing.
-    Saving arms nothing.
+    Saving arms nothing. `templates` limits it to those keys, for a separate account.
     """
     contracts = await provider.get_option_contracts("NIFTY")
     expiry = next_expiry(sorted({item.expiry for item in contracts}), today)
@@ -97,24 +98,47 @@ async def propose(
     if reference is None or lot_size is None:
         raise ValueError("The option chain has no strikes or lot size")
     index = strikes.index(reference)
+    later = sorted({item.expiry for item in contracts if item.expiry > expiry})
+    later_quotes: dict[tuple[Decimal, str], Any] | None = None
     saved: list[str] = []
     skipped: list[str] = []
-    for strategy in STRATEGIES:
+    # Calendars are proposed only when named: the main period's set stays as it was frozen.
+    candidates = STRATEGIES + (STRATEGY_REGISTRY.calendars() if templates else ())
+    for strategy in candidates:
+        if templates is not None and strategy.key not in templates:
+            continue
+        if strategy.expiry_scope == "MULTI_EXPIRY" and later_quotes is None and later:
+            later_chain = await provider.get_option_chain("NIFTY", later[0])
+            later_quotes = {(item.strike, item.option_type): item.quote
+                            for item in later_chain.contracts}
         legs: list[PayoffLeg] = []
+        debit = Decimal(0)
         spread_cost = Decimal(0)
         for leg in strategy.legs:
             position = index + leg.strike_offset
             strike = strikes[position] if 0 <= position < len(strikes) else None
-            quote = quotes.get((strike, leg.option_type)) if strike is not None else None
+            source = (later_quotes or {}) if leg.expiry_offset else quotes
+            quote = source.get((strike, leg.option_type)) if strike is not None else None
             if strike is None or quote is None or not quote.bid or not quote.ask:
                 break
             premium = quote.ask if leg.side == "BUY" else quote.bid
             quantity = leg.quantity_ratio if leg.side == "BUY" else -leg.quantity_ratio
             legs.append(PayoffLeg(option_type=leg.option_type, strike=strike,
                                   quantity=quantity, entry_premium=premium))
+            debit += premium * quantity * lot_size
             spread_cost += (quote.ask - quote.bid) * leg.quantity_ratio * lot_size
         if len(legs) != len(strategy.legs):
             skipped.append(strategy.key)
+            continue
+        if strategy.expiry_scope == "MULTI_EXPIRY":
+            # A long call calendar loses at most its debit; its best case has no closed form.
+            policy = (template_policy(strategy.key, debit, None, spread_cost)
+                      if debit > 0 else None)
+            if policy is None:
+                skipped.append(strategy.key)
+                continue
+            await create(_version_request(strategy, policy), user, session)
+            saved.append(strategy.key)
             continue
         payoff = calculate_expiry_payoff(PayoffRequest(
             underlying="NIFTY", multiplier=Decimal(lot_size), price_min=Decimal(0),
@@ -129,14 +153,19 @@ async def propose(
         if policy is None:
             skipped.append(strategy.key)
             continue
-        await create(StrategyVersionCreateRequest(
-            name=f"{FROZEN_NAME_PREFIX}{strategy.name} · {strategy.version} · 1L",
-            strategy_key=strategy.key, expected_template_version=strategy.version, lots=1,
-            entry_conditions=policy.entry_conditions, stop_loss_amount=policy.stop_loss,
-            target_profit_amount=policy.target_profit, trailing_stop_amount=policy.trailing_stop,
-        ), user, session)
+        await create(_version_request(strategy, policy), user, session)
         saved.append(strategy.key)
     return saved, skipped
+
+
+def _version_request(strategy: StrategyDefinition, policy: TemplatePolicy,
+                     ) -> StrategyVersionCreateRequest:
+    return StrategyVersionCreateRequest(
+        name=f"{FROZEN_NAME_PREFIX}{strategy.name} · {strategy.version} · 1L",
+        strategy_key=strategy.key, expected_template_version=strategy.version, lots=1,
+        entry_conditions=policy.entry_conditions, stop_loss_amount=policy.stop_loss,
+        target_profit_amount=policy.target_profit, trailing_stop_amount=policy.trailing_stop,
+    )
 
 
 async def run_cycle(
@@ -256,16 +285,26 @@ async def serve(plan_path: Path, interval_seconds: float, once: bool) -> None:
         await asyncio.sleep(interval_seconds)
 
 
-async def _propose_command(user_email: str) -> None:
+async def _propose_command(user_email: str, templates: frozenset[str] | None,
+                           create_user: bool) -> None:
+    from apps.api.auth import Role, hash_password
     from apps.api.main import create_strategy_version
     from packages.market_data.provider import get_market_data_provider
 
+    email = user_email.strip().lower()
     with build_session_factory()() as session:
-        user = session.scalar(select(User).where(User.email == user_email))
+        user = session.scalar(select(User).where(User.email == email))
+        if user is None and create_user:
+            # Nobody knows this password; set one with apps.api.reset_password to sign in.
+            user = User(email=email, password_hash=hash_password(secrets.token_urlsafe(32)),
+                        role=Role.TRADER.value)
+            session.add(user)
+            session.commit()
         if user is None:
             raise ValueError("No account has that email")
         saved, skipped = await propose(
             session, user, get_market_data_provider(), create_strategy_version, exchange_today(),
+            templates,
         )
     logger.info("Saved %d forward versions; skipped %s", len(saved), skipped or "none")
 
@@ -282,13 +321,21 @@ def main() -> None:
     )
     parser.add_argument("--freeze", action="store_true", help="Freeze a new period and exit")
     parser.add_argument("--user-email")
+    parser.add_argument("--templates", help="With --propose: comma-separated template keys only")
+    parser.add_argument("--create-user", action="store_true",
+                        help="With --propose: create the account if it does not exist")
     parser.add_argument("--start", type=date.fromisoformat)
     parser.add_argument("--weeks", type=int, default=6)
     args = parser.parse_args()
     if args.propose:
         if not args.user_email:
             parser.error("--propose needs --user-email")
-        asyncio.run(_propose_command(args.user_email))
+        templates = frozenset(args.templates.split(",")) if args.templates else None
+        known = {item.key for item in STRATEGIES + STRATEGY_REGISTRY.calendars()}
+        unknown = templates - known if templates else set()
+        if unknown:
+            parser.error(f"Unknown templates: {sorted(unknown)}")
+        asyncio.run(_propose_command(args.user_email, templates, args.create_user))
         return
     if args.freeze:
         if not args.user_email:

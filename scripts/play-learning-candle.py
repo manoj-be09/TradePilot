@@ -9,7 +9,7 @@ Usage:
 
 --after N plays a different game: each candle is called N minutes after it opens, from the move
 so far, passing when that move is under --min-move bps. It watches part of the candle, so it is
-not a forecast; it keeps no state and writes no page.
+not a forecast; it keeps no state. All three games feed the arena page, index.html.
 
 --size plays Big or Small: before each candle, guess whether its high-low range beats the usual
 range for that time of day, calling only when 75/25 sure. It learns like the colour game (state
@@ -21,6 +21,8 @@ each run continues from the last one. Simulated research only: not a signal or i
 
 import argparse
 import asyncio
+import json
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -35,7 +37,7 @@ from packages.learning.learning_candle import (
     play,
     size_calls,
 )
-from packages.learning.learning_candle_page import render
+from packages.learning.learning_candle_page import ARENA, calls_state, live_state
 from packages.market_data.contracts import HistoricalBar
 from packages.market_data.provider import get_market_data_provider
 from packages.market_data.upstox import UpstoxMarketDataProvider
@@ -44,6 +46,16 @@ from packages.recorder.universe import INDIA_VIX_KEY, NIFTY_INDEX_KEY
 STATE = Path("data/learning_candle/state.json")
 PAGE = STATE.with_name("index.html")
 SIZE_STATE = STATE.with_name("size_state.json")
+
+
+def publish(name: str, state: dict[str, object]) -> None:
+    """Write one live JSON file for the arena page; replace so it never reads half a file."""
+    PAGE.parent.mkdir(parents=True, exist_ok=True)
+    if not PAGE.exists() or PAGE.read_bytes() != ARENA.read_bytes():
+        shutil.copyfile(ARENA, PAGE)
+    temp = PAGE.with_name(name + ".tmp")
+    temp.write_text(json.dumps(state), encoding="utf-8")
+    temp.replace(PAGE.with_name(name))
 FIVE = timedelta(minutes=5)
 
 
@@ -73,6 +85,12 @@ async def late_game(provider: UpstoxMarketDataProvider, args: argparse.Namespace
         if last is not None and last.actual is None:
             call = "PASS" if last.p_green == 0.5 else "GREEN" if last.p_green else "RED"
             print(f"  {last.timestamp:%d %b %H:%M} candle, called at minute {args.after}: {call}")
+        publish("late.json", {
+            "updated": datetime.now(IST).isoformat(), "after": args.after,
+            "current": ({"at": last.timestamp.isoformat(), "call": "pass" if last.p_green == 0.5
+                         else "green" if last.p_green else "red"}
+                        if last is not None and last.actual is None else None),
+            "calls": len(calls), "right": right, "candles": len(done)})
         if calls:
             print(f"Late call after {args.after} min: {100 * right / len(calls):.1f}% right on "
                   f"{len(calls)} calls ({100 * len(calls) / len(done):.0f}% of {len(done)} "
@@ -110,6 +128,10 @@ async def size_game(provider: UpstoxMarketDataProvider, args: argparse.Namespace
         vix = await history(provider, INDIA_VIX_KEY, days)
         turns = size_calls(learner, nifty, vix)
         learner.save(SIZE_STATE)
+        pending = turns[-1] if turns and turns[-1].timestamp is None else None
+        publish("size.json", calls_state(learner, pending.p_green if pending else None,
+                                         nifty[-1].timestamp + FIVE if pending else None,
+                                         datetime.now(IST), SIZE_SURE))
         for turn in turns[-(1 if args.live and learner.played else args.show):]:
             guess = ("PASS " if abs(turn.p_green - 0.5) < SIZE_SURE
                      else "BIG  " if turn.p_green >= 0.5 else "SMALL")
@@ -164,9 +186,9 @@ async def main(args: argparse.Namespace) -> None:
         turns = play(learner, nifty, vix)
         learner.save(STATE)
         pending = turns[-1] if turns and turns[-1].timestamp is None else None
-        PAGE.write_text(render(learner, pending.p_green if pending else None,
-                               nifty[-1].timestamp + FIVE if nifty else None,
-                               datetime.now(IST)), encoding="utf-8")
+        publish("live.json", live_state(learner, pending.p_green if pending else None,
+                                        nifty[-1].timestamp + FIVE if pending else None,
+                                        nifty, datetime.now(IST)))
         report(learner, turns, 1 if args.live and learner.played else args.show)
         if not args.live:
             return

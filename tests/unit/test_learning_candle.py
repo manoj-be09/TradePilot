@@ -53,28 +53,32 @@ def test_each_candle_is_learned_once_and_missing_vix_skips() -> None:
     assert fresh.played == 0  # no VIX, no guess: fail closed rather than invent a feature
 
 
-def test_page_shows_the_next_call_or_waits() -> None:
-    from packages.learning.learning_candle_page import render
+def test_arena_state_shows_the_next_call_or_none() -> None:
+    from packages.learning.learning_candle_page import ARENA, live_state
 
     bars = _bars([i % 2 for i in range(75)], days=3)
     learner = Learner()
     play(learner, bars, _vix(bars))
     now = datetime(2026, 11, 5, 10, 0, tzinfo=IST)
-    page = render(learner, 0.62, now, now)
-    assert "Candle starting 10:00" in page and ">Green<" in page and "simulated" in page.lower()
-    assert page.count('class="tile') == 60  # last 60 scored candles
-    assert "Waiting" in render(learner, None, None, now)
+    state = live_state(learner, 0.62, now, bars, now)
+    assert state["next"] == {"at": "2026-11-05T10:00:00+05:30", "p": 0.62, "call": "green"}
+    assert len(state["history"]) == 60 and len(state["bars"]) == 36
+    assert live_state(learner, None, None, bars, now)["next"] is None  # nothing to call: no call
+    page = ARENA.read_text(encoding="utf-8")
+    assert "live.json" in page and "simulated" in page.lower()
 
 
 def test_unsure_calls_are_passes_and_scored_apart() -> None:
-    from packages.learning.learning_candle_page import render
+    from packages.learning.learning_candle_page import calls_state, live_state
 
     learner = Learner()
     learner.score(0.52, 1, 0)  # leaning green but unsure: counts on every candle, not as a call
     learner.score(0.70, 0, 0)
     assert (learner.played, learner.right, learner.calls, learner.calls_right) == (2, 1, 1, 0)
     now = datetime(2026, 11, 5, 10, 0, tzinfo=IST)
-    assert ">Pass<" in render(learner, 0.52, now, now)
+    assert live_state(learner, 0.52, now, [], now)["next"]["call"] == "pass"
+    sized = calls_state(learner, 0.2, now, now, sure=0.25)["next"]
+    assert sized is not None and sized["call"] == "small"
 
 
 def test_late_call_follows_the_move_so_far_and_passes_on_tiny_moves() -> None:

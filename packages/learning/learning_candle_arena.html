@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L-Earning Candle Arena</title>
+<style>
+:root { --bg:#0d0b1a; --bg2:#17132b; --card:#1d1836cc; --line:#2f2852; --ink:#f3f0ff; --muted:#a59fc4;
+  --green:#2ee88f; --red:#ff5470; --gold:#ffcc4d; --blue:#6fb7ff; --flame:#ffcc4d; }
+* { box-sizing:border-box; }
+html, body { margin:0; min-height:100%; }
+body { background:radial-gradient(1200px 600px at 50% -10%, #2b2160 0%, var(--bg) 60%) fixed; color:var(--ink);
+  font:15px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; overflow-x:hidden; }
+body.shake main { animation:shake .5s; }
+@keyframes shake { 20%,60% { transform:translate(-8px,3px) } 40%,80% { transform:translate(8px,-3px) } }
+#stars { position:fixed; inset:0; z-index:-1; }
+main { max-width:1120px; margin:0 auto; padding:18px 16px 40px; }
+header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+.logo { font-size:24px; font-weight:800; letter-spacing:-.02em; }
+.logo b { background:linear-gradient(90deg,var(--green),var(--gold),var(--red)); -webkit-background-clip:text;
+  background-clip:text; color:transparent; }
+.chip { font-size:12px; padding:4px 10px; border-radius:99px; border:1px solid var(--line); color:var(--muted);
+  background:#ffffff08; }
+.chip.live { color:var(--green); border-color:#2ee88f55; }
+.chip.live::before { content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green);
+  margin-right:6px; animation:pulse 1.4s infinite; }
+@keyframes pulse { 50% { opacity:.25 } }
+.spacer { flex:1; }
+button { font:inherit; color:inherit; cursor:pointer; }
+.iconbtn { background:#ffffff0d; border:1px solid var(--line); border-radius:10px; padding:6px 10px; }
+.banner { display:none; margin:0 0 14px; padding:10px 14px; border-radius:12px; background:#ffcc4d1a;
+  border:1px solid #ffcc4d55; color:var(--gold); }
+.banner.on { display:block; }
+.grid { display:grid; grid-template-columns:1.35fr 1fr; gap:14px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:16px; backdrop-filter:blur(6px); }
+.wide { grid-column:1 / -1; }
+h2 { margin:0 0 10px; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); }
+.muted { color:var(--muted); }
+/* ---- stage */
+.stage { position:relative; display:grid; grid-template-columns:1fr auto 1fr; align-items:end; min-height:250px; overflow:hidden; }
+.beast { font-size:64px; text-align:center; transition:transform .3s; filter:drop-shadow(0 6px 10px #0008); }
+.beast small { display:block; font-size:12px; color:var(--muted); }
+.beast.charge { animation:charge 1.4s ease-in-out; }
+@keyframes charge { 30% { transform:translateX(90px) scale(1.25) rotate(-8deg) } 60% { transform:translateX(70px) scale(1.2) } }
+.beast.stomp { animation:stomp 1.2s ease-in-out; }
+@keyframes stomp { 20% { transform:translateY(-34px) scale(1.15) } 35% { transform:translateY(4px) scale(1.25,.85) }
+  55% { transform:translateY(-16px) } 70% { transform:translateY(0) scale(1.2,.9) } }
+.beast.sulk { opacity:.45; transform:scale(.9); }
+.wick { position:relative; width:150px; text-align:center; }
+.wick svg { width:130px; height:200px; overflow:visible; }
+.wick .flame { fill:var(--flame); transform-origin:65px 58px; animation:flicker 1.2s infinite alternate ease-in-out;
+  filter:drop-shadow(0 0 14px var(--flame)); transition:fill .4s; }
+@keyframes flicker { to { transform:scale(1.08,.92) rotate(3deg) } }
+.wick .eye { animation:blink 4s infinite; transform-origin:center; transform-box:fill-box; }
+@keyframes blink { 0%,94%,100% { transform:scaleY(1) } 96% { transform:scaleY(.1) } }
+.wick.happy .mouth { d:path("M50 128 Q65 144 80 128"); }
+.wick.dizzy .eye { display:none; } .wick .x { display:none; stroke:#3a2a12; stroke-width:4; stroke-linecap:round; }
+.wick.dizzy .x { display:inline; }
+.wick.dizzy svg { animation:wobble .9s ease-in-out 2; }
+@keyframes wobble { 25% { transform:rotate(-9deg) } 75% { transform:rotate(9deg) } }
+.bubble { position:absolute; left:50%; top:-6px; transform:translate(-50%,-100%); white-space:nowrap; background:#fff;
+  color:#1b1530; font-weight:800; padding:8px 14px; border-radius:14px; font-size:18px; box-shadow:0 8px 24px #0006; }
+.bubble::after { content:""; position:absolute; left:50%; bottom:-8px; margin-left:-8px; border:8px solid transparent;
+  border-top-color:#fff; border-bottom:0; }
+.bubble.g { color:#0a8f52 } .bubble.r { color:#d4203e } .bubble.p { color:#4b5d86 }
+.stagefoot { display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+.meter { flex:1; min-width:180px; height:10px; border-radius:99px; background:var(--red); overflow:hidden; }
+.meter i { display:block; height:100%; background:var(--green); width:50%; transition:width .6s; }
+/* ---- timer */
+.timer { display:flex; flex-direction:column; align-items:center; gap:6px; }
+.ring { position:relative; width:170px; height:170px; }
+.ring svg { transform:rotate(-90deg); }
+.ring .track { stroke:#ffffff14; } .ring .prog { stroke:var(--gold); stroke-linecap:round; transition:stroke-dashoffset 1s linear, stroke .3s; }
+.ring.hot .prog { stroke:var(--red); } .ring.hot .time { animation:pulse .5s infinite; color:var(--red); }
+.ring .time { position:absolute; inset:0; display:grid; place-items:center; font-size:38px; font-weight:800;
+  font-variant-numeric:tabular-nums; }
+.ring .time small { display:block; font-size:12px; font-weight:500; color:var(--muted); text-align:center; margin-top:-30px; }
+/* ---- player */
+.pick { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:8px 0 12px; }
+.pick button { border:0; border-radius:16px; padding:16px 8px; font-size:20px; font-weight:800; color:#0d0b1a;
+  box-shadow:0 6px 0 #0007; transition:transform .1s, filter .2s; }
+.pick button:active { transform:translateY(4px); box-shadow:0 2px 0 #0007; }
+.pick .g { background:linear-gradient(180deg,#6dffb8,var(--green)); }
+.pick .r { background:linear-gradient(180deg,#ff8aa0,var(--red)); }
+.pick button[disabled] { filter:grayscale(.85) brightness(.6); cursor:not-allowed; }
+.pick button.chosen { outline:3px solid #fff; filter:none; }
+.stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; text-align:center; }
+.stat b { display:block; font-size:24px; font-variant-numeric:tabular-nums; }
+.stat span { font-size:12px; color:var(--muted); }
+.xp { height:8px; border-radius:99px; background:#ffffff14; overflow:hidden; margin:10px 0 4px; }
+.xp i { display:block; height:100%; width:0; background:linear-gradient(90deg,var(--blue),var(--gold)); transition:width .8s; }
+.badges { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+.badge { font-size:12px; padding:4px 9px; border-radius:99px; background:#ffffff0d; border:1px solid var(--line); opacity:.35; }
+.badge.got { opacity:1; border-color:var(--gold); color:var(--gold); }
+.vs { display:grid; grid-template-columns:1fr auto 1fr; gap:10px; align-items:center; text-align:center; margin-top:10px; }
+.vs b { font-size:26px; } .vs .x { color:var(--muted); font-weight:800; }
+/* ---- chart, strip */
+.chart svg { width:100%; height:auto; display:block; }
+.chart .newest { animation:grow .9s ease-out; transform-origin:bottom; transform-box:fill-box; }
+@keyframes grow { from { transform:scaleY(0); opacity:0 } }
+.strip { display:flex; flex-wrap:wrap; gap:5px; }
+.tile { width:26px; height:26px; border-radius:8px; display:grid; place-items:center; font-size:14px; }
+.tile.g { background:#2ee88f33; border:1px solid var(--green); } .tile.r { background:#ff547033; border:1px solid var(--red); }
+.tile.miss { opacity:.4; }
+.side { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.big { font-size:34px; font-weight:800; margin:4px 0; }
+.w { display:grid; grid-template-columns:1fr 120px 52px; gap:8px; align-items:center; font-size:13px; padding:3px 0; }
+.wbar { position:relative; height:8px; background:linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat; }
+.wbar i { position:absolute; top:0; height:100%; border-radius:3px; }
+/* ---- reveal */
+#reveal { position:fixed; inset:0; display:grid; place-items:center; pointer-events:none; z-index:20; }
+#reveal .card2 { transform:scale(.3); opacity:0; text-align:center; padding:22px 34px; border-radius:24px; background:#0d0b1aee;
+  border:2px solid var(--gold); box-shadow:0 20px 80px #000a; }
+#reveal.on .card2 { animation:pop 3.2s ease-out forwards; }
+@keyframes pop { 10% { transform:scale(1.1); opacity:1 } 16% { transform:scale(1) } 85% { transform:scale(1); opacity:1 } 100% { transform:scale(.9); opacity:0 } }
+#reveal h3 { margin:0; font-size:44px; letter-spacing:-.02em; }
+#reveal .g { color:var(--green) } #reveal .r { color:var(--red) }
+#fx { position:fixed; inset:0; pointer-events:none; z-index:19; }
+footer { margin-top:18px; font-size:12px; color:var(--muted); text-align:center; }
+@media (max-width:820px) { .grid, .side { grid-template-columns:1fr; } .beast { font-size:46px; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
+</style></head>
+<body>
+<canvas id="stars"></canvas><canvas id="fx"></canvas>
+<div id="reveal" aria-hidden="true"><div class="card2"><h3 id="rv-title"></h3><p id="rv-text" class="muted"></p></div></div>
+<main>
+<header>
+  <div class="logo">🕯️ L-<b>Earning</b> Candle <span class="muted" style="font-weight:600">Arena</span></div>
+  <span class="chip" id="status">connecting…</span>
+  <span class="chip">NIFTY 50 · 5-min · simulated</span>
+  <span class="spacer"></span>
+  <span class="chip" id="clock">--:--:-- IST</span>
+  <button class="iconbtn" id="sound" aria-pressed="false" title="Sound">🔇</button>
+</header>
+<div class="banner" id="banner"></div>
+<p class="sr" aria-live="polite" id="announce" style="position:absolute;left:-9999px"></p>
+
+<div class="grid">
+<section class="card">
+  <h2>The arena</h2>
+  <div class="stage">
+    <div class="beast" id="bull">🐂<small>Bruno · bulls</small></div>
+    <div class="wick" id="wick">
+      <div class="bubble p" id="bubble">…</div>
+      <svg viewBox="0 0 130 200" aria-label="Wick, the candle">
+        <path class="flame" d="M65 6 C82 30 86 44 76 58 C72 64 58 64 54 58 C44 44 50 28 65 6 Z"/>
+        <line x1="65" y1="58" x2="65" y2="74" stroke="#3a2a12" stroke-width="4"/>
+        <rect x="25" y="72" width="80" height="120" rx="18" fill="#fff4dc"/>
+        <path d="M25 92 Q40 100 46 90 Q52 112 62 92 Q74 104 84 90 Q94 100 105 92 L105 80 Q105 72 92 72 L38 72 Q25 72 25 80 Z" fill="#ffe2a8"/>
+        <ellipse class="eye" cx="50" cy="112" rx="6" ry="8" fill="#3a2a12"/>
+        <ellipse class="eye" cx="80" cy="112" rx="6" ry="8" fill="#3a2a12"/>
+        <path class="x" d="M44 106 L56 118 M56 106 L44 118 M74 106 L86 118 M86 106 L74 118"/>
+        <circle cx="40" cy="128" r="6" fill="#ffb3a6" opacity=".7"/><circle cx="90" cy="128" r="6" fill="#ffb3a6" opacity=".7"/>
+        <path class="mouth" d="M54 132 Q65 136 76 132" stroke="#3a2a12" stroke-width="4" fill="none" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="beast" id="bear">🐻<small>Ursa · bears</small></div>
+  </div>
+  <div class="stagefoot">
+    <span class="muted" id="callfor">Wick is warming up…</span>
+    <div class="meter" title="Wick's chance of green"><i id="meter"></i></div>
+    <span id="pct" class="muted">–</span>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Your turn</h2>
+  <div class="timer">
+    <div class="ring" id="ring">
+      <svg width="170" height="170"><circle class="track" cx="85" cy="85" r="74" fill="none" stroke-width="12"/>
+        <circle class="prog" id="prog" cx="85" cy="85" r="74" fill="none" stroke-width="12" stroke-dasharray="465" stroke-dashoffset="0"/></svg>
+      <div class="time"><span id="tleft">--:--</span><small id="tlabel">until calls lock</small></div>
+    </div>
+  </div>
+  <div class="pick">
+    <button class="g" id="pickG">🐂 GREEN</button>
+    <button class="r" id="pickR">🐻 RED</button>
+  </div>
+  <div class="muted" id="picknote" style="text-align:center;min-height:21px">Beat Wick: call the next candle before it opens.</div>
+  <div class="xp"><i id="xp"></i></div>
+  <div class="stats">
+    <div class="stat"><b id="pts">0</b><span>points</span></div>
+    <div class="stat"><b id="streak">0</b><span>streak 🔥</span></div>
+    <div class="stat"><b id="lvl">1</b><span>level</span></div>
+  </div>
+  <div class="vs"><div><b id="youRec">0/0</b><div class="muted">You</div></div><div class="x">VS</div>
+    <div><b id="wickRec">0/0</b><div class="muted">Wick (calls)</div></div></div>
+  <div class="badges" id="badges"></div>
+</section>
+
+<section class="card wide chart"><h2>Live candles</h2><div id="chart" class="muted">Waiting for candles…</div></section>
+
+<section class="card"><h2>Recent results</h2><div class="strip" id="strip"></div>
+  <p class="muted" style="font-size:13px;margin:10px 0 0">Tile colour is the real candle. ✓ Wick was right, ✗ wrong, · it passed.</p></section>
+<section class="card"><h2>Wick's scoreboard (all time)</h2><div class="stats">
+  <div class="stat"><b id="sCalls">–</b><span>right when it calls</span></div>
+  <div class="stat"><b id="sAll">–</b><span>right, every candle</span></div>
+  <div class="stat"><b id="sRepeat">–</b><span>"repeat last colour"</span></div></div>
+  <p class="muted" id="sNote" style="font-size:13px;margin:10px 0 0"></p></section>
+
+<div class="side wide">
+<section class="card"><h2>Side quest · Big or Small</h2>
+  <div class="big" id="sizeCall">–</div><div class="muted" id="sizeNote">Run the game with --size --live to play.</div></section>
+<section class="card"><h2>Side quest · Late call</h2>
+  <div class="big" id="lateCall">–</div><div class="muted" id="lateNote">Run the game with --after 2 --live to play.</div></section>
+</div>
+
+<section class="card wide"><h2>Inside Wick's head</h2><div id="weights" class="muted">–</div>
+  <p class="muted" style="font-size:13px;margin:8px 0 0">Green bars pull Wick towards green, red bars towards red.</p></section>
+</div>
+<footer>A learning game on live and past candles. Every score here is simulated, points are just for fun,
+and nothing on this page is a trading signal or investment advice.</footer>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const IST = 330 * 60000, FIVE = 300000, PASS = 0.05;
+const KEY = "lec-arena-player";
+const player = Object.assign({ points: 0, streak: 0, best: 0, guesses: {}, you: [0, 0], wick: [0, 0],
+  beat: 0, badges: [], lastSeen: null }, JSON.parse(localStorage.getItem(KEY) || "{}"));
+const save = () => localStorage.setItem(KEY, JSON.stringify(player));
+let live = null, size = null, late = null, sound = false, audio = null;
+
+// ---------- time helpers (IST shown regardless of the viewer's zone)
+const istNow = () => new Date(Date.now() + IST);
+const hhmm = (iso) => new Date(Date.parse(iso) + IST).toISOString().slice(11, 16);
+function marketOpen(d = istNow()) {
+  const day = d.getUTCDay(), m = d.getUTCHours() * 60 + d.getUTCMinutes();
+  return day > 0 && day < 6 && m >= 555 && m < 930;
+}
+
+// ---------- sound (off until the player turns it on)
+function tone(freqs, type = "triangle", len = 0.12) {
+  if (!sound) return;
+  audio = audio || new AudioContext();
+  freqs.forEach((f, i) => {
+    const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime + i * len;
+    o.type = type; o.frequency.value = f; g.gain.setValueAtTime(0.18, t); g.gain.exponentialRampToValueAtTime(0.001, t + len * 1.6);
+    o.connect(g).connect(audio.destination); o.start(t); o.stop(t + len * 1.7);
+  });
+}
+$("sound").onclick = () => { sound = !sound; $("sound").textContent = sound ? "🔊" : "🔇";
+  $("sound").setAttribute("aria-pressed", sound); tone([660, 880]); };
+
+// ---------- particles: confetti for green, embers for red
+const fx = $("fx"), ctx = fx.getContext("2d"); let parts = [];
+function sizeCanvas() { fx.width = innerWidth; fx.height = innerHeight; stars.width = innerWidth; stars.height = innerHeight; drawStars(); }
+function burst(colour) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const green = colour === "green", cols = green ? ["#2ee88f", "#6dffb8", "#ffcc4d", "#ffffff"] : ["#ff5470", "#ff8a3d", "#ffcc4d"];
+  for (let i = 0; i < (green ? 170 : 120); i++) parts.push({
+    x: green ? innerWidth / 2 : Math.random() * innerWidth, y: green ? innerHeight * 0.35 : -20,
+    vx: green ? (Math.random() - 0.5) * 16 : (Math.random() - 0.5) * 2, vy: green ? -Math.random() * 15 - 3 : Math.random() * 3 + 2,
+    s: Math.random() * 6 + 3, c: cols[i % cols.length], r: Math.random() * 6, life: 160 + Math.random() * 60, ember: !green });
+  if (parts.length && !fx.running) { fx.running = true; requestAnimationFrame(step); }
+}
+function step() {
+  ctx.clearRect(0, 0, fx.width, fx.height);
+  parts = parts.filter((p) => p.life-- > 0 && p.y < fx.height + 40);
+  for (const p of parts) {
+    p.vy += p.ember ? 0.03 : 0.35; p.x += p.vx + (p.ember ? Math.sin(p.life / 9) : 0); p.y += p.vy; p.r += 0.1;
+    ctx.globalAlpha = Math.min(1, p.life / 40); ctx.fillStyle = p.c;
+    if (p.ember) { ctx.beginPath(); ctx.arc(p.x, p.y, p.s / 2, 0, 7); ctx.fill(); }
+    else { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); ctx.restore(); }
+  }
+  ctx.globalAlpha = 1;
+  if (parts.length) requestAnimationFrame(step); else fx.running = false;
+}
+const stars = $("stars"), sctx = stars.getContext("2d");
+function drawStars() {
+  sctx.clearRect(0, 0, stars.width, stars.height);
+  for (let i = 0; i < 120; i++) { sctx.globalAlpha = Math.random() * 0.6 + 0.1; sctx.fillStyle = "#fff";
+    sctx.fillRect(Math.random() * stars.width, Math.random() * stars.height * 0.7, 1.5, 1.5); }
+}
+addEventListener("resize", sizeCanvas); sizeCanvas();
+
+// ---------- the player's calls
+// You call the candle that opens at the next 5-minute mark; Wick calls it the moment it opens,
+// once the candle before it has closed. Calls lock when the candle opens.
+function nextAt() {
+  const b = Math.floor(Date.now() / FIVE) * FIVE + FIVE, d = new Date(b + IST), m = d.getUTCHours() * 60 + d.getUTCMinutes();
+  if (!marketOpen() || m > 925) return null;  // 15:25 is the last candle of the day
+  return d.toISOString().slice(0, 19) + "+05:30";
+}
+function canPick() { const at = nextAt(); return !!at && !player.guesses[at]; }
+function pick(colour) {
+  const at = nextAt(); if (!canPick()) return;
+  player.guesses[at] = colour; save(); tone(colour === "green" ? [523, 784] : [392, 262]); renderPick();
+}
+$("pickG").onclick = () => pick("green"); $("pickR").onclick = () => pick("red");
+function renderPick() {
+  const at = nextAt(), mine = at && player.guesses[at], open = canPick();
+  $("pickG").disabled = !open && mine !== "green"; $("pickR").disabled = !open && mine !== "red";
+  $("pickG").classList.toggle("chosen", mine === "green"); $("pickR").classList.toggle("chosen", mine === "red");
+  $("picknote").textContent = !at ? "No candle to call right now."
+    : mine ? `Locked in: ${mine.toUpperCase()} for the ${hhmm(at)} candle. Result when it closes.`
+    : `Call the ${hhmm(at)} candle before it opens. Wick reveals its call at the open.`;
+  const pending = Object.keys(player.guesses).length;
+  if (pending > 1) $("picknote").textContent += ` (${pending} waiting)`;
+}
+
+const BADGES = [["first", "🎯 First hit", (p) => p.you[0] >= 1], ["hat", "🎩 Hat-trick", (p) => p.best >= 3],
+  ["fire", "🔥 On fire (5)", (p) => p.best >= 5], ["tamer", "🤖 Machine tamer", (p) => p.beat >= 5],
+  ["ten", "💯 Ten hits", (p) => p.you[0] >= 10], ["vet", "🏆 50 calls", (p) => p.you[1] >= 50]];
+function renderPlayer() {
+  const level = Math.floor(Math.sqrt(player.points / 40)) + 1, lo = 40 * (level - 1) ** 2, hi = 40 * level ** 2;
+  $("pts").textContent = player.points; $("streak").textContent = player.streak; $("lvl").textContent = level;
+  $("xp").style.width = `${(100 * (player.points - lo)) / (hi - lo)}%`;
+  $("youRec").textContent = `${player.you[0]}/${player.you[1]}`; $("wickRec").textContent = `${player.wick[0]}/${player.wick[1]}`;
+  $("badges").innerHTML = BADGES.map(([k, label, ok]) => `<span class="badge ${ok(player) ? "got" : ""}">${label}</span>`).join("");
+}
+
+// ---------- results: score new candles, play the reveal for the newest
+function settle(history) {
+  if (!history.length) return;
+  const latest = history[history.length - 1][0];
+  if (!player.lastSeen) { player.lastSeen = latest; save(); return; }  // first visit: no replay of old candles
+  const fresh = history.filter(([t]) => t > player.lastSeen);
+  let shown = null;
+  for (const [t, p, actual] of fresh) {
+    const colour = actual ? "green" : "red", wickCall = Math.abs(p - 0.5) < PASS ? null : p >= 0.5 ? "green" : "red";
+    const mine = player.guesses[t]; let note = "";
+    if (wickCall) { player.wick[1]++; if (wickCall === colour) player.wick[0]++; }
+    if (mine) {
+      player.you[1]++; delete player.guesses[t];
+      if (mine === colour) {
+        player.you[0]++; player.streak++; player.best = Math.max(player.best, player.streak);
+        const bonus = wickCall !== colour ? 5 : 0; if (bonus) player.beat++;
+        const gain = 10 + 5 * Math.min(4, player.streak - 1) + bonus; player.points += gain;
+        note = `You called it! +${gain}${bonus ? " (beat Wick!)" : ""}`;
+      } else { player.streak = 0; note = "You missed this one. Streak reset."; }
+    }
+    shown = { t, colour, wickCall, note };
+  }
+  for (const t of Object.keys(player.guesses)) if (t <= latest && !fresh.some((h) => h[0] === t)) delete player.guesses[t]; // doji: no score
+  player.lastSeen = latest; save();
+  if (shown) reveal(shown);
+}
+function reveal({ t, colour, wickCall, note }) {
+  const green = colour === "green", w = $("wick"), beast = green ? $("bull") : $("bear"), other = green ? $("bear") : $("bull");
+  $("rv-title").className = green ? "g" : "r";
+  $("rv-title").textContent = green ? "🐂 GREEN CANDLE!" : "🐻 RED CANDLE!";
+  const wickLine = wickCall ? (wickCall === colour ? "Wick called it ✓" : "Wick got it wrong ✗") : "Wick passed on this one";
+  $("rv-text").textContent = `${hhmm(t)} candle · ${wickLine}${note ? " · " + note : ""}`;
+  $("announce").textContent = `${hhmm(t)} candle closed ${colour}. ${wickLine}. ${note}`;
+  $("reveal").classList.remove("on"); void $("reveal").offsetWidth; $("reveal").classList.add("on");
+  beast.classList.remove("charge", "stomp"); void beast.offsetWidth; beast.classList.add(green ? "charge" : "stomp");
+  other.classList.add("sulk"); setTimeout(() => { other.classList.remove("sulk"); beast.classList.remove("charge", "stomp"); }, 2600);
+  w.classList.remove("happy", "dizzy"); if (wickCall) w.classList.add(wickCall === colour ? "happy" : "dizzy");
+  setTimeout(() => w.classList.remove("dizzy"), 2600);
+  document.documentElement.style.setProperty("--flame", green ? "#2ee88f" : "#ff5470");
+  burst(colour);
+  if (!green) { document.body.classList.remove("shake"); void document.body.offsetWidth; document.body.classList.add("shake"); }
+  tone(green ? [523, 659, 784, 1046] : [196, 147, 110], green ? "triangle" : "sawtooth", green ? 0.11 : 0.18);
+  renderPlayer();
+}
+
+// ---------- rendering the live state
+const pct = (a, b) => (b ? `${((100 * a) / b).toFixed(1)}%` : "–");
+function renderLive() {
+  const n = live.next, b = $("bubble"), w = $("wick");
+  if (n) {
+    const label = { green: "GREEN 🐂", red: "RED 🐻", pass: "PASS 🤔" }[n.call];
+    b.textContent = label; b.className = `bubble ${n.call[0]}`;
+    $("callfor").textContent = `Wick's call for the ${hhmm(n.at)} candle, made at its open`;
+    $("meter").style.width = `${100 * n.p}%`; $("pct").textContent = `${Math.round(100 * n.p)}% green`;
+    if (!w.classList.contains("dizzy")) document.documentElement.style.setProperty("--flame",
+      n.call === "green" ? "#2ee88f" : n.call === "red" ? "#ff5470" : "#6fb7ff");
+  } else {
+    b.textContent = "zzz 💤"; b.className = "bubble p"; $("callfor").textContent = "No candle to call right now";
+    $("pct").textContent = "–"; document.documentElement.style.setProperty("--flame", "#ffcc4d");
+  }
+  const s = live.score;
+  $("sCalls").textContent = pct(s.calls_right, s.calls); $("sAll").textContent = pct(s.right, s.played);
+  $("sRepeat").textContent = pct(s.repeat_right, s.played);
+  $("sNote").textContent = `${s.played.toLocaleString()} candles scored; calls on ${pct(s.calls, s.played)} of them. Last ${s.recent_n}: ${pct(s.recent, s.recent_n)}.`;
+  $("strip").innerHTML = live.history.slice(-40).map(([t, p, a]) => {
+    const call = Math.abs(p - 0.5) < PASS ? null : p >= 0.5 ? 1 : 0;
+    return `<span class="tile ${a ? "g" : "r"} ${call !== null && call !== a ? "miss" : ""}" title="${hhmm(t)} · p(green) ${(+p).toFixed(2)}">${call === null ? "·" : call === a ? "✓" : "✗"}</span>`;
+  }).join("");
+  const big = Math.max(...live.weights.map((x) => Math.abs(x[1])), 1e-9);
+  $("weights").innerHTML = live.weights.map(([name, v]) => `<div class="w"><span>${name}</span><span class="wbar"><i style="${v >= 0 ? "left" : "right"}:50%;width:${(50 * Math.abs(v)) / big}%;background:var(--${v >= 0 ? "green" : "red"})"></i></span><span class="muted">${v >= 0 ? "+" : ""}${v.toFixed(2)}</span></div>`).join("");
+  renderChart(live.bars);
+  settle(live.history); renderPick(); renderPlayer();
+}
+let lastBar = null;
+function renderChart(bars) {
+  if (!bars.length) return;
+  const W = 720, H = 220, lo = Math.min(...bars.map((x) => x[3])), hi = Math.max(...bars.map((x) => x[2])), step = W / bars.length;
+  const y = (v) => 10 + ((hi - v) / (hi - lo || 1)) * (H - 30), newest = bars[bars.length - 1][0];
+  const body = bars.map(([t, o, h, l, c], i) => {
+    const x = i * step + step / 2, col = c > o ? "var(--green)" : c < o ? "var(--red)" : "var(--muted)";
+    const top = y(Math.max(o, c)), ht = Math.max(1.5, Math.abs(y(o) - y(c)));
+    const cls = t === newest && t !== lastBar ? "newest" : "";
+    return `<g class="${cls}"><line x1="${x}" x2="${x}" y1="${y(h)}" y2="${y(l)}" stroke="${col}" stroke-width="1.5"/>` +
+      `<rect x="${x - step * 0.32}" y="${top}" width="${step * 0.64}" height="${ht}" rx="2" fill="${col}"/>` +
+      (i % 6 === 3 ? `<text x="${x}" y="${H - 4}" fill="var(--muted)" font-size="11" text-anchor="middle">${hhmm(t)}</text>` : "") + `</g>`;
+  }).join("");
+  $("chart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Last ${bars.length} NIFTY 5-minute candles, latest close ${bars[bars.length - 1][4]}">${body}</svg>`;
+  lastBar = newest;
+}
+function renderSide() {
+  if (size && size.next) {
+    const c = size.next.call; $("sizeCall").textContent = { big: "BIG ⚡", small: "SMALL 🌙", pass: "PASS 🤔" }[c];
+    $("sizeCall").style.color = c === "big" ? "var(--gold)" : c === "small" ? "var(--blue)" : "var(--muted)";
+    $("sizeNote").textContent = `${hhmm(size.next.at)} candle, ${Math.round(100 * size.next.p)}% chance of big. Right on ${pct(size.calls_right, size.calls)} of ${size.calls.toLocaleString()} sure calls.`;
+  } else if (size) { $("sizeCall").textContent = "–"; $("sizeNote").textContent = "No candle to size right now."; }
+  if (late) {
+    const c = late.current && late.current.call;
+    $("lateCall").textContent = c ? { green: "GREEN 🐂", red: "RED 🐻", pass: "PASS 🤔" }[c] : "–";
+    $("lateCall").style.color = c === "green" ? "var(--green)" : c === "red" ? "var(--red)" : "var(--muted)";
+    $("lateNote").textContent = (late.current ? `${hhmm(late.current.at)} candle, called ${late.after} min in. ` : "") +
+      `Right on ${pct(late.right, late.calls)} of ${late.calls} calls. It watches the candle start, so it's not a forecast.`;
+  }
+}
+
+// ---------- timer and polling
+function tick() {
+  const now = istNow(); $("clock").textContent = `${now.toISOString().slice(11, 19)} IST`;
+  const open = marketOpen(now), at = nextAt();
+  const target = Math.floor(Date.now() / FIVE) * FIVE + FIVE;
+  const left = Math.max(0, target - Date.now()), frac = left / FIVE;
+  $("prog").style.strokeDashoffset = `${465 * (1 - frac)}`;
+  $("ring").classList.toggle("hot", open && left < 10000);
+  $("tleft").textContent = open ? `${String(Math.floor(left / 60000)).padStart(2, "0")}:${String(Math.floor(left / 1000) % 60).padStart(2, "0")}` : "zzz";
+  $("tlabel").textContent = !open ? "market closed" : at ? `until the ${hhmm(at)} candle opens` : "last candle running";
+  if (open && left < 5500 && left > 4500) tone([880], "sine", 0.05);
+  renderPick();
+}
+async function getJSON(name) {
+  try { const r = await fetch(`${name}?t=${Date.now()}`, { cache: "no-store" }); return r.ok ? await r.json() : null; }
+  catch { return null; }
+}
+async function poll() {
+  const [l, s, t] = await Promise.all([getJSON("live.json"), getJSON("size.json"), getJSON("late.json")]);
+  size = s; late = t; renderSide();
+  const stale = !l || Date.now() - Date.parse(l.updated) > 8 * 60000;
+  const st = $("status"), bn = $("banner");
+  if (l) { live = l; renderLive(); }
+  if (!l) { st.textContent = "no data"; st.className = "chip"; bn.textContent = "No game data yet. Start the game: PYTHONPATH=. python scripts/play-learning-candle.py --live"; }
+  else if (stale && marketOpen()) { st.textContent = "stale"; st.className = "chip";
+    bn.textContent = `Last update ${hhmm(l.updated)} IST. The live game isn't running, so there are no fresh calls (nothing is guessed in its place).`; }
+  else if (!marketOpen()) { st.textContent = "market closed"; st.className = "chip"; bn.textContent = "The market is closed. The arena reopens at 09:15 IST on the next trading day."; }
+  else { st.textContent = "live"; st.className = "chip live"; bn.textContent = ""; }
+  bn.classList.toggle("on", !!bn.textContent);
+  if (stale && live) { live.next = null; renderLive(); }  // fail closed: never show an old call as current
+}
+renderPlayer(); tick(); poll();
+setInterval(tick, 1000); setInterval(poll, 5000);
+</script>
+</body></html>

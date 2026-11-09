@@ -17,7 +17,9 @@ _TRAIL_SHARE_OF_TARGET = Decimal("0.35")
 _MINIMUM = Decimal(1)
 _BULLISH = {"bull_call_spread", "bull_put_spread", "long_call"}
 _BEARISH = {"bear_put_spread", "bear_call_spread", "long_put"}
-_NEUTRAL = {"iron_condor"}
+_NEUTRAL = {"iron_condor", "wide_iron_condor"}
+# Sells premium, so it only enters when at-the-money implied volatility is elevated.
+_RICH_PREMIUM = {"wide_iron_condor"}
 
 
 @dataclass(frozen=True)
@@ -41,6 +43,8 @@ def entry_conditions(strategy_key: str) -> list[dict[str, Any]]:
     if strategy_key in _NEUTRAL:
         conditions.append(_condition("put_call_ratio_oi", "GTE", "0.80"))
         conditions.append(_condition("put_call_ratio_oi", "LTE", "1.20"))
+    if strategy_key in _RICH_PREMIUM:
+        conditions.append(_condition("atm_iv_pct", "GTE", "16.00"))
     conditions.append(_condition("median_relative_spread_pct", "LTE", "10.00"))
     return conditions
 

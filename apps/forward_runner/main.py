@@ -10,6 +10,7 @@ before any simulated fill. It places no broker orders. Freeze a period once with
 import argparse
 import asyncio
 import logging
+import secrets
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -76,12 +77,12 @@ CreateVersion = Callable[[StrategyVersionCreateRequest, User, Session], Awaitabl
 
 async def propose(
     session: Session, user: User, provider: MarketDataProvider, create: CreateVersion,
-    today: date,
+    today: date, templates: frozenset[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Save a 1-lot version of each template, with exits sized from the next expiry's quotes.
 
     Returns the templates saved and those skipped because quotes or a finite loss are missing.
-    Saving arms nothing.
+    Saving arms nothing. `templates` limits it to those keys, for a separate account.
     """
     contracts = await provider.get_option_contracts("NIFTY")
     expiry = next_expiry(sorted({item.expiry for item in contracts}), today)
@@ -100,6 +101,8 @@ async def propose(
     saved: list[str] = []
     skipped: list[str] = []
     for strategy in STRATEGIES:
+        if templates is not None and strategy.key not in templates:
+            continue
         legs: list[PayoffLeg] = []
         spread_cost = Decimal(0)
         for leg in strategy.legs:
@@ -256,16 +259,26 @@ async def serve(plan_path: Path, interval_seconds: float, once: bool) -> None:
         await asyncio.sleep(interval_seconds)
 
 
-async def _propose_command(user_email: str) -> None:
+async def _propose_command(user_email: str, templates: frozenset[str] | None,
+                           create_user: bool) -> None:
+    from apps.api.auth import Role, hash_password
     from apps.api.main import create_strategy_version
     from packages.market_data.provider import get_market_data_provider
 
+    email = user_email.strip().lower()
     with build_session_factory()() as session:
-        user = session.scalar(select(User).where(User.email == user_email))
+        user = session.scalar(select(User).where(User.email == email))
+        if user is None and create_user:
+            # Nobody knows this password; set one with apps.api.reset_password to sign in.
+            user = User(email=email, password_hash=hash_password(secrets.token_urlsafe(32)),
+                        role=Role.TRADER.value)
+            session.add(user)
+            session.commit()
         if user is None:
             raise ValueError("No account has that email")
         saved, skipped = await propose(
             session, user, get_market_data_provider(), create_strategy_version, exchange_today(),
+            templates,
         )
     logger.info("Saved %d forward versions; skipped %s", len(saved), skipped or "none")
 
@@ -282,13 +295,20 @@ def main() -> None:
     )
     parser.add_argument("--freeze", action="store_true", help="Freeze a new period and exit")
     parser.add_argument("--user-email")
+    parser.add_argument("--templates", help="With --propose: comma-separated template keys only")
+    parser.add_argument("--create-user", action="store_true",
+                        help="With --propose: create the account if it does not exist")
     parser.add_argument("--start", type=date.fromisoformat)
     parser.add_argument("--weeks", type=int, default=6)
     args = parser.parse_args()
     if args.propose:
         if not args.user_email:
             parser.error("--propose needs --user-email")
-        asyncio.run(_propose_command(args.user_email))
+        templates = frozenset(args.templates.split(",")) if args.templates else None
+        unknown = templates - {item.key for item in STRATEGIES} if templates else set()
+        if unknown:
+            parser.error(f"Unknown templates: {sorted(unknown)}")
+        asyncio.run(_propose_command(args.user_email, templates, args.create_user))
         return
     if args.freeze:
         if not args.user_email:

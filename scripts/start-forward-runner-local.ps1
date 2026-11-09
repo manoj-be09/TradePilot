@@ -1,4 +1,4 @@
-param([switch]$Once)
+param([switch]$Once, [string]$Plan = "work/forward-paper.json")
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $pythonExe = Join-Path $repoRoot ".venv\Scripts\python.exe"
@@ -7,6 +7,6 @@ if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
 }
 Set-Location $repoRoot
 $env:DATABASE_URL = "sqlite:///./work/nifty-local.db"
-if ($Once) { & $pythonExe -m apps.forward_runner.main --once }
-else { & $pythonExe -m apps.forward_runner.main }
+if ($Once) { & $pythonExe -m apps.forward_runner.main --plan $Plan --once }
+else { & $pythonExe -m apps.forward_runner.main --plan $Plan }
 exit $LASTEXITCODE

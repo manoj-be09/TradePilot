@@ -24,6 +24,8 @@ FIRST_BACKOFF_SECONDS = 5.0
 MAX_BACKOFF_SECONDS = 300.0
 STEADY_SECONDS = 600.0
 LOCAL_DATABASE = "sqlite:///./work/nifty-local.db"
+# A second forward period on its own account, for templates added after the main freeze.
+RANGE_PLAN = Path("work/forward-range-paper.json")
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,9 @@ def local_services(python: str) -> list[Service]:
         Service("web", _script("start-web-local.ps1")),
         Service("worker", _script("start-paper-worker-local.ps1")),
         Service("forward-runner", _script("start-forward-runner-local.ps1")),
+        *([Service("range-runner", _script("start-forward-runner-local.ps1", "-Plan",
+                                           RANGE_PLAN.as_posix()))]
+          if RANGE_PLAN.exists() else []),
         Service("night-runner", _script("start-night-runner-local.ps1")),
         Service("recorder", (python, "-u", "-m", "apps.recorder.main",
                              "--data-dir", "work/recorder-data")),

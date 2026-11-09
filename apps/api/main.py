@@ -2884,6 +2884,9 @@ async def _open_paper_trade_with_provider(
         "put_call_ratio_oi": features.put_call_ratio_oi,
         "put_call_ratio_volume": features.put_call_ratio_volume,
         "atm_iv_skew_put_minus_call_points": features.atm_iv_skew_put_minus_call_points,
+        "atm_iv_pct": (features.atm_call_iv_pct + features.atm_put_iv_pct) / 2
+        if features.atm_call_iv_pct is not None and features.atm_put_iv_pct is not None
+        else None,
         "largest_call_oi_share_pct": features.largest_call_oi_share_pct,
         "largest_put_oi_share_pct": features.largest_put_oi_share_pct,
         "median_relative_spread_pct": features.median_relative_spread_pct,

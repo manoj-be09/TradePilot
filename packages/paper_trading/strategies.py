@@ -112,6 +112,18 @@ STRATEGY_REGISTRY = StrategyRegistry(
             ),
         ),
         StrategyDefinition(
+            "wide_iron_condor",
+            "Wide iron condor",
+            "Sell the put and call six strikes out, protected six strikes further on each "
+            "side, for a range-bound market with rich option prices.",
+            (
+                StrategyLeg("PE", "BUY", -12),
+                StrategyLeg("PE", "SELL", -6),
+                StrategyLeg("CE", "SELL", 6),
+                StrategyLeg("CE", "BUY", 12),
+            ),
+        ),
+        StrategyDefinition(
             "iron_butterfly",
             "Iron butterfly",
             "Sell the reference-strike put and call, protected by one wing on each side.",

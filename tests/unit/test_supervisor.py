@@ -4,6 +4,7 @@ import logging
 import subprocess
 import sys
 
+import apps.supervisor.main as supervisor_main
 from apps.supervisor.main import (
     FIRST_BACKOFF_SECONDS,
     MAX_BACKOFF_SECONDS,
@@ -116,10 +117,19 @@ def test_one_crash_does_not_touch_the_other_services():
     assert "worker" not in supervisor.running
 
 
-def test_the_local_set_includes_every_process_the_paper_period_needs():
+def test_the_local_set_includes_every_process_the_paper_period_needs(monkeypatch, tmp_path):
+    monkeypatch.setattr(supervisor_main, "RANGE_PLAN", tmp_path / "missing.json")
     names = {service.name for service in local_services("python")}
     assert names == {"api", "web", "worker", "forward-runner", "night-runner", "recorder",
                      "alert-relay", "nightly"}
+
+
+def test_a_second_forward_period_runs_only_once_its_plan_exists(monkeypatch, tmp_path):
+    plan = tmp_path / "forward-range-paper.json"
+    plan.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(supervisor_main, "RANGE_PLAN", plan)
+    range_runner = next(item for item in local_services("python") if item.name == "range-runner")
+    assert range_runner.command[-2:] == ("-Plan", plan.as_posix())
 
 
 def test_a_real_process_is_logged_to_its_own_file_and_its_exit_code_seen(tmp_path):

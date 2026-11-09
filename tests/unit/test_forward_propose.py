@@ -117,3 +117,13 @@ def test_a_calendar_is_proposed_only_when_named_and_priced_by_its_debit():
     # Buy the far 23000 call at 101, sell the near one at 99: a debit of 2 x 65. The stop is
     # capped at that debit, the most a long call calendar can lose.
     assert requests[0].stop_loss_amount == Decimal("130.00")
+    # A put calendar risks more than its debit: the later put may trade below intrinsic.
+    put_requests = []
+
+    async def keep(body, _user, _session):
+        put_requests.append(body)
+
+    saved, _ = asyncio.run(propose(None, object(), _TwoExpiries(), keep, TODAY,
+                                   frozenset({"calendar_put_spread"})))
+    assert saved == ["calendar_put_spread"]
+    assert put_requests[0].stop_loss_amount > Decimal("130.00")

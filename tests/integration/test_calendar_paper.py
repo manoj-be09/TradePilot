@@ -53,12 +53,12 @@ class CalendarProvider(FakeUpstoxProvider):
         return chain.model_copy(update={"contracts": contracts})
 
 
-def _open(client, monkeypatch, **rules):
+def _open(client, monkeypatch, key="call_calendar", **rules):
     provider = CalendarProvider()
     monkeypatch.setattr("apps.api.main.get_market_data_provider", lambda: provider)
     headers = {**_token(client), "Idempotency-Key": "calendar-entry"}
     opened = client.post("/paper/trades", headers=headers, json={
-        "strategy_key": "call_calendar", "expiry": provider.expiry.isoformat(),
+        "strategy_key": key, "expiry": provider.expiry.isoformat(),
         "reference_strike": "25000", "lots": 1, **rules,
     })
     assert opened.status_code == 201, opened.text
@@ -107,3 +107,23 @@ def test_a_manual_close_prices_the_later_leg_from_its_own_chain(client, monkeypa
     closed = client.post(f"/paper/trades/{trade['id']}/close", headers=headers)
     assert closed.status_code == 200, closed.text
     assert Decimal(closed.json()["realized_pnl"]) == (140 - 101 - 31) * 25
+
+
+def test_a_put_calendar_risks_its_debit_plus_the_later_put_trading_below_intrinsic(
+        client, monkeypatch):
+    provider, _, trade, _ = _open(client, monkeypatch, key="calendar_put_spread")
+    near, far = trade["legs"]
+    assert (near["option_type"], near["side"], far["side"]) == ("PE", "SELL", "BUY")
+    assert far["expiry"] == provider.later.isoformat()
+    debit = (131 - 100) * 25
+    days = (provider.later - provider.expiry).days
+    allowance = Decimal(25000) * (1 - 1 / (1 + Decimal("0.10") * days / 365)) * 25
+    assert Decimal(trade["max_loss"]) == (debit + allowance).quantize(Decimal("0.01"))
+
+
+def test_a_put_diagonal_with_its_bought_put_above_risks_only_the_debit(client, monkeypatch):
+    provider, _, trade, _ = _open(client, monkeypatch, key="diagonal_put_spread")
+    near, far = trade["legs"]
+    assert (Decimal(near["strike"]), Decimal(near["entry_price"])) == (24900, 80)
+    assert (Decimal(far["strike"]), Decimal(far["entry_price"])) == (25000, 131)
+    assert Decimal(trade["max_loss"]) == (131 - 80) * 25

@@ -537,8 +537,8 @@ function paperTemplatePolicy(strategyKey: string, payoff: PayoffEstimate) {
     ? Math.max(1, Math.min(maximumProfit * 0.5, stopLoss * 1.75))
     : Math.max(1, stopLoss * 1.5);
   const trailingStop = Math.max(1, targetProfit * 0.35);
-  const bullish = new Set(["bull_call_spread", "bull_put_spread", "long_call"]);
-  const bearish = new Set(["bear_put_spread", "bear_call_spread", "long_put"]);
+  const bullish = new Set(["bull_call_spread", "bull_put_spread", "long_call", "diagonal_call_spread"]);
+  const bearish = new Set(["bear_put_spread", "bear_call_spread", "long_put", "diagonal_put_spread"]);
   const neutral = new Set(["iron_condor", "range_iron_condor"]);
   const richPremium = new Set(["range_iron_condor"]);
   const conditions: EntryConditionDraft[] = [

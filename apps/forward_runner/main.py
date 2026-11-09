@@ -41,7 +41,12 @@ from packages.paper_trading.forward_plan import (
     save_new_plan,
 )
 from packages.paper_trading.session import exchange_today
-from packages.paper_trading.strategies import STRATEGIES, STRATEGY_REGISTRY, StrategyDefinition
+from packages.paper_trading.strategies import (
+    STRATEGIES,
+    STRATEGY_REGISTRY,
+    StrategyDefinition,
+    calendar_max_loss,
+)
 from packages.paper_trading.template_policy import TemplatePolicy, template_policy
 
 logger = logging.getLogger("forward_runner")
@@ -131,9 +136,14 @@ async def propose(
             skipped.append(strategy.key)
             continue
         if strategy.expiry_scope == "MULTI_EXPIRY":
-            # A long call calendar loses at most its debit; its best case has no closed form.
-            policy = (template_policy(strategy.key, debit, None, spread_cost)
-                      if debit > 0 else None)
+            # Worst case at the near expiry; the best case has no closed form.
+            max_loss = calendar_max_loss(
+                ((item.option_type, item.strike, item.quantity, leg.expiry_offset == 1)
+                 for item, leg in zip(legs, strategy.legs, strict=True)),
+                -debit, lot_size, (later[0] - expiry).days,
+            ) if debit > 0 else None
+            policy = (template_policy(strategy.key, max_loss, None, spread_cost)
+                      if max_loss is not None else None)
             if policy is None:
                 skipped.append(strategy.key)
                 continue

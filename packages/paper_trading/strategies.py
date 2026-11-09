@@ -1,4 +1,6 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Literal
 
 OptionType = Literal["CE", "PE"]
@@ -48,7 +50,8 @@ class StrategyRegistry:
                 raise ValueError(f"Strategy {strategy.key!r} has an inconsistent expiry scope")
             if multi and not _is_long_calendar(strategy):
                 raise ValueError(
-                    f"Multi-expiry strategy {strategy.key!r} must be a long call calendar"
+                    f"Multi-expiry strategy {strategy.key!r} must be a long calendar or "
+                    "a diagonal with its bought leg on the protected side"
                 )
             if strategy.risk_profile == "DEFINED_RISK" and _call_tail_slope(strategy) < 0:
                 raise ValueError(
@@ -70,17 +73,64 @@ class StrategyRegistry:
 
 
 def _is_long_calendar(strategy: StrategyDefinition) -> bool:
-    """Each near call sold has the same call bought on the next expiry, and nothing else.
+    """Only near options sold and later options bought, matched per option type, with each
+    bought strike on the protected side: calls at or below the sold strikes, puts at or above.
 
-    At the near expiry the far call is worth at least the near one's intrinsic value, so the
-    most it can lose is the debit paid. Puts are left out: a European put can trade below
-    intrinsic, which would break that bound.
+    That keeps the loss at the near expiry bounded; calendar_max_loss gives the bound.
     """
-    near = sorted((leg.strike_offset, leg.quantity_ratio) for leg in strategy.legs
-                  if leg.expiry_offset == 0 and leg.side == "SELL" and leg.option_type == "CE")
-    far = sorted((leg.strike_offset, leg.quantity_ratio) for leg in strategy.legs
-                 if leg.expiry_offset == 1 and leg.side == "BUY" and leg.option_type == "CE")
-    return bool(near) and near == far and len(near) + len(far) == len(strategy.legs)
+    if any((leg.side == "SELL") != (leg.expiry_offset == 0) for leg in strategy.legs):
+        return False
+    for option_type in ("CE", "PE"):
+        near = [leg for leg in strategy.legs
+                if leg.option_type == option_type and leg.expiry_offset == 0]
+        far = [leg for leg in strategy.legs
+               if leg.option_type == option_type and leg.expiry_offset == 1]
+        if sum(leg.quantity_ratio for leg in near) != sum(leg.quantity_ratio for leg in far):
+            return False
+        if near and option_type == "CE" and (
+                max(leg.strike_offset for leg in far) > min(leg.strike_offset for leg in near)):
+            return False
+        if near and option_type == "PE" and (
+                min(leg.strike_offset for leg in far) < max(leg.strike_offset for leg in near)):
+            return False
+    return True
+
+
+# A later put may trade below intrinsic by up to strike x rate x time; 10% a year is above
+# any Indian policy rate this system has seen, so the allowance errs on the side of loss.
+_PUT_RATE = Decimal("0.10")
+
+
+def calendar_max_loss(
+    legs: Iterable[tuple[str, Decimal, int, bool]], cash_flow: Decimal, multiplier: int,
+    days_between_expiries: int,
+) -> Decimal:
+    """Worst loss at the near expiry for a calendar or diagonal the registry allows.
+
+    legs are (option type, strike, signed lots, on the later expiry). Near options are
+    valued at intrinsic. A later call is taken at its intrinsic value and a later put at
+    the strike discounted at _PUT_RATE less spot, the lowest each may trade at; the loss
+    is the debit paid less the lowest such value over every spot price.
+    """
+    legs = list(legs)
+    discount = 1 / (1 + _PUT_RATE * days_between_expiries / 365)
+
+    def value(spot: Decimal) -> Decimal:
+        total = Decimal(0)
+        for option_type, strike, lots, later in legs:
+            if option_type == "CE":
+                total += lots * max(Decimal(0), spot - strike)
+            else:
+                total += lots * max(Decimal(0), strike * (discount if later else 1) - spot)
+        return total
+
+    if sum(lots for option_type, _, lots, _ in legs if option_type == "CE") < 0:
+        raise ValueError("A calendar may not be short calls overall")
+    # Value is piecewise linear in spot, so its lowest point is at zero or a kink.
+    kinks = {Decimal(0)} | {strike for _, strike, _, _ in legs} | {
+        strike * discount for option_type, strike, _, later in legs
+        if option_type == "PE" and later}
+    return -cash_flow - min(value(spot) for spot in kinks) * multiplier
 
 
 def _call_tail_slope(strategy: StrategyDefinition) -> int:
@@ -319,6 +369,18 @@ STRATEGY_REGISTRY = StrategyRegistry(
             ),
         ),
         StrategyDefinition(
+            "inverse_iron_butterfly",
+            "Inverse iron butterfly",
+            "Buy the reference-strike put and call and sell the wings two strikes out for a "
+            "defined-risk move strategy.",
+            (
+                StrategyLeg("PE", "SELL", -2),
+                StrategyLeg("PE", "BUY", 0),
+                StrategyLeg("CE", "BUY", 0),
+                StrategyLeg("CE", "SELL", 2),
+            ),
+        ),
+        StrategyDefinition(
             "guts",
             "Guts",
             "Buy an in-the-money call and put for a defined-risk volatility position.",
@@ -354,6 +416,43 @@ STRATEGY_REGISTRY = StrategyRegistry(
             "Sell the reference-strike call on this expiry and buy the same call on the next "
             "expiry. Maximum loss is the debit paid.",
             (StrategyLeg("CE", "SELL", 0), StrategyLeg("CE", "BUY", 0, expiry_offset=1)),
+            expiry_scope="MULTI_EXPIRY",
+        ),
+        StrategyDefinition(
+            "calendar_put_spread",
+            "Put calendar",
+            "Sell the reference-strike put on this expiry and buy the same put on the next "
+            "expiry.",
+            (StrategyLeg("PE", "SELL", 0), StrategyLeg("PE", "BUY", 0, expiry_offset=1)),
+            expiry_scope="MULTI_EXPIRY",
+        ),
+        StrategyDefinition(
+            "diagonal_call_spread",
+            "Call diagonal",
+            "Sell the call two strikes above on this expiry and buy the reference-strike call "
+            "on the next expiry.",
+            (StrategyLeg("CE", "SELL", 2), StrategyLeg("CE", "BUY", 0, expiry_offset=1)),
+            expiry_scope="MULTI_EXPIRY",
+        ),
+        StrategyDefinition(
+            "diagonal_put_spread",
+            "Put diagonal",
+            "Sell the put two strikes below on this expiry and buy the reference-strike put "
+            "on the next expiry.",
+            (StrategyLeg("PE", "SELL", -2), StrategyLeg("PE", "BUY", 0, expiry_offset=1)),
+            expiry_scope="MULTI_EXPIRY",
+        ),
+        StrategyDefinition(
+            "double_diagonal",
+            "Double diagonal",
+            "Sell the put and call three strikes out on this expiry and buy the put and call "
+            "one strike out on the next expiry.",
+            (
+                StrategyLeg("PE", "SELL", -3),
+                StrategyLeg("PE", "BUY", -1, expiry_offset=1),
+                StrategyLeg("CE", "BUY", 1, expiry_offset=1),
+                StrategyLeg("CE", "SELL", 3),
+            ),
             expiry_scope="MULTI_EXPIRY",
         ),
     )

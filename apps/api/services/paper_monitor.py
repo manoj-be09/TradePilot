@@ -29,7 +29,7 @@ from packages.paper_trading.costs import cost_snapshot
 from packages.paper_trading.exits import ExitDecision, evaluate_exit
 from packages.paper_trading.index_scope import saved_option_index
 from packages.paper_trading.option_policy import parse_option_exit_policy
-from packages.paper_trading.quotes import PaperQuoteError, require_quote
+from packages.paper_trading.quotes import PaperQuoteError, leg_expiry, require_quote
 from packages.paper_trading.session import (
     PaperSessionError,
     exchange_today,
@@ -326,6 +326,25 @@ async def monitor_exits(
                 warnings.append("Worker ownership expired; exit observation was fenced off.")
                 break
 
+    # A calendar's later-expiry leg needs that expiry's chain too. One that cannot be read,
+    # or fails quality, leaves the trade unpriced: its exit check is skipped below.
+    for underlying, later in sorted({
+        (trade.underlying, leg_expiry(leg, trade.expiry))
+        for trade in matching_trades if (trade.underlying, trade.expiry) in chains
+        for leg in trade.legs["items"]
+    } - set(chains)):
+        try:
+            later_chain = await provider.get_option_chain(underlying, later)
+        except (MarketDataUnavailable, MarketDataProviderError):
+            warnings.append(f"Exit checks needing {later} skipped: market data is unavailable.")
+            continue
+        if later_chain.underlying != underlying or later_chain.expiry != later:
+            warnings.append(f"Exit checks needing {later} skipped: option-chain identity mismatch.")
+        elif assess_option_chain(later_chain).status == "FAIL":
+            warnings.append(f"Exit checks needing {later} skipped: option-chain quality is FAIL.")
+        else:
+            chains[(underlying, later)] = later_chain
+
     unrealized: dict[UUID, Decimal] = {}
     closed_trade_ids: list[UUID] = []
     evaluated_count = 0
@@ -343,8 +362,11 @@ async def monitor_exits(
         try:
             for leg in snapshot.legs["items"]:
                 exit_side = "SELL" if leg["side"] == "BUY" else "BUY"
+                leg_chain = chains.get((snapshot.underlying, leg_expiry(leg, snapshot.expiry)))
+                if leg_chain is None:
+                    raise PaperQuoteError("the later-expiry leg's option chain is unavailable")
                 exit_price, market_contract = require_quote(
-                    trade_chain,
+                    leg_chain,
                     str(leg["instrument_key"]),
                     exit_side,
                     int(leg["quantity_units"]),
@@ -422,9 +444,12 @@ async def monitor_exits(
                 warnings.append(str(error))
                 continue
         try:
-            for fill in fills:
+            for leg, fill in zip(snapshot.legs["items"], fills, strict=True):
+                fill_chain = chains.get((snapshot.underlying, leg_expiry(leg, snapshot.expiry)))
+                if fill_chain is None:
+                    raise PaperQuoteError("the later-expiry leg's option chain is unavailable")
                 require_quote(
-                    trade_chain,
+                    fill_chain,
                     str(fill["instrument_key"]),
                     str(fill["side"]),
                     int(str(fill["quantity_units"])),

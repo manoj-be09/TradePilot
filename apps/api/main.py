@@ -211,7 +211,7 @@ from packages.paper_trading.option_evidence import (
     trade_entry_condition,
 )
 from packages.paper_trading.option_policy import EXPIRY_TEST_POLICY_VERSION, OptionExitPolicy
-from packages.paper_trading.quotes import PaperQuoteError, require_quote
+from packages.paper_trading.quotes import PaperQuoteError, leg_expiry, require_quote
 from packages.paper_trading.rules import EntryCondition, RuleMetric, evaluate_entry_conditions
 from packages.paper_trading.session import (
     PaperSessionError,
@@ -414,6 +414,7 @@ def _strategy_contracts(
         raise HTTPException(
             status_code=422, detail="Selected strike is unavailable for this expiry"
         ) from None
+    later = sorted({contract.expiry for contract in contracts if contract.expiry > expiry})
     selections: list[tuple[OptionContract, str, int]] = []
     for leg in strategy.legs:
         leg_index = index + leg.strike_offset
@@ -422,11 +423,14 @@ def _strategy_contracts(
                 status_code=422, detail="Strategy leg falls outside available strikes"
             )
         strike = strikes[leg_index]
+        if leg.expiry_offset and not later:
+            raise HTTPException(status_code=422, detail="The next expiry is not listed")
+        leg_expiry = later[0] if leg.expiry_offset else expiry
         match = next(
             (
                 contract
                 for contract in contracts
-                if contract.expiry == expiry
+                if contract.expiry == leg_expiry
                 and contract.strike == strike
                 and contract.option_type == leg.option_type
             ),
@@ -1065,10 +1069,10 @@ async def run_options_backtest(
     if body.expiry >= date.today():
         raise HTTPException(status_code=422, detail="Select an option expiry that has passed")
     strategy = get_strategy(body.strategy_key)
-    if strategy is None:
+    if strategy is None or strategy.expiry_scope != "SAME_EXPIRY":
         raise HTTPException(
             status_code=422,
-            detail="Historical replay currently supports the nine registered strategy templates",
+            detail="Historical replay supports the registered single-expiry templates only",
         )
     version = _replay_strategy_version(body, user, session, strategy)
     try:
@@ -1127,8 +1131,9 @@ async def run_scheduled_options_backtest(
     body: ScheduledOptionsBacktestRequest, user: CurrentUser, session: SessionDep
 ) -> ScheduledOptionsBacktestResult:
     strategy = get_strategy(body.strategy_key)
-    if strategy is None:
-        raise HTTPException(status_code=422, detail="Select a registered strategy template")
+    if strategy is None or strategy.expiry_scope != "SAME_EXPIRY":
+        raise HTTPException(status_code=422,
+                            detail="Select a registered single-expiry strategy template")
     version = _replay_strategy_version(body, user, session, strategy)
     try:
         result = await run_scheduled_expiry_replay(
@@ -2762,6 +2767,9 @@ async def _open_paper_trade_with_provider(
     strategy = None if is_custom_strategy else get_strategy(body.strategy_key)
     if not is_custom_strategy and strategy is None:
         raise HTTPException(status_code=422, detail="Unknown paper strategy")
+    multi_expiry = strategy is not None and strategy.expiry_scope == "MULTI_EXPIRY"
+    if multi_expiry and (index.symbol != "NIFTY" or body.expiry_test_only):
+        raise HTTPException(409, "Calendar templates are NIFTY paper entries only")
     if deployment_id is not None:
         armed = session.scalar(select(PaperDeployment).where(
             PaperDeployment.id == deployment_id, PaperDeployment.user_id == user.id,
@@ -2842,7 +2850,9 @@ async def _open_paper_trade_with_provider(
                 )
             except (TimeoutError, MarketDataProviderError, MarketDataUnavailable):
                 pass  # Optional context cannot prevent or reprice a paper fill.
-        option_contracts = await provider.get_option_contracts(index.symbol, body.expiry)
+        # A calendar's far leg is on a later expiry, so it needs the whole contract list.
+        option_contracts = await provider.get_option_contracts(
+            index.symbol, None if multi_expiry else body.expiry)
         chain = await provider.get_option_chain(index.symbol, body.expiry)
         if chain.underlying != index.symbol or chain.expiry != body.expiry:
             raise PaperSessionError("Option-chain identity differs from the selected index")
@@ -3081,6 +3091,19 @@ async def _open_paper_trade_with_provider(
         strategy_name = strategy.name
         reference_strike = body.reference_strike
 
+    chains = {body.expiry: chain}
+    for far_expiry in sorted({contract.expiry for contract, _, _ in selected} - {body.expiry}):
+        try:
+            far_chain = await provider.get_option_chain(index.symbol, far_expiry)
+        except (MarketDataUnavailable, MarketDataProviderError) as error:
+            raise _market_data_http_error(error) from error
+        if far_chain.underlying != index.symbol or far_chain.expiry != far_expiry:
+            raise HTTPException(409, "Option-chain identity differs for a later-expiry leg")
+        if assess_option_chain(far_chain).status == "FAIL":
+            raise HTTPException(409, f"The {far_expiry} option chain fails quality checks; "
+                                     "no paper order was created")
+        chains[far_expiry] = far_chain
+
     lot_sizes = {contract.lot_size for contract, _, _ in selected}
     if len(lot_sizes) != 1:
         raise HTTPException(
@@ -3107,7 +3130,7 @@ async def _open_paper_trade_with_provider(
     for option_contract, side, leg_lots in selected:
         quantity_units = leg_lots * lot_size
         fill_price, market_contract = _require_quote(
-            chain, option_contract.instrument_key, side, quantity_units
+            chains[option_contract.expiry], option_contract.instrument_key, side, quantity_units
         )
         # A missing side counts as a full-price spread, so the gate fails closed.
         spread_cost += ((market_contract.quote.ask or Decimal(0))
@@ -3118,9 +3141,10 @@ async def _open_paper_trade_with_provider(
                 quantity_units=quantity_units if side == "BUY" else -quantity_units,
                 underlying_price=underlying_spot,
                 strike=option_contract.strike,
-                years_to_expiry=margin_years,
+                years_to_expiry=years_to_expiry(option_contract.expiry)
+                if option_contract.expiry != body.expiry else margin_years,
                 volatility_pct=market_contract.implied_volatility or FALLBACK_VOLATILITY_PCT,
-                expires_today=margin_expires_today,
+                expires_today=margin_expires_today and option_contract.expiry == body.expiry,
             )
         )
         amount = (fill_price * quantity_units).quantize(_CENT, rounding=ROUND_HALF_UP)
@@ -3144,6 +3168,9 @@ async def _open_paper_trade_with_provider(
             "entry_price": str(fill_price),
             "entry_bid": str(market_contract.quote.bid),
             "entry_ask": str(market_contract.quote.ask),
+            # Only a later-expiry leg says so; every other leg is on the trade's expiry.
+            **({"expiry": option_contract.expiry.isoformat()}
+               if option_contract.expiry != body.expiry else {}),
         }
         saved_legs.append(saved_leg)
         fills.append(
@@ -3183,24 +3210,30 @@ async def _open_paper_trade_with_provider(
                 raise HTTPException(409, (
                     f"Entry spread ₹{spread_cost:.2f} is over half the {label} of "
                     f"₹{limit}; waiting for a narrower book"))
-    selected_strikes = [contract.strike for contract, _, _ in selected]
-    spot = chain.underlying_spot or Decimal(1)
-    payoff = calculate_expiry_payoff(
-        PayoffRequest(
-            underlying=index.symbol,
-            multiplier=Decimal(lot_size),
-            price_min=Decimal(0),
-            price_max=max(spot, max(selected_strikes)) * Decimal(2),
-            grid_points=2,
-            legs=payoff_legs,
+    if multi_expiry:
+        # A long call calendar (checked by the registry) loses at most the debit paid.
+        if cash_flow >= 0:
+            raise HTTPException(409, "A calendar must be entered for a debit; trade rejected")
+        max_loss = -cash_flow
+    else:
+        selected_strikes = [contract.strike for contract, _, _ in selected]
+        spot = chain.underlying_spot or Decimal(1)
+        payoff = calculate_expiry_payoff(
+            PayoffRequest(
+                underlying=index.symbol,
+                multiplier=Decimal(lot_size),
+                price_min=Decimal(0),
+                price_max=max(spot, max(selected_strikes)) * Decimal(2),
+                grid_points=2,
+                legs=payoff_legs,
+            )
         )
-    )
-    if payoff.maximum_loss_unbounded or payoff.maximum_loss is None:
-        raise HTTPException(
-            status_code=409,
-            detail="This strategy has unbounded maximum loss and cannot be paper traded",
-        )
-    max_loss = payoff.maximum_loss.quantize(_CENT, rounding=ROUND_HALF_UP)
+        if payoff.maximum_loss_unbounded or payoff.maximum_loss is None:
+            raise HTTPException(
+                status_code=409,
+                detail="This strategy has unbounded maximum loss and cannot be paper traded",
+            )
+        max_loss = payoff.maximum_loss.quantize(_CENT, rounding=ROUND_HALF_UP)
     if body.expiry_test_only and max_loss > Decimal("10000"):
         raise HTTPException(409, "Expiry test maximum premium loss must not exceed 10000 rupees")
     if max_loss <= 0:
@@ -3259,7 +3292,8 @@ async def _open_paper_trade_with_provider(
     except PaperSessionError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     for option_contract, side, leg_lots in selected:
-        _require_quote(chain, option_contract.instrument_key, side, leg_lots * lot_size)
+        _require_quote(chains[option_contract.expiry], option_contract.instrument_key, side,
+                       leg_lots * lot_size)
     if locked_account is None:
         raise HTTPException(status_code=409, detail="Paper account could not be initialized")
     account = locked_account
@@ -3477,7 +3511,8 @@ async def paper_trades(user: CurrentUser, session: SessionDep) -> PaperTradeList
     chains: dict[tuple[str, date], OptionChain] = {}
     open_sessions: dict[str, bool] = {}
     groups = sorted({
-        (trade.underlying, trade.expiry) for trade in trades if trade.id in indexes
+        (trade.underlying, leg_expiry(leg, trade.expiry))
+        for trade in trades if trade.id in indexes for leg in trade.legs["items"]
     })
     for underlying, expiry in groups:
         index = next(indexes[trade.id] for trade in trades
@@ -3570,9 +3605,13 @@ async def paper_trades(user: CurrentUser, session: SessionDep) -> PaperTradeList
                 settings = get_settings()
                 for leg in item.legs:
                     exit_side = "SELL" if leg.side == "BUY" else "BUY"
+                    leg_chain = chains.get((trade.underlying, leg.expiry or trade.expiry))
+                    if leg_chain is None:
+                        all_quoted = False
+                        break
                     try:
                         exit_price, _ = require_quote(
-                            current_chain,
+                            leg_chain,
                             leg.instrument_key,
                             exit_side,
                             leg.quantity_units,
@@ -4111,6 +4150,15 @@ async def close_paper_trade(
         chain = await provider.get_option_chain(underlying, expiry)
         if chain.underlying != underlying or chain.expiry != expiry:
             raise HTTPException(409, "Option-chain identity differs from the saved paper position")
+        leg_chains = {expiry: chain}
+        for later in sorted({leg_expiry(leg, expiry) for leg in saved_legs} - {expiry}):
+            later_chain = await provider.get_option_chain(underlying, later)
+            if later_chain.underlying != underlying or later_chain.expiry != later:
+                raise HTTPException(409, "Option-chain identity differs for a later-expiry leg")
+            if assess_option_chain(later_chain).status == "FAIL":
+                raise HTTPException(409, f"The {later} option-chain quality is FAIL; "
+                                         "trade remains open")
+            leg_chains[later] = later_chain
     except (MarketDataUnavailable, MarketDataProviderError) as error:
         raise _market_data_http_error(error) from error
     except PaperSessionError as error:
@@ -4126,7 +4174,8 @@ async def close_paper_trade(
         exit_side = "SELL" if leg["side"] == "BUY" else "BUY"
         quantity_units = int(leg["quantity_units"])
         exit_price, market_contract = _require_quote(
-            chain, str(leg["instrument_key"]), exit_side, quantity_units
+            leg_chains[leg_expiry(leg, expiry)], str(leg["instrument_key"]), exit_side,
+            quantity_units,
         )
         amount = (exit_price * quantity_units).quantize(_CENT, rounding=ROUND_HALF_UP)
         leg_cash_flow = amount if exit_side == "SELL" else -amount
@@ -4181,7 +4230,7 @@ async def close_paper_trade(
         raise HTTPException(status_code=409, detail=str(error)) from error
     for leg in saved_legs:
         _require_quote(
-            chain,
+            leg_chains[leg_expiry(leg, expiry)],
             str(leg["instrument_key"]),
             "SELL" if leg["side"] == "BUY" else "BUY",
             int(leg["quantity_units"]),

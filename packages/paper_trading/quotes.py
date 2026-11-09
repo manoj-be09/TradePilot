@@ -1,6 +1,7 @@
 """Execution eligibility is stricter than a descriptive research quality report."""
 
-from datetime import datetime, timezone
+from collections.abc import Mapping
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from packages.market_data.contracts import OptionChain, OptionContractQuote
@@ -8,6 +9,12 @@ from packages.market_data.contracts import OptionChain, OptionContractQuote
 
 class PaperQuoteError(ValueError):
     pass
+
+
+def leg_expiry(leg: Mapping[str, object], trade_expiry: date) -> date:
+    """A saved leg's own expiry: only a calendar's later-expiry leg records one."""
+    value = leg.get("expiry")
+    return date.fromisoformat(str(value)) if value else trade_expiry
 
 
 def require_fresh(

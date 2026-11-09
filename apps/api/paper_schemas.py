@@ -428,6 +428,7 @@ class PaperLegResponse(BaseModel):
     entry_price: Decimal
     entry_bid: Decimal
     entry_ask: Decimal
+    expiry: date | None = None  # set only on a calendar's later-expiry leg
 
 
 class PaperTradeResponse(BaseModel):

@@ -58,16 +58,24 @@ def test_defined_risk_registry_rejects_naked_short_call():
         )
 
 
-def test_registry_rejects_multi_expiry_until_leg_expiry_engine_exists():
-    with pytest.raises(ValueError, match="unsupported multi-expiry execution"):
-        StrategyRegistry(
-            (
-                StrategyDefinition(
-                    "calendar",
-                    "Calendar",
-                    "A future multi-expiry template",
-                    (StrategyLeg("CE", "BUY", 0),),
-                    expiry_scope="MULTI_EXPIRY",
-                ),
-            )
-        )
+def _calendar(*legs, scope="MULTI_EXPIRY"):
+    return StrategyRegistry((StrategyDefinition("cal", "Cal", "x", legs, expiry_scope=scope),))
+
+
+def test_only_a_long_call_calendar_may_span_two_expiries():
+    near, far = StrategyLeg("CE", "SELL", 0), StrategyLeg("CE", "BUY", 0, expiry_offset=1)
+    assert _calendar(near, far).calendars()[0].key == "cal"
+    assert _calendar(near, far).list() == ()  # backtests and research never see it
+    with pytest.raises(ValueError, match="inconsistent expiry scope"):
+        _calendar(near, far, scope="SAME_EXPIRY")
+    with pytest.raises(ValueError, match="inconsistent expiry scope"):
+        _calendar(near, StrategyLeg("CE", "BUY", 0))
+    with pytest.raises(ValueError, match="long call calendar"):
+        _calendar(StrategyLeg("PE", "SELL", 0), StrategyLeg("PE", "BUY", 0, expiry_offset=1))
+    with pytest.raises(ValueError, match="long call calendar"):  # short the far leg
+        _calendar(StrategyLeg("CE", "BUY", 0), StrategyLeg("CE", "SELL", 0, expiry_offset=1))
+    with pytest.raises(ValueError, match="long call calendar"):  # different strikes
+        _calendar(near, StrategyLeg("CE", "BUY", 1, expiry_offset=1))
+    with pytest.raises(ValueError):
+        StrategyLeg("CE", "BUY", 0, expiry_offset=2)
+    assert get_strategy("call_calendar").expiry_scope == "MULTI_EXPIRY"

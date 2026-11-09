@@ -617,6 +617,8 @@ def _before_expiry_day(moments: list[datetime], expiry: date) -> list[datetime]:
 def run_backtest(histories: Sequence[ExpiryHistory], config: BacktestConfig) -> BacktestReport:
     if config.lots < 1:
         raise ValueError("Backtest needs at least one lot")
+    if config.strategy.expiry_scope != "SAME_EXPIRY":
+        raise ValueError("History replay prices one expiry; calendars need their own study")
     report = BacktestReport(config=config)
     for history in sorted(histories, key=lambda item: item.expiry):
         outcome = run_expiry(history, config)

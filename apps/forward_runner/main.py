@@ -41,8 +41,8 @@ from packages.paper_trading.forward_plan import (
     save_new_plan,
 )
 from packages.paper_trading.session import exchange_today
-from packages.paper_trading.strategies import STRATEGIES
-from packages.paper_trading.template_policy import template_policy
+from packages.paper_trading.strategies import STRATEGIES, STRATEGY_REGISTRY, StrategyDefinition
+from packages.paper_trading.template_policy import TemplatePolicy, template_policy
 
 logger = logging.getLogger("forward_runner")
 DEFAULT_PLAN = Path("work/forward-paper.json")
@@ -98,26 +98,47 @@ async def propose(
     if reference is None or lot_size is None:
         raise ValueError("The option chain has no strikes or lot size")
     index = strikes.index(reference)
+    later = sorted({item.expiry for item in contracts if item.expiry > expiry})
+    later_quotes: dict[tuple[Decimal, str], Any] | None = None
     saved: list[str] = []
     skipped: list[str] = []
-    for strategy in STRATEGIES:
+    # Calendars are proposed only when named: the main period's set stays as it was frozen.
+    candidates = STRATEGIES + (STRATEGY_REGISTRY.calendars() if templates else ())
+    for strategy in candidates:
         if templates is not None and strategy.key not in templates:
             continue
+        if strategy.expiry_scope == "MULTI_EXPIRY" and later_quotes is None and later:
+            later_chain = await provider.get_option_chain("NIFTY", later[0])
+            later_quotes = {(item.strike, item.option_type): item.quote
+                            for item in later_chain.contracts}
         legs: list[PayoffLeg] = []
+        debit = Decimal(0)
         spread_cost = Decimal(0)
         for leg in strategy.legs:
             position = index + leg.strike_offset
             strike = strikes[position] if 0 <= position < len(strikes) else None
-            quote = quotes.get((strike, leg.option_type)) if strike is not None else None
+            source = (later_quotes or {}) if leg.expiry_offset else quotes
+            quote = source.get((strike, leg.option_type)) if strike is not None else None
             if strike is None or quote is None or not quote.bid or not quote.ask:
                 break
             premium = quote.ask if leg.side == "BUY" else quote.bid
             quantity = leg.quantity_ratio if leg.side == "BUY" else -leg.quantity_ratio
             legs.append(PayoffLeg(option_type=leg.option_type, strike=strike,
                                   quantity=quantity, entry_premium=premium))
+            debit += premium * quantity * lot_size
             spread_cost += (quote.ask - quote.bid) * leg.quantity_ratio * lot_size
         if len(legs) != len(strategy.legs):
             skipped.append(strategy.key)
+            continue
+        if strategy.expiry_scope == "MULTI_EXPIRY":
+            # A long call calendar loses at most its debit; its best case has no closed form.
+            policy = (template_policy(strategy.key, debit, None, spread_cost)
+                      if debit > 0 else None)
+            if policy is None:
+                skipped.append(strategy.key)
+                continue
+            await create(_version_request(strategy, policy), user, session)
+            saved.append(strategy.key)
             continue
         payoff = calculate_expiry_payoff(PayoffRequest(
             underlying="NIFTY", multiplier=Decimal(lot_size), price_min=Decimal(0),
@@ -132,14 +153,19 @@ async def propose(
         if policy is None:
             skipped.append(strategy.key)
             continue
-        await create(StrategyVersionCreateRequest(
-            name=f"{FROZEN_NAME_PREFIX}{strategy.name} · {strategy.version} · 1L",
-            strategy_key=strategy.key, expected_template_version=strategy.version, lots=1,
-            entry_conditions=policy.entry_conditions, stop_loss_amount=policy.stop_loss,
-            target_profit_amount=policy.target_profit, trailing_stop_amount=policy.trailing_stop,
-        ), user, session)
+        await create(_version_request(strategy, policy), user, session)
         saved.append(strategy.key)
     return saved, skipped
+
+
+def _version_request(strategy: StrategyDefinition, policy: TemplatePolicy,
+                     ) -> StrategyVersionCreateRequest:
+    return StrategyVersionCreateRequest(
+        name=f"{FROZEN_NAME_PREFIX}{strategy.name} · {strategy.version} · 1L",
+        strategy_key=strategy.key, expected_template_version=strategy.version, lots=1,
+        entry_conditions=policy.entry_conditions, stop_loss_amount=policy.stop_loss,
+        target_profit_amount=policy.target_profit, trailing_stop_amount=policy.trailing_stop,
+    )
 
 
 async def run_cycle(
@@ -305,7 +331,8 @@ def main() -> None:
         if not args.user_email:
             parser.error("--propose needs --user-email")
         templates = frozenset(args.templates.split(",")) if args.templates else None
-        unknown = templates - {item.key for item in STRATEGIES} if templates else set()
+        known = {item.key for item in STRATEGIES + STRATEGY_REGISTRY.calendars()}
+        unknown = templates - known if templates else set()
         if unknown:
             parser.error(f"Unknown templates: {sorted(unknown)}")
         asyncio.run(_propose_command(args.user_email, templates, args.create_user))

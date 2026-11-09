@@ -27,3 +27,10 @@ def test_settlement_rejects_malformed_or_non_finite_inputs():
     with pytest.raises(ValueError):
         calculate_expiry_settlement([{**leg, "quantity_units": 0}],
                                     Decimal("-100"), Decimal("25100"))
+
+
+def test_a_later_expiry_leg_is_never_settled_at_intrinsic():
+    leg = {"instrument_key": "NSE_FO|1", "option_type": "CE", "side": "BUY", "strike": "25000",
+           "quantity_units": 65, "expiry": "2026-11-24"}
+    with pytest.raises(ValueError, match="later expiry"):
+        calculate_expiry_settlement([leg], Decimal("-1000"), Decimal("25100.00"))

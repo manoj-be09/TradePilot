@@ -1,7 +1,14 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from packages.learning.learning_candle import IST, Learner, play
+from packages.learning.learning_candle import (
+    IST,
+    SIZE_FEATURES,
+    Learner,
+    late_calls,
+    play,
+    size_calls,
+)
 from packages.market_data.contracts import HistoricalBar
 
 
@@ -71,7 +78,6 @@ def test_unsure_calls_are_passes_and_scored_apart() -> None:
 
 
 def test_late_call_follows_the_move_so_far_and_passes_on_tiny_moves() -> None:
-    from packages.learning.learning_candle import late_calls
 
     start = datetime(2026, 11, 5, 10, 0, tzinfo=IST)
 
@@ -86,3 +92,30 @@ def test_late_call_follows_the_move_so_far_and_passes_on_tiny_moves() -> None:
     turns = late_calls(up + flat, after=2)
     assert [(t.p_green, t.actual) for t in turns] == [(1.0, 0), (0.5, None)]
     assert late_calls(up[1:], after=2) == []  # first minute missing: no call
+
+
+def _clustered(days: int) -> list[HistoricalBar]:
+    """Flat price, but the range runs in blocks: 15 wide candles, then 15 narrow ones."""
+    bars, price = [], Decimal(24000)
+    for day in range(days):
+        start = datetime(2026, 9, 1, 9, 15, tzinfo=IST) + timedelta(days=day)
+        for i in range(75):
+            wick = Decimal(20) if (i // 15 + day) % 2 else Decimal(3)
+            bars.append(HistoricalBar(timestamp=start + timedelta(minutes=5 * i), open=price,
+                                      high=price + wick, low=price - wick,
+                                      close=price + 1, volume=0))
+    return bars
+
+
+def test_big_or_small_learns_clustered_ranges_once_and_skips_missing_vix() -> None:
+    bars = _clustered(30)
+    learner = Learner.fresh(len(SIZE_FEATURES))
+    turns = size_calls(learner, bars, _vix(bars))
+    assert learner.played and turns[0].timestamp.date() > bars[19 * 75].timestamp.date()
+    assert learner.calls > 100 and learner.calls_right / learner.calls > 0.8
+    played = learner.played
+    size_calls(learner, bars, _vix(bars))
+    assert learner.played == played  # replaying the same candles learns nothing twice
+    assert size_calls(Learner.fresh(len(SIZE_FEATURES)), bars, []) == []  # no VIX: no call
+    pending = size_calls(Learner.fresh(len(SIZE_FEATURES)), bars[:-10], _vix(bars))
+    assert pending[-1].timestamp is None and pending[-1].actual is None

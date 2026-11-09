@@ -5,10 +5,15 @@ Usage:
   PYTHONPATH=. python scripts/play-learning-candle.py --live      # play during market hours
   PYTHONPATH=. python scripts/play-learning-candle.py --reset ... # forget everything
   PYTHONPATH=. python scripts/play-learning-candle.py --after 2   # late-call game (see below)
+  PYTHONPATH=. python scripts/play-learning-candle.py --size      # Big or Small (see below)
 
 --after N plays a different game: each candle is called N minutes after it opens, from the move
 so far, passing when that move is under --min-move bps. It watches part of the candle, so it is
 not a forecast; it keeps no state and writes no page.
+
+--size plays Big or Small: before each candle, guess whether its high-low range beats the usual
+range for that time of day, calling only when 75/25 sure. It learns like the colour game (state
+in data/learning_candle/size_state.json) and says nothing about direction.
 
 Read-only Upstox candle GETs. What it learned is kept in data/learning_candle/state.json, so
 each run continues from the last one. Simulated research only: not a signal or investment advice.
@@ -19,7 +24,17 @@ import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from packages.learning.learning_candle import IST, PASS_BELOW, Learner, Turn, late_calls, play
+from packages.learning.learning_candle import (
+    IST,
+    PASS_BELOW,
+    SIZE_FEATURES,
+    SIZE_SURE,
+    Learner,
+    Turn,
+    late_calls,
+    play,
+    size_calls,
+)
 from packages.learning.learning_candle_page import render
 from packages.market_data.contracts import HistoricalBar
 from packages.market_data.provider import get_market_data_provider
@@ -28,6 +43,7 @@ from packages.recorder.universe import INDIA_VIX_KEY, NIFTY_INDEX_KEY
 
 STATE = Path("data/learning_candle/state.json")
 PAGE = STATE.with_name("index.html")
+SIZE_STATE = STATE.with_name("size_state.json")
 FIVE = timedelta(minutes=5)
 
 
@@ -74,6 +90,48 @@ async def late_game(provider: UpstoxMarketDataProvider, args: argparse.Namespace
         await asyncio.sleep((wake - now).total_seconds() + 5)
 
 
+async def wait_for_next_candle() -> bool:
+    """Sleep until just after the next 5-minute candle closes; False once the market is shut."""
+    now = datetime.now(IST)
+    wake = now.replace(second=0, microsecond=0) + timedelta(minutes=5 - now.minute % 5)
+    if not (9 <= wake.hour < 15 or (wake.hour == 15 and wake.minute <= 30)):
+        print("Market closed; stopping.")
+        return False
+    await asyncio.sleep((wake - now).total_seconds() + 5)  # let the candle settle at Upstox
+    return True
+
+
+async def size_game(provider: UpstoxMarketDataProvider, args: argparse.Namespace) -> None:
+    n = len(SIZE_FEATURES)
+    learner = Learner.fresh(n) if args.reset else Learner.load(SIZE_STATE, n)
+    while True:
+        days = max(args.days, 35)  # the usual range for a time of day needs 20 earlier sessions
+        nifty = await history(provider, NIFTY_INDEX_KEY, days)
+        vix = await history(provider, INDIA_VIX_KEY, days)
+        turns = size_calls(learner, nifty, vix)
+        learner.save(SIZE_STATE)
+        for turn in turns[-(1 if args.live and learner.played else args.show):]:
+            guess = ("PASS " if abs(turn.p_green - 0.5) < SIZE_SURE
+                     else "BIG  " if turn.p_green >= 0.5 else "SMALL")
+            if turn.timestamp is None:
+                print(f"  next candle    : {guess} (p_big {turn.p_green:.2f})")
+                continue
+            got = {1: "BIG  ", 0: "SMALL", None: "?    "}[turn.actual]
+            mark = "" if guess == "PASS " or turn.actual is None else (
+                "right" if (turn.p_green >= 0.5) == turn.actual else "WRONG")
+            print(f"  {turn.timestamp.astimezone(IST):%d %b %H:%M}  : {guess} "
+                  f"({turn.p_green:.2f}) got {got} {mark}")
+        if learner.calls:
+            print(f"Big or Small, {learner.played} candles: "
+                  f"{100 * learner.calls_right / learner.calls:.1f}% right on {learner.calls} sure "
+                  f"calls ({100 * learner.calls / learner.played:.0f}% of candles); "
+                  f"{100 * learner.right / learner.played:.1f}% on every candle; 'same size as "
+                  f"the last candle' {100 * learner.repeat_right / learner.played:.1f}%. "
+                  "Simulated; says nothing about direction.")
+        if not args.live or not await wait_for_next_candle():
+            return
+
+
 def report(learner: Learner, turns: list[Turn], show: int) -> None:
     for turn in turns[-show:]:
         guess = ("PASS " if abs(turn.p_green - 0.5) < PASS_BELOW
@@ -97,6 +155,8 @@ async def main(args: argparse.Namespace) -> None:
         raise SystemExit("Configured Upstox provider required")
     if args.after:
         return await late_game(provider, args)
+    if args.size:
+        return await size_game(provider, args)
     learner = Learner() if args.reset else Learner.load(STATE)
     while True:
         nifty = await history(provider, NIFTY_INDEX_KEY, args.days)
@@ -110,13 +170,9 @@ async def main(args: argparse.Namespace) -> None:
         report(learner, turns, 1 if args.live and learner.played else args.show)
         if not args.live:
             return
-        now = datetime.now(IST)
-        wake = now.replace(second=0, microsecond=0) + timedelta(minutes=5 - now.minute % 5)
-        if not (9 <= wake.hour < 15 or (wake.hour == 15 and wake.minute <= 30)):
-            print("Market closed; stopping.")
-            return
         args.days = 5  # live passes only need today's candles plus warm-up history
-        await asyncio.sleep((wake - now).total_seconds() + 5)  # let the candle settle at Upstox
+        if not await wait_for_next_candle():
+            return
 
 
 if __name__ == "__main__":
@@ -127,6 +183,8 @@ if __name__ == "__main__":
     parser.add_argument("--show", type=int, default=10, help="recent turns to print")
     parser.add_argument("--after", type=int, choices=(1, 2, 3, 4),
                         help="late-call game: call each candle this many minutes in")
+    parser.add_argument("--size", action="store_true",
+                        help="Big or Small: guess each candle's size instead of its colour")
     parser.add_argument("--min-move", type=float, default=2.0,
                         help="late-call game: pass when the move so far is under this (bps)")
     asyncio.run(main(parser.parse_args()))

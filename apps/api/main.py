@@ -200,6 +200,7 @@ from packages.paper_trading.margin import (
     is_expiry_day,
     years_to_expiry,
 )
+from packages.paper_trading.market_context import clock_metrics, recorded_index_metrics
 from packages.paper_trading.observed_entries import replay_observed_entries
 from packages.paper_trading.observed_exits import replay_observed_exits
 from packages.paper_trading.official_index_close import (
@@ -2980,6 +2981,8 @@ async def _open_paper_trade_with_provider(
         "largest_put_oi_share_pct": features.largest_put_oi_share_pct,
         "median_relative_spread_pct": features.median_relative_spread_pct,
         "underlying_spot": chain.underlying_spot,
+        **clock_metrics(chain.as_of, body.expiry),
+        **recorded_index_metrics(session, chain.as_of),
     }
     entry_conditions = [
         EntryCondition(

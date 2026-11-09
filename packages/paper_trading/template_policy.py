@@ -15,8 +15,8 @@ _TARGET_MULTIPLE_OF_STOP = Decimal("1.75")
 _UNBOUNDED_TARGET_MULTIPLE = Decimal("1.5")
 _TRAIL_SHARE_OF_TARGET = Decimal("0.35")
 _MINIMUM = Decimal(1)
-_BULLISH = {"bull_call_spread", "bull_put_spread", "long_call"}
-_BEARISH = {"bear_put_spread", "bear_call_spread", "long_put"}
+_BULLISH = {"bull_call_spread", "bull_put_spread", "long_call", "diagonal_call_spread"}
+_BEARISH = {"bear_put_spread", "bear_call_spread", "long_put", "diagonal_put_spread"}
 _NEUTRAL = {"iron_condor", "range_iron_condor"}
 # Sells premium, so it only enters when at-the-money implied volatility is elevated.
 _RICH_PREMIUM = {"range_iron_condor"}

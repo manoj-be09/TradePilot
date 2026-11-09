@@ -30,13 +30,13 @@ export const STRATEGY_CATALOG: StrategyCatalogEntry[] = [
   paper("inverse_iron_condor", "Inverse iron condor", "VOLATILITY", "Volatility", "Advanced", "Move-seeking inner wings with defined expiry risk."),
   paper("long_put_butterfly", "Long put butterfly", "SIDEWAYS", "Sideways", "Intermediate", "Defined-risk range structure using puts."),
   paper("long_call_butterfly", "Long call butterfly", "SIDEWAYS", "Sideways", "Intermediate", "Defined-risk range structure using calls."),
-  pending("calendar_call_spread", "Calendar call spread", "SIDEWAYS", "Sideways", "Intermediate", "Same-strike calls across two expiries."),
-  pending("calendar_put_spread", "Calendar put spread", "SIDEWAYS", "Sideways", "Intermediate", "Same-strike puts across two expiries."),
-  pending("diagonal_call_spread", "Diagonal call spread", "BULLISH", "Bullish", "Intermediate", "Call calendar with a strike bias."),
-  pending("diagonal_put_spread", "Diagonal put spread", "BEARISH", "Bearish", "Intermediate", "Put calendar with a strike bias."),
+  paper("call_calendar", "Call calendar", "SIDEWAYS", "Sideways", "Intermediate", "Same-strike calls across two expiries."),
+  paper("calendar_put_spread", "Put calendar", "SIDEWAYS", "Sideways", "Intermediate", "Same-strike puts across two expiries."),
+  paper("diagonal_call_spread", "Call diagonal", "BULLISH", "Bullish", "Intermediate", "Call calendar with a strike bias."),
+  paper("diagonal_put_spread", "Put diagonal", "BEARISH", "Bearish", "Intermediate", "Put calendar with a strike bias."),
   paper("bull_call_spread", "Bull call spread", "BULLISH", "Bullish", "Intermediate", "Defined-risk directional upside."),
   paper("bear_put_spread", "Bear put spread", "BEARISH", "Bearish", "Intermediate", "Defined-risk directional downside."),
-  pending("inverse_iron_butterfly", "Inverse iron butterfly", "VOLATILITY", "Volatility", "Intermediate", "Requires a validated tail-risk and margin model."),
+  paper("inverse_iron_butterfly", "Inverse iron butterfly", "VOLATILITY", "Volatility", "Intermediate", "Bought straddle with sold wings: a defined-risk bet on a move."),
   paper("short_put_butterfly", "Short put butterfly", "VOLATILITY", "Volatility", "Intermediate", "Move-seeking put butterfly with bounded risk."),
   paper("short_call_butterfly", "Short call butterfly", "VOLATILITY", "Volatility", "Intermediate", "Move-seeking call butterfly with bounded risk."),
   paper("long_straddle", "Straddle", "VOLATILITY", "Volatility", "Intermediate", "Large move either way with capped premium risk."),
@@ -75,7 +75,7 @@ export const STRATEGY_CATALOG: StrategyCatalogEntry[] = [
   paper("strap", "Strap", "BULLISH", "Bullish", "Expert", "Bullish-biased volatility structure with a 2:1 option ratio."),
   paper("guts", "Guts", "VOLATILITY", "Volatility", "Expert", "Defined-risk ITM volatility structure."),
   research("short_guts", "Short guts", "SIDEWAYS", "Sideways", "Expert", "Short ITM volatility structure with tail risk."),
-  pending("double_diagonal", "Double diagonal", "SIDEWAYS", "Sideways", "Expert", "Two diagonal spreads requiring multi-expiry modeling."),
+  paper("double_diagonal", "Double diagonal", "SIDEWAYS", "Sideways", "Expert", "A put diagonal and a call diagonal around the market."),
 ];
 
 export const STRATEGY_CATALOG_META: Record<string, { bias: StrategyMarketBias; label: string; note: string }> = Object.fromEntries(

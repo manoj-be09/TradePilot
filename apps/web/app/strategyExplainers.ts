@@ -326,6 +326,72 @@ export const STRATEGY_EXPLAINERS: Record<string, StrategyExplainer> = {
     helps: "A clear move either way.",
     risk: "It risks more than it can make, so it needs moves to happen often.",
   },
+  inverse_iron_butterfly: {
+    idea: "Pay for a straddle and sell options further out to cut the cost: a defined-risk bet that NIFTY moves away from today's level.",
+    how: "Buy a put and a call at NIFTY's strike, and sell a put and a call two strikes (100 points) out on each side.",
+    example: [
+      "NIFTY at 25,000: buy the 25,000 put and call, sell the 24,900 put and 25,100 call: you pay ₹50, or ₹3,250.",
+      "NIFTY ends below 24,900 or above 25,100: you make ₹3,250. That is the most.",
+      "NIFTY ends at 25,000: you lose ₹3,250. That is the most.",
+    ],
+    helps: "A clear move either way before expiry.",
+    risk: "A quiet market. It needs a move of more than half the wing width just to break even.",
+  },
+  call_calendar: {
+    idea: "Sell this week's call and buy the same call for next week. You gain as this week's call loses value faster than next week's.",
+    how: "Sell the call at NIFTY's strike on this expiry and buy the same strike on the next expiry. The trade is closed before this week's expiry.",
+    example: [
+      "NIFTY at 25,000: sell this week's 25,000 call at ₹100 and buy next week's at ₹150: you pay ₹50, or ₹3,250.",
+      "NIFTY near 25,000 at this week's expiry: this week's call is nearly worthless and next week's still has value, so you gain.",
+      "A big move either way: both calls move together and you can lose up to the ₹3,250 paid.",
+    ],
+    helps: "A calm market near the strike, and option prices that hold up or rise.",
+    risk: "A big move either way, or a fall in option prices across expiries.",
+  },
+  calendar_put_spread: {
+    idea: "The put version of a calendar: sell this week's put and buy the same put for next week, gaining as this week's put loses value faster.",
+    how: "Sell the put at NIFTY's strike on this expiry and buy the same strike on the next expiry. The trade is closed before this week's expiry.",
+    example: [
+      "NIFTY at 25,000: sell this week's 25,000 put at ₹100 and buy next week's at ₹150: you pay ₹50, or ₹3,250.",
+      "NIFTY near 25,000 at this week's expiry: this week's put is nearly worthless and next week's still has value, so you gain.",
+      "A big move either way: you can lose the ₹3,250 paid and a little more, as next week's put can trade slightly below its in-the-money value.",
+    ],
+    helps: "A calm market near the strike, and option prices that hold up or rise.",
+    risk: "A big move either way, or a fall in option prices across expiries.",
+  },
+  diagonal_call_spread: {
+    idea: "A call calendar with a bullish tilt: buy next week's call at NIFTY's strike and sell this week's call a little higher.",
+    how: "Sell the call two strikes (100 points) above NIFTY on this expiry and buy the call at NIFTY's strike on the next expiry. Closed before this week's expiry.",
+    example: [
+      "NIFTY at 25,000: sell this week's 25,100 call at ₹60 and buy next week's 25,000 call at ₹150: you pay ₹90, or ₹5,850.",
+      "NIFTY drifts up towards 25,100 by this week's expiry: the sold call expires near worthless and the bought call gains, so you gain.",
+      "NIFTY falls hard: you can lose up to the ₹5,850 paid.",
+    ],
+    helps: "A slow rise towards the sold strike.",
+    risk: "A sharp fall, or a fall in option prices.",
+  },
+  diagonal_put_spread: {
+    idea: "A put calendar with a bearish tilt: buy next week's put at NIFTY's strike and sell this week's put a little lower.",
+    how: "Sell the put two strikes (100 points) below NIFTY on this expiry and buy the put at NIFTY's strike on the next expiry. Closed before this week's expiry.",
+    example: [
+      "NIFTY at 25,000: sell this week's 24,900 put at ₹60 and buy next week's 25,000 put at ₹150: you pay ₹90, or ₹5,850.",
+      "NIFTY drifts down towards 24,900 by this week's expiry: the sold put expires near worthless and the bought put gains, so you gain.",
+      "NIFTY rises hard: you can lose up to the ₹5,850 paid.",
+    ],
+    helps: "A slow fall towards the sold strike.",
+    risk: "A sharp rise, or a fall in option prices.",
+  },
+  double_diagonal: {
+    idea: "A put diagonal and a call diagonal together: you gain if NIFTY stays in a range while this week's options lose value.",
+    how: "Sell a put and a call three strikes (150 points) out on this expiry, and buy a put and a call one strike (50 points) out on the next expiry. Closed before this week's expiry.",
+    example: [
+      "NIFTY at 25,000: sell this week's 24,850 put and 25,150 call at ₹40 each, buy next week's 24,950 put and 25,050 call at ₹130 each: you pay ₹180, or ₹11,700.",
+      "NIFTY stays between 24,850 and 25,150 to this week's expiry: the sold options expire near worthless while the bought ones keep value, so you gain.",
+      "A big move either way: you can lose about the ₹11,700 paid.",
+    ],
+    helps: "A range-bound market with steady or rising option prices.",
+    risk: "A strong trend, or a fall in option prices across expiries.",
+  },
   nifty_futures_intraday_long: {
     idea: "Buy one NIFTY future when the trend and option data point up, and close it the same day.",
     how: "One lot of the nearest NIFTY future. Every point NIFTY moves is ₹65 profit or loss.",

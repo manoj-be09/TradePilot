@@ -121,6 +121,7 @@ def test_paper_workflow_is_authenticated_and_persists_simulated_fills(client, mo
         "bear_call_spread",
         "iron_condor",
         "range_iron_condor",
+        "inverse_iron_butterfly",
         "iron_butterfly",
         "long_call_condor",
         "long_put_condor",

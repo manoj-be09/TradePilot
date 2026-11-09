@@ -31,7 +31,8 @@ STANCE_STRATEGIES: dict[Stance, tuple[str, ...]] = {
         "long_call_condor", "long_put_condor",
     ),
     "VOLATILITY": (
-        "long_straddle", "long_strangle", "inverse_iron_condor", "short_call_butterfly",
+        "long_straddle", "long_strangle", "inverse_iron_condor", "inverse_iron_butterfly",
+        "short_call_butterfly",
         "short_put_butterfly", "short_call_condor", "short_put_condor",
         "call_ratio_backspread", "put_ratio_backspread", "guts",
     ),

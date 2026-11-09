@@ -225,7 +225,12 @@ from packages.paper_trading.session import (
     expiry_square_off_due,
     require_derivatives_session_open,
 )
-from packages.paper_trading.strategies import STRATEGIES, StrategyDefinition, get_strategy
+from packages.paper_trading.strategies import (
+    STRATEGIES,
+    StrategyDefinition,
+    calendar_max_loss,
+    get_strategy,
+)
 from packages.paper_trading.transactions import (
     PaperLedgerMismatchError,
     assert_consistent_ledger,
@@ -3285,10 +3290,15 @@ async def _open_paper_trade_with_provider(
                     f"Entry spread ₹{spread_cost:.2f} is over half the {label} of "
                     f"₹{limit}; waiting for a narrower book"))
     if multi_expiry:
-        # A long call calendar (checked by the registry) loses at most the debit paid.
+        # The registry allows only bounded calendars and diagonals; this is their worst case.
         if cash_flow >= 0:
             raise HTTPException(409, "A calendar must be entered for a debit; trade rejected")
-        max_loss = -cash_flow
+        later_expiry = max(contract.expiry for contract, _, _ in selected)
+        max_loss = calendar_max_loss(
+            ((contract.option_type, contract.strike, lots if side == "BUY" else -lots,
+              contract.expiry != body.expiry) for contract, side, lots in selected),
+            cash_flow, lot_size, (later_expiry - body.expiry).days,
+        ).quantize(_CENT, rounding=ROUND_HALF_UP)
     else:
         selected_strikes = [contract.strike for contract, _, _ in selected]
         spot = chain.underlying_spot or Decimal(1)

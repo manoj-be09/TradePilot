@@ -12,6 +12,12 @@ RuleMetric = Literal[
     "largest_put_oi_share_pct",
     "median_relative_spread_pct",
     "underlying_spot",
+    "india_vix",
+    "india_vix_change_pct",
+    "nifty_change_pct",
+    "nifty_range_pct",
+    "minutes_since_open",
+    "days_to_expiry",
 ]
 RuleOperator = Literal["GT", "GTE", "LT", "LTE"]
 

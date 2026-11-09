@@ -44,6 +44,7 @@ from packages.paper_trading.margin import (
     estimate_position_margin,
     years_to_expiry,
 )
+from packages.paper_trading.market_context import clock_metrics
 from packages.paper_trading.rules import EntryCondition, evaluate_entry_conditions
 from packages.paper_trading.strategies import StrategyDefinition
 from packages.paper_trading.template_policy import entry_conditions, template_policy
@@ -431,6 +432,7 @@ def _run_template_expiry(
             "put_call_ratio_oi": ratios.get(moment),
             "atm_iv_pct": _straddle_iv_pct(calls, puts, spot, close_dt - moment),
             "median_relative_spread_pct": config.half_spread_pct * 2,
+            **clock_metrics(moment, history.expiry),
         })
         if all(result.passed for result in results):
             return _simulate(history, config, closes, legs, moment, spot, reference)

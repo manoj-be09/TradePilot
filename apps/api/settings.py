@@ -69,6 +69,27 @@ class Settings(BaseSettings):
     registration_ip_attempts: int = Field(default=12, ge=1, le=1000)
     registration_identifier_attempts: int = Field(default=3, ge=1, le=1000)
     registration_window_seconds: int = Field(default=3600, ge=30, le=86400)
+    # Sign-up email check. Off by default; turning it on needs SMTP and the web app's URL.
+    email_verification_required: bool = False
+    email_verification_hours: int = Field(default=24, ge=1, le=168)
+    public_web_url: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from: str | None = None
+    smtp_starttls: bool = True
+
+    @model_validator(mode="after")
+    def require_email_delivery(self) -> Self:
+        if self.email_verification_required:
+            if not (self.smtp_host and self.smtp_from and self.public_web_url):
+                raise ValueError("EMAIL_VERIFICATION_REQUIRED needs SMTP_HOST, SMTP_FROM and "
+                                 "PUBLIC_WEB_URL")
+            local = self.public_web_url.startswith(("http://localhost", "http://127.0.0.1"))
+            if not (self.public_web_url.startswith("https://") or local):
+                raise ValueError("PUBLIC_WEB_URL must use https outside localhost")
+        return self
 
     @model_validator(mode="after")
     def require_deployment_secret(self) -> Self:

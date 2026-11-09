@@ -31,6 +31,7 @@ from apps.api.backtest_schemas import (
     ScheduledOptionsBacktestRequest,
 )
 from apps.api.capabilities import CapabilityMatrix, current_capabilities
+from apps.api.email_verification import is_verified, issue_token, redeem, send_link
 from apps.api.equity_routes import router as equity_router
 from apps.api.futures_routes import router as futures_router
 from apps.api.live_routes import router as live_router
@@ -79,14 +80,17 @@ from apps.api.schemas import (
     InstrumentResponse,
     LoginRequest,
     RegisterRequest,
+    ResendVerificationRequest,
     SecurityActivityResponse,
     TokenResponse,
     UserResponse,
+    VerificationPendingResponse,
+    VerifyEmailRequest,
 )
 from apps.api.services.futures_paper import MAX_WAITING_PAPER_STRATEGIES, monitor_futures_exits
 from apps.api.services.paper_monitor import monitor_exits
 from apps.api.services.strategy_eligibility import StrategyNotEligible, eligibility_refusal
-from apps.api.settings import get_settings
+from apps.api.settings import Settings, get_settings
 from apps.api.strategy_schemas import (
     StrategyDefinitionSnapshot,
     StrategyVersionCreateRequest,
@@ -111,6 +115,7 @@ from packages.database.models import (
     AuditEvent,
     AuthSession,
     BacktestRun,
+    EmailVerification,
     Instrument,
     PaperAccount,
     PaperCapitalAdjustment,
@@ -480,13 +485,13 @@ def _entry_replay(
 
 @app.post(
     "/auth/register",
-    response_model=TokenResponse,
+    response_model=TokenResponse | VerificationPendingResponse,
     status_code=status.HTTP_201_CREATED,
     tags=["authentication"],
 )
 def register(
     body: RegisterRequest, session: SessionDep, response: Response, request: Request
-) -> TokenResponse:
+) -> TokenResponse | VerificationPendingResponse:
     email = str(body.email).strip().lower()
     try:
         retry_after = get_registration_throttle().consume(
@@ -516,11 +521,71 @@ def register(
             details={"role": Role.VIEWER.value},
         )
     )
+    response.headers["Cache-Control"] = "no-store"
+    settings = get_settings()
+    if settings.email_verification_required:
+        return _send_verification(session, user, settings)
     auth_session = _new_auth_session(session, user)
     session.commit()
     session.refresh(user)
-    response.headers["Cache-Control"] = "no-store"
     return _token_response(user, auth_session)
+
+
+def _send_verification(session: SessionDep, user: User, settings: Settings,
+                       ) -> VerificationPendingResponse:
+    """Store a new link token, then send it; the account stays unable to sign in until used."""
+    token = issue_token(session, user, settings)
+    session.commit()
+    sent = send_link(settings, user.email, token)
+    if sent:
+        row = session.get(EmailVerification, user.id)
+        if row is not None:
+            row.sent_at = datetime.now(timezone.utc)
+        session.add(AuditEvent(actor_user_id=user.id,
+                               event_type="auth.email_verification.sent", details={}))
+        session.commit()
+    return VerificationPendingResponse(email_sent=sent)
+
+
+@app.post("/auth/verify-email", response_model=TokenResponse, tags=["authentication"])
+def verify_email(body: VerifyEmailRequest, session: SessionDep,
+                 response: Response) -> TokenResponse:
+    """Open the emailed link: confirms the address and signs the account in."""
+    response.headers["Cache-Control"] = "no-store"
+    user = redeem(session, body.token)
+    if user is None:
+        session.rollback()
+        raise HTTPException(400, "This confirmation link is invalid, already used or expired",
+                            headers={"Cache-Control": "no-store"})
+    session.add(AuditEvent(actor_user_id=user.id,
+                           event_type="auth.email_verification.succeeded", details={}))
+    auth_session = _new_auth_session(session, user)
+    session.commit()
+    return _token_response(user, auth_session)
+
+
+@app.post("/auth/resend-verification", status_code=status.HTTP_202_ACCEPTED,
+          tags=["authentication"])
+def resend_verification(body: ResendVerificationRequest, session: SessionDep,
+                        response: Response, request: Request) -> dict[str, str]:
+    """Send a new link to an unconfirmed account. The reply never says whether one exists."""
+    email = str(body.email).strip().lower()
+    try:
+        retry_after = get_registration_throttle().consume(
+            email, request.client.host if request.client else "unknown")
+    except LoginThrottleUnavailable:
+        raise HTTPException(503, "Email confirmation temporarily unavailable") from None
+    if retry_after is not None:
+        raise HTTPException(429, "Too many requests; try again later",
+                            headers={"Retry-After": str(retry_after)})
+    response.headers["Cache-Control"] = "no-store"
+    settings = get_settings()
+    user = session.scalar(select(User).where(User.email == email))
+    if (settings.email_verification_required and user is not None
+            and session.get(EmailVerification, user.id) is not None
+            and not is_verified(session, user)):
+        _send_verification(session, user, settings)
+    return {"status": "If that account is waiting for confirmation, a new link is on its way."}
 
 
 @app.post("/auth/login", response_model=TokenResponse, tags=["authentication"])
@@ -551,6 +616,15 @@ def login(
             status_code=401,
             detail="Invalid email or password",
             headers={"WWW-Authenticate": "Bearer", "Cache-Control": "no-store"},
+        )
+    if get_settings().email_verification_required and not is_verified(session, user):
+        session.add(AuditEvent(actor_user_id=user.id, event_type="auth.login.unverified",
+                               details={}))
+        session.commit()
+        raise HTTPException(
+            status_code=403,
+            detail="Confirm your email first: open the link we sent, or ask for a new one",
+            headers={"Cache-Control": "no-store"},
         )
     session.add(AuditEvent(actor_user_id=user.id, event_type="auth.login.succeeded", details={}))
     auth_session = _new_auth_session(session, user)

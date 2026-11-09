@@ -66,6 +66,19 @@ class AuthSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class EmailVerification(Base):
+    """A pending or completed sign-up email check. A user with no row predates the check."""
+
+    __tablename__ = "email_verifications"
+
+    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)  # sha256 of the link token
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Instrument(Base):
     __tablename__ = "instruments"
     __table_args__ = (

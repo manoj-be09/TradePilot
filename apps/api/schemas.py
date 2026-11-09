@@ -33,6 +33,25 @@ class TokenResponse(BaseModel):
     expires_in: int
 
 
+class VerificationPendingResponse(BaseModel):
+    """Sign-up succeeded but the account signs in only after its email link is opened."""
+
+    verification_required: Literal[True] = True
+    email_sent: bool
+
+
+class VerifyEmailRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(min_length=16, max_length=128)
+
+
+class ResendVerificationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+
+
 class SecurityActivityResponse(BaseModel):
     id: UUID
     event_type: Literal[

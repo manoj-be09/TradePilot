@@ -30,6 +30,8 @@ type TokenResponse = {
   expires_in: number;
 };
 
+type VerificationPending = { verification_required: true; email_sent: boolean };
+
 type SecurityActivity = {
   id: string;
   event_type: "auth.registration.succeeded" | "auth.login.succeeded" | "auth.password_change.failed" | "auth.password_changed" | "auth.session.revoked" | "auth.session.legacy_upgraded";
@@ -749,6 +751,8 @@ export default function Home() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
+  const [authNotice, setAuthNotice] = useState("");
+  const [verifyEmail, setVerifyEmail] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -900,6 +904,28 @@ export default function Home() {
   }, [batchPolicyReview, chain?.as_of, chain?.expiry, selectedExpiry, selectedOptionIndex, selectedPaperStrike, paperLots]);
 
   useEffect(() => {
+    const verifyToken = new URLSearchParams(window.location.search).get("verify");
+    if (verifyToken) {
+      // The emailed link opens the app; the token is used once and removed from the address bar.
+      window.history.replaceState(null, "", window.location.pathname);
+      void (async () => {
+        try {
+          const response = await fetch(`${API_URL}/auth/verify-email`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: verifyToken }),
+          });
+          const result = await readJson<TokenResponse>(response);
+          window.sessionStorage.setItem("market-data-session", result.access_token);
+          setToken(result.access_token);
+        } catch (error) {
+          setAuthError(authRequestError(error));
+        } finally {
+          setAuthReady(true);
+        }
+      })();
+      return;
+    }
     const savedToken = window.sessionStorage.getItem("market-data-session");
     if (!savedToken) {
       setAuthReady(true);
@@ -1878,6 +1904,7 @@ export default function Home() {
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAuthError("");
+    setAuthNotice("");
     setAuthBusy(true);
     try {
       const response = await fetch(`${API_URL}/auth/${authMode}`, {
@@ -1885,11 +1912,38 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      const result = await readJson<TokenResponse>(response);
+      setVerifyEmail(authMode === "login" && response.status === 403 ? email : "");
+      const result = await readJson<TokenResponse | VerificationPending>(response);
+      if ("verification_required" in result) {
+        setVerifyEmail(email);
+        setAuthNotice(result.email_sent
+          ? `We sent a confirmation link to ${email}. Open it to finish creating your account.`
+          : "Your account was created, but the confirmation email could not be sent. Try sending it again.");
+        setAuthMode("login");
+        setPassword("");
+        return;
+      }
       window.sessionStorage.setItem("market-data-session", result.access_token);
       setToken(result.access_token);
       setPendingEntryError("");
       setPassword("");
+    } catch (error) {
+      setAuthError(authRequestError(error));
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function resendVerification() {
+    setAuthError("");
+    setAuthBusy(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/resend-verification`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: verifyEmail }),
+      });
+      setAuthNotice((await readJson<{ status: string }>(response)).status);
     } catch (error) {
       setAuthError(authRequestError(error));
     } finally {
@@ -2923,6 +2977,12 @@ export default function Home() {
               />
               {authMode === "register" ? <p className="auth-hint">Use at least 12 characters.</p> : null}
               {authError ? <p className="error-banner" role="alert">{authError}</p> : null}
+              {authNotice ? <p className="auth-hint" role="status">{authNotice}</p> : null}
+              {verifyEmail ? (
+                <button className="inline-button" disabled={authBusy} onClick={() => void resendVerification()} type="button">
+                  Send the confirmation link again
+                </button>
+              ) : null}
               <button className="primary-button auth-submit" disabled={authBusy} type="submit">
                 {authBusy ? "Please wait…" : authMode === "login" ? "Sign in" : "Create account"}
               </button>

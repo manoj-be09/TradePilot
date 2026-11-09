@@ -17,9 +17,9 @@ _TRAIL_SHARE_OF_TARGET = Decimal("0.35")
 _MINIMUM = Decimal(1)
 _BULLISH = {"bull_call_spread", "bull_put_spread", "long_call"}
 _BEARISH = {"bear_put_spread", "bear_call_spread", "long_put"}
-_NEUTRAL = {"iron_condor", "wide_iron_condor"}
+_NEUTRAL = {"iron_condor", "range_iron_condor"}
 # Sells premium, so it only enters when at-the-money implied volatility is elevated.
-_RICH_PREMIUM = {"wide_iron_condor"}
+_RICH_PREMIUM = {"range_iron_condor"}
 
 
 @dataclass(frozen=True)

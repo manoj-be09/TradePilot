@@ -26,7 +26,7 @@ STANCE_STRATEGIES: dict[Stance, tuple[str, ...]] = {
         "bear_put_spread", "bear_call_spread", "long_put", "call_broken_wing", "strip",
     ),
     "RANGE": (
-        "iron_condor", "wide_iron_condor", "iron_butterfly", "long_call_butterfly",
+        "iron_condor", "range_iron_condor", "iron_butterfly", "long_call_butterfly",
         "long_put_butterfly",
         "long_call_condor", "long_put_condor",
     ),

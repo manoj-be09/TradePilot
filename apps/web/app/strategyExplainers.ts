@@ -93,7 +93,7 @@ export const STRATEGY_EXPLAINERS: Record<string, StrategyExplainer> = {
     helps: "A quiet market that stays in a narrow range.",
     risk: "A big move either way. Wins are often small and losses come in one go.",
   },
-  wide_iron_condor: {
+  range_iron_condor: {
     idea: "An iron condor with a much wider range, entered only when options are expensive. You get paid for NIFTY staying inside about 1.2% either way.",
     how: "Sell a put and a call six strikes (300 points) either side of NIFTY, and buy protection six strikes further out on each side. It only enters when at-the-money implied volatility is 16% or more.",
     example: [

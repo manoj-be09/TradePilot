@@ -112,8 +112,8 @@ STRATEGY_REGISTRY = StrategyRegistry(
             ),
         ),
         StrategyDefinition(
-            "wide_iron_condor",
-            "Wide iron condor",
+            "range_iron_condor",
+            "Range iron condor",
             "Sell the put and call six strikes out, protected six strikes further on each "
             "side, for a range-bound market with rich option prices.",
             (

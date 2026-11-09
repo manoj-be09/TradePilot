@@ -93,7 +93,7 @@ def test_a_template_filter_saves_only_those_templates_for_a_separate_account():
 
     wide = _Provider(strikes=[Decimal(22000 + 50 * step) for step in range(41)])
     saved, skipped = asyncio.run(propose(None, object(), wide, create, TODAY,
-                                         frozenset({"wide_iron_condor"})))
-    assert (saved, skipped) == (["wide_iron_condor"], [])
+                                         frozenset({"range_iron_condor"})))
+    assert (saved, skipped) == (["range_iron_condor"], [])
     rules = {(item.metric, item.operator, item.threshold) for item in requests[0].entry_conditions}
     assert ("atm_iv_pct", "GTE", Decimal(16)) in rules

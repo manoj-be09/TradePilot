@@ -78,6 +78,6 @@ def test_entry_rules_match_the_template_view_and_always_limit_the_spread():
         ("put_call_ratio_oi", "GTE"), ("put_call_ratio_oi", "LTE"), spread,
     ]
     assert metrics("strip") == [spread]
-    assert metrics("wide_iron_condor") == [
+    assert metrics("range_iron_condor") == [
         ("put_call_ratio_oi", "GTE"), ("put_call_ratio_oi", "LTE"), ("atm_iv_pct", "GTE"), spread,
     ]

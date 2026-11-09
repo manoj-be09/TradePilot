@@ -523,8 +523,8 @@ function paperTemplatePolicy(strategyKey: string, payoff: PayoffEstimate) {
   const trailingStop = Math.max(1, targetProfit * 0.35);
   const bullish = new Set(["bull_call_spread", "bull_put_spread", "long_call"]);
   const bearish = new Set(["bear_put_spread", "bear_call_spread", "long_put"]);
-  const neutral = new Set(["iron_condor", "wide_iron_condor"]);
-  const richPremium = new Set(["wide_iron_condor"]);
+  const neutral = new Set(["iron_condor", "range_iron_condor"]);
+  const richPremium = new Set(["range_iron_condor"]);
   const conditions: EntryConditionDraft[] = [
     ...(bullish.has(strategyKey) ? [{ metric: "put_call_ratio_oi" as RuleMetric, operator: "GTE" as RuleOperator, threshold: "1.00" }] : []),
     ...(bearish.has(strategyKey) ? [{ metric: "put_call_ratio_oi" as RuleMetric, operator: "LTE" as RuleOperator, threshold: "1.00" }] : []),

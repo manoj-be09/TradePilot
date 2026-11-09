@@ -123,3 +123,29 @@ def test_big_or_small_learns_clustered_ranges_once_and_skips_missing_vix() -> No
     assert size_calls(Learner.fresh(len(SIZE_FEATURES)), bars, []) == []  # no VIX: no call
     pending = size_calls(Learner.fresh(len(SIZE_FEATURES)), bars[:-10], _vix(bars))
     assert pending[-1].timestamp is None and pending[-1].actual is None
+
+
+def test_ticker_builds_the_forming_candle_and_rolls_over() -> None:
+    from packages.learning.learning_candle_ticker import Ticker, tick_state
+
+    t0 = datetime(2026, 11, 9, 10, 0, 1, tzinfo=IST)
+    ticker = Ticker()
+    ticker.update(t0, 25000.0, 1000.0)
+    ticker.update(t0 + timedelta(seconds=30), 25012.0, 1300.0)
+    candle = ticker.update(t0 + timedelta(seconds=60), 24995.0, 1450.0)
+    assert (candle.open, candle.high, candle.low, candle.close) == (25000, 25012, 24995, 24995)
+    assert candle.volume == 450 and not candle.partial and len(candle.path) == 3
+    nxt = ticker.update(t0 + timedelta(minutes=5), 24990.0, 1500.0)  # 10:05: new candle
+    assert nxt.open == 24990 and nxt.volume == 0 and list(ticker.volumes) == [450]
+    assert ticker.update(t0 + timedelta(minutes=5, seconds=5), 24991.0, None).volume is None
+    late = Ticker().update(datetime(2026, 11, 9, 10, 2, tzinfo=IST), 25000.0, None)
+    assert late.partial  # joined mid-candle without a seed: the open is not the real one
+    seeded = Ticker()
+    seeded.seed(datetime(2026, 11, 9, 10, 0, tzinfo=IST), 24980.0, 25020.0, 24970.0, 800.0, 5000.0)
+    candle = seeded.update(datetime(2026, 11, 9, 10, 2, tzinfo=IST), 25001.0, 5100.0)
+    assert (candle.open, candle.volume, candle.partial) == (24980, 900, False)
+    state = tick_state(seeded, {"last_price": 25001.0, "net_change": 11.0}, None,
+                       {"total_buy_quantity": 300.0, "total_sell_quantity": 200.0},
+                       datetime(2026, 11, 9, 10, 2, tzinfo=IST), "NIFTY FUT")
+    assert state["prev_close"] == 24990 and state["vix"] is None  # missing quote: no value
+    assert state["fut"]["buy_qty"] == 300 and state["fut"]["basis"] is None

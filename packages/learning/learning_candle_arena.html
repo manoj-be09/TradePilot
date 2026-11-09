@@ -114,6 +114,30 @@ h2 { margin:0 0 10px; font-size:12px; letter-spacing:.12em; text-transform:upper
 #reveal h3 { margin:0; font-size:44px; letter-spacing:-.02em; }
 #reveal .g { color:var(--green) } #reveal .r { color:var(--red) }
 #fx { position:fixed; inset:0; pointer-events:none; z-index:19; }
+.hero { margin-bottom:14px; }
+.hero-top { display:flex; gap:18px; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; }
+.small { font-size:12px; letter-spacing:.06em; text-transform:uppercase; }
+.price { font-size:46px; font-weight:800; letter-spacing:-.03em; font-variant-numeric:tabular-nums; transition:color .6s; }
+.price.up { color:var(--green); } .price.down { color:var(--red); } .price.stale { color:var(--muted); }
+.price.flash { animation:flash .6s; }
+@keyframes flash { from { text-shadow:0 0 24px currentColor } }
+.forming { text-align:right; }
+.ohlc { font-variant-numeric:tabular-nums; color:var(--muted); font-size:13px; }
+.ohlc b { color:var(--ink); font-weight:600; margin-right:8px; }
+.big2 { font-size:26px; font-weight:800; font-variant-numeric:tabular-nums; }
+.chart .forming-c { animation:glow 1.2s infinite alternate; }
+@keyframes glow { to { opacity:.6 } }
+.factors { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-top:12px; }
+.fac { background:#ffffff08; border:1px solid var(--line); border-radius:12px; padding:9px 10px; }
+.fac span { display:block; font-size:11px; color:var(--muted); letter-spacing:.05em; text-transform:uppercase; }
+.fac b { display:block; font-size:18px; font-variant-numeric:tabular-nums; margin:2px 0; }
+.fac small { color:var(--muted); font-size:12px; }
+.bar2 { height:6px; border-radius:99px; background:#ffffff14; overflow:hidden; margin-top:5px; display:flex; }
+.bar2 i { display:block; height:100%; }
+.how { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; }
+.how div { background:#ffffff08; border:1px dashed var(--line); border-radius:12px; padding:10px 12px; font-size:14px; }
+.how b { color:var(--gold); margin-right:6px; }
+@media (max-width:820px) { .factors { grid-template-columns:repeat(2,1fr); } .how { grid-template-columns:1fr; } .forming { text-align:left; } }
 footer { margin-top:18px; font-size:12px; color:var(--muted); text-align:center; }
 @media (max-width:820px) { .grid, .side { grid-template-columns:1fr; } .beast { font-size:46px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
@@ -133,6 +157,21 @@ footer { margin-top:18px; font-size:12px; color:var(--muted); text-align:center;
 <div class="banner" id="banner"></div>
 <p class="sr" aria-live="polite" id="announce" style="position:absolute;left:-9999px"></p>
 
+<section class="card hero">
+  <div class="hero-top">
+    <div><div class="muted small" id="pLabel">NIFTY 50 · live price</div>
+      <div class="price" id="price">–</div><div id="chg" class="muted">waiting for the first quote…</div></div>
+    <div class="forming"><div class="muted small" id="fLabel">This 5-minute candle</div>
+      <div class="ohlc" id="ohlc">–</div><div class="big2" id="fMove">–</div></div>
+  </div>
+  <div class="chart muted" id="chart">Waiting for candles…</div>
+  <div class="factors" id="factors"></div>
+</section>
+<div class="how">
+  <div><b>1</b>Watch the live candle build, second by second.</div>
+  <div><b>2</b>Before the timer hits zero, call the next candle: 🐂 green or 🐻 red.</div>
+  <div><b>3</b>When it opens, Wick shows its call. When it closes, see who was right.</div>
+</div>
 <div class="grid">
 <section class="card">
   <h2>The arena</h2>
@@ -186,7 +225,6 @@ footer { margin-top:18px; font-size:12px; color:var(--muted); text-align:center;
   <div class="badges" id="badges"></div>
 </section>
 
-<section class="card wide chart"><h2>Live candles</h2><div id="chart" class="muted">Waiting for candles…</div></section>
 
 <section class="card"><h2>Recent results</h2><div class="strip" id="strip"></div>
   <p class="muted" style="font-size:13px;margin:10px 0 0">Tile colour is the real candle. ✓ Wick was right, ✗ wrong, · it passed.</p></section>
@@ -218,7 +256,7 @@ const KEY = "lec-arena-player";
 const player = Object.assign({ points: 0, streak: 0, best: 0, guesses: {}, you: [0, 0], wick: [0, 0],
   beat: 0, badges: [], lastSeen: null }, JSON.parse(localStorage.getItem(KEY) || "{}"));
 const save = () => localStorage.setItem(KEY, JSON.stringify(player));
-let live = null, size = null, late = null, sound = false, audio = null;
+let live = null, size = null, late = null, tick = null, sound = false, audio = null, lastPrice = null;
 
 // ---------- time helpers (IST shown regardless of the viewer's zone)
 const istNow = () => new Date(Date.now() + IST);
@@ -379,23 +417,65 @@ function renderLive() {
   }).join("");
   const big = Math.max(...live.weights.map((x) => Math.abs(x[1])), 1e-9);
   $("weights").innerHTML = live.weights.map(([name, v]) => `<div class="w"><span>${name}</span><span class="wbar"><i style="${v >= 0 ? "left" : "right"}:50%;width:${(50 * Math.abs(v)) / big}%;background:var(--${v >= 0 ? "green" : "red"})"></i></span><span class="muted">${v >= 0 ? "+" : ""}${v.toFixed(2)}</span></div>`).join("");
-  renderChart(live.bars);
+  renderChart();
   settle(live.history); renderPick(); renderPlayer();
 }
 let lastBar = null;
-function renderChart(bars) {
+const fmt = (v, d = 2) => (v === null || v === undefined ? "–" : (+v).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d }));
+const big = (v) => (v === null || v === undefined ? "–" : v >= 1e7 ? `${(v / 1e7).toFixed(2)} Cr` : v >= 1e5 ? `${(v / 1e5).toFixed(2)} L` : Math.round(v).toLocaleString("en-IN"));
+function tickFresh() { return !!tick && Date.now() - Date.parse(tick.updated) < 6000; }
+function formingBar() {
+  const c = tick && tick.candle, bars = (live && live.bars) || [];
+  if (!c || !tickFresh() || (bars.length && Date.parse(c.start) <= Date.parse(bars[bars.length - 1][0]))) return null;
+  return [c.start, c.open, c.high, c.low, c.close];
+}
+function renderTick() {
+  if (!tick) return;
+  const fresh = tickFresh(), p = tick.price, el = $("price");
+  el.textContent = p === null ? "–" : fmt(p);
+  el.className = `price ${!fresh ? "stale" : tick.change > 0 ? "up" : tick.change < 0 ? "down" : ""}`;
+  if (fresh && lastPrice !== null && p !== lastPrice) { void el.offsetWidth; el.classList.add("flash"); }
+  lastPrice = p;
+  $("pLabel").textContent = fresh ? "NIFTY 50 · live price" : `NIFTY 50 · last quote ${hhmm(tick.updated)} IST (not live)`;
+  $("chg").innerHTML = tick.change === null || !tick.prev_close ? "–" : `<span style="color:var(--${tick.change >= 0 ? "green" : "red"})">${tick.change >= 0 ? "▲" : "▼"} ${fmt(Math.abs(tick.change))} (${fmt((100 * tick.change) / tick.prev_close)}%)</span> today`;
+  const c = tick.candle;
+  if (c && fresh) {
+    const mv = c.close - c.open, col = mv > 0 ? "green" : mv < 0 ? "red" : "muted";
+    $("fLabel").textContent = `${hhmm(c.start)} candle · forming${c.partial ? " · joined late, open is the first price seen" : ""}`;
+    $("ohlc").innerHTML = `<b>O ${fmt(c.open)}</b><b>H ${fmt(c.high)}</b><b>L ${fmt(c.low)}</b><b>C ${fmt(c.close)}</b>`;
+    $("fMove").innerHTML = `<span style="color:var(--${col})">${mv > 0 ? "🐂 green" : mv < 0 ? "🐻 red" : "flat"} ${mv >= 0 ? "+" : ""}${fmt(mv)}</span>`;
+  } else { $("fLabel").textContent = "This 5-minute candle"; $("ohlc").textContent = "–"; $("fMove").textContent = "–"; }
+  const f = tick.fut, d = tick.day, tiles = [];
+  const range = d.high !== null && d.low !== null && p !== null && d.high > d.low ? (p - d.low) / (d.high - d.low) : null;
+  tiles.push(["Day range", range === null ? "–" : `${Math.round(100 * range)}% up`, `L ${fmt(d.low, 0)} · H ${fmt(d.high, 0)}`,
+    range === null ? "" : `<div class="bar2"><i style="width:${100 * range}%;background:var(--blue)"></i></div>`]);
+  const vol = c && fresh ? c.volume : null;
+  tiles.push(["Volume, this candle", big(vol), vol !== null && c.avg_volume ? `${((100 * vol) / c.avg_volume).toFixed(0)}% of recent average` : "NIFTY futures contracts", ""]);
+  const tot = f.buy_qty !== null && f.sell_qty !== null ? f.buy_qty + f.sell_qty : null;
+  tiles.push(["Buyers vs sellers", tot ? `${Math.round((100 * f.buy_qty) / tot)}% buy` : "–", tot ? `${big(f.buy_qty)} bid · ${big(f.sell_qty)} ask` : "futures order book",
+    tot ? `<div class="bar2"><i style="width:${(100 * f.buy_qty) / tot}%;background:var(--green)"></i><i style="flex:1;background:var(--red)"></i></div>` : ""]);
+  tiles.push(["VWAP (futures)", fmt(f.vwap), f.vwap && f.price ? `futures ${f.price >= f.vwap ? "above" : "below"} by ${fmt(Math.abs(f.price - f.vwap))}` : "–", ""]);
+  tiles.push(["Open interest", big(f.oi), f.oi_change === null ? "–" : `${f.oi_change >= 0 ? "+" : "−"}${big(Math.abs(f.oi_change))} today`, ""]);
+  tiles.push(["India VIX", fmt(tick.vix), tick.vix_change === null ? "–" : `${tick.vix_change >= 0 ? "▲" : "▼"} ${fmt(Math.abs(tick.vix_change))} today · basis ${fmt(f.basis, 1)}`, ""]);
+  $("factors").innerHTML = tiles.map(([a, b, c2, e]) => `<div class="fac"><span>${a}</span><b>${b}</b><small>${c2}</small>${e}</div>`).join("");
+  renderChart();
+}
+function renderChart() {
+  const done = (live && live.bars) || [], fb = formingBar(), bars = fb ? [...done.slice(-35), fb] : done;
   if (!bars.length) return;
   const W = 720, H = 220, lo = Math.min(...bars.map((x) => x[3])), hi = Math.max(...bars.map((x) => x[2])), step = W / bars.length;
   const y = (v) => 10 + ((hi - v) / (hi - lo || 1)) * (H - 30), newest = bars[bars.length - 1][0];
   const body = bars.map(([t, o, h, l, c], i) => {
     const x = i * step + step / 2, col = c > o ? "var(--green)" : c < o ? "var(--red)" : "var(--muted)";
     const top = y(Math.max(o, c)), ht = Math.max(1.5, Math.abs(y(o) - y(c)));
-    const cls = t === newest && t !== lastBar ? "newest" : "";
+    const cls = fb && i === bars.length - 1 ? "forming-c" : t === newest && t !== lastBar ? "newest" : "";
     return `<g class="${cls}"><line x1="${x}" x2="${x}" y1="${y(h)}" y2="${y(l)}" stroke="${col}" stroke-width="1.5"/>` +
       `<rect x="${x - step * 0.32}" y="${top}" width="${step * 0.64}" height="${ht}" rx="2" fill="${col}"/>` +
       (i % 6 === 3 ? `<text x="${x}" y="${H - 4}" fill="var(--muted)" font-size="11" text-anchor="middle">${hhmm(t)}</text>` : "") + `</g>`;
   }).join("");
-  $("chart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Last ${bars.length} NIFTY 5-minute candles, latest close ${bars[bars.length - 1][4]}">${body}</svg>`;
+  const last = bars[bars.length - 1][4], ly = y(last);
+  const line = fb ? `<line x1="0" x2="${W}" y1="${ly}" y2="${ly}" stroke="var(--gold)" stroke-dasharray="4 4" opacity=".7"/><text x="4" y="${ly - 5}" fill="var(--gold)" font-size="12">${fmt(last)}</text>` : "";
+  $("chart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Last ${bars.length} NIFTY 5-minute candles${fb ? ", the last one still forming" : ""}, latest price ${last}">${body}${line}</svg>`;
   lastBar = newest;
 }
 function renderSide() {
@@ -414,7 +494,7 @@ function renderSide() {
 }
 
 // ---------- timer and polling
-function tick() {
+function clockTick() {
   const now = istNow(); $("clock").textContent = `${now.toISOString().slice(11, 19)} IST`;
   const open = marketOpen(now), at = nextAt();
   const target = Math.floor(Date.now() / FIVE) * FIVE + FIVE;
@@ -444,7 +524,8 @@ async function poll() {
   bn.classList.toggle("on", !!bn.textContent);
   if (stale && live) { live.next = null; renderLive(); }  // fail closed: never show an old call as current
 }
-renderPlayer(); tick(); poll();
-setInterval(tick, 1000); setInterval(poll, 5000);
+async function pollTick() { const t = await getJSON("tick.json"); if (t) tick = t; renderTick(); }
+renderPlayer(); clockTick(); poll(); pollTick();
+setInterval(clockTick, 1000); setInterval(poll, 5000); setInterval(pollTick, 1000);
 </script>
 </body></html>

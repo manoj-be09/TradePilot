@@ -23,7 +23,7 @@ import argparse
 import asyncio
 import json
 import shutil
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from packages.learning.learning_candle import (
@@ -38,10 +38,11 @@ from packages.learning.learning_candle import (
     size_calls,
 )
 from packages.learning.learning_candle_page import ARENA, calls_state, live_state
-from packages.market_data.contracts import HistoricalBar
+from packages.learning.learning_candle_ticker import Ticker, bucket, tick_state
+from packages.market_data.contracts import HistoricalBar, MarketDataProviderError
 from packages.market_data.provider import get_market_data_provider
 from packages.market_data.upstox import UpstoxMarketDataProvider
-from packages.recorder.universe import INDIA_VIX_KEY, NIFTY_INDEX_KEY
+from packages.recorder.universe import INDIA_VIX_KEY, NIFTY_INDEX_KEY, nifty_futures
 
 STATE = Path("data/learning_candle/state.json")
 PAGE = STATE.with_name("index.html")
@@ -55,7 +56,61 @@ def publish(name: str, state: dict[str, object]) -> None:
         shutil.copyfile(ARENA, PAGE)
     temp = PAGE.with_name(name + ".tmp")
     temp.write_text(json.dumps(state), encoding="utf-8")
-    temp.replace(PAGE.with_name(name))
+    try:
+        temp.replace(PAGE.with_name(name))
+    except PermissionError:
+        pass  # the page server is reading it this instant (Windows); the next write catches up
+
+
+def market_open(now: datetime) -> bool:
+    return now.weekday() < 5 and (9, 15) <= (now.hour, now.minute) < (15, 30)
+
+
+async def seed(provider: UpstoxMarketDataProvider, ticker: Ticker, now: datetime,
+               fut_key: str | None, cumulative: float | None) -> None:
+    """Start the forming candle from 1-minute candles, so joining mid-candle keeps its real open."""
+    start = bucket(now)
+    try:
+        minutes = [b for b in await provider.get_intraday(NIFTY_INDEX_KEY, "1m")
+                   if bucket(b.timestamp) == start]
+        fut_minutes = ([b for b in await provider.get_intraday(fut_key, "1m")
+                        if bucket(b.timestamp) == start] if fut_key else [])
+    except MarketDataProviderError:
+        return  # no seed: the candle shows as partial
+    if minutes and minutes[0].timestamp == start:
+        volume = sum(float(b.volume) for b in fut_minutes) if fut_minutes else None
+        ticker.seed(start, float(minutes[0].open), float(max(b.high for b in minutes)),
+                    float(min(b.low for b in minutes)), volume, cumulative)
+
+
+async def tick_loop(provider: UpstoxMarketDataProvider) -> None:
+    """One read-only quote a second for NIFTY, VIX and near-month futures -> tick.json."""
+    try:
+        futures = nifty_futures(await provider.search_instruments(
+            "NIFTY FUT", exchange="NSE", segment="FO"), date.today())
+    except MarketDataProviderError:
+        futures = []
+    fut_key = futures[0].instrument_key if futures else None
+    symbol = futures[0].trading_symbol if futures else None
+    keys = [NIFTY_INDEX_KEY, INDIA_VIX_KEY, *([fut_key] if fut_key else [])]
+    ticker, seeded = Ticker(), False
+    while market_open(now := datetime.now(IST)):
+        try:
+            items = await provider.get_quote_items(keys)
+        except MarketDataProviderError:
+            items = {}  # this second shows nothing new rather than an old price
+        nifty, fut = items.get(NIFTY_INDEX_KEY), items.get(fut_key) if fut_key else None
+        price = nifty.get("last_price") if nifty else None
+        cumulative = fut.get("volume") if fut else None
+        cumulative = float(cumulative) if isinstance(cumulative, (int, float)) else None
+        if isinstance(price, (int, float)) and price > 0:
+            if not seeded:
+                await seed(provider, ticker, now, fut_key, cumulative)
+                seeded = True
+            ticker.update(now, float(price), cumulative)
+        publish("tick.json", tick_state(ticker, nifty, items.get(INDIA_VIX_KEY), fut, now,
+                                        symbol))
+        await asyncio.sleep(max(0.0, 1 - (datetime.now(IST) - now).total_seconds()))
 FIVE = timedelta(minutes=5)
 
 
@@ -179,6 +234,13 @@ async def main(args: argparse.Namespace) -> None:
         return await late_game(provider, args)
     if args.size:
         return await size_game(provider, args)
+    if args.live:
+        await asyncio.gather(colour_game(provider, args), tick_loop(provider))
+    else:
+        await colour_game(provider, args)
+
+
+async def colour_game(provider: UpstoxMarketDataProvider, args: argparse.Namespace) -> None:
     learner = Learner() if args.reset else Learner.load(STATE)
     while True:
         nifty = await history(provider, NIFTY_INDEX_KEY, args.days)

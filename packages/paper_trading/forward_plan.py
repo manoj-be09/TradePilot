@@ -14,14 +14,25 @@ class ForwardPlan:
     version_ids: tuple[UUID, ...]
     start: date
     end: date
+    # Frozen versions the owner stopped mid-period: never armed again, still reported.
+    stopped_version_ids: tuple[UUID, ...] = ()
+    stopped_note: str = ""
+
+    def __post_init__(self) -> None:
+        if not set(self.stopped_version_ids) <= set(self.version_ids):
+            raise ValueError("A stopped version must be one of the plan's frozen versions")
 
     def to_json(self) -> str:
-        return json.dumps({
+        data = {
             "user_email": self.user_email,
             "version_ids": [str(item) for item in self.version_ids],
             "start": self.start.isoformat(),
             "end": self.end.isoformat(),
-        }, indent=2)
+        }
+        if self.stopped_version_ids:
+            data["stopped_version_ids"] = [str(item) for item in self.stopped_version_ids]
+            data["stopped_note"] = self.stopped_note
+        return json.dumps(data, indent=2)
 
     @classmethod
     def from_json(cls, text: str) -> "ForwardPlan":
@@ -31,6 +42,8 @@ class ForwardPlan:
             version_ids=tuple(UUID(item) for item in data["version_ids"]),
             start=date.fromisoformat(data["start"]),
             end=date.fromisoformat(data["end"]),
+            stopped_version_ids=tuple(UUID(item) for item in data.get("stopped_version_ids", [])),
+            stopped_note=data.get("stopped_note", ""),
         )
 
 

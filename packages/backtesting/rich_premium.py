@@ -105,9 +105,17 @@ def forecast_variance(past: Sequence[SessionMove]) -> float | None:
     return max(blend, _VARIANCE_FLOOR)
 
 
-def sessions_until_expiry(book: Book, decided_at: datetime) -> float:
-    """Trading time left in sessions, with each break before expiry counted as one more."""
+def sessions_until_expiry(book: Book, decided_at: datetime) -> float | None:
+    """Trading time left in sessions, with each break before expiry counted as one more.
+
+    None until the book's days run to its expiry. An expiry still trading has no later sessions
+    yet, and counting only the ones present overstates how rich its options are.
+    """
     remaining = [day for day in sorted(book.moments_by_day) if day >= decided_at.date()]
+    if not remaining or remaining[-1] != book.expiry:
+        return None
+    # shortcut: a session missing from the book next to a break is not counted, pass an exchange
+    # calendar here if recorder gaps start to decide trades.
     breaks = sum(1 for day, later in zip(remaining, remaining[1:], strict=False)
                  if (later - day).days > 1)
     opened = _OPENING_BAR.hour * 60 + _OPENING_BAR.minute
@@ -129,10 +137,11 @@ def read_richness(
         return None
     call = _last_closed(book, strike, "CE", decided_at)
     put = _last_closed(book, strike, "PE", decided_at)
-    if call is None or put is None:
+    sessions = sessions_until_expiry(book, decided_at)
+    if call is None or put is None or sessions is None:
         return None
     implied_move = (call + put) / (_STRADDLE_PER_MOVE * spot)
-    return implied_move / sqrt(forecast * sessions_until_expiry(book, decided_at))
+    return implied_move / sqrt(forecast * sessions)
 
 
 def condor_strikes(

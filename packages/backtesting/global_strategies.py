@@ -319,3 +319,38 @@ GLOBAL_RULES = (
     PublishedRule("tail_hedge_puts", "Universa-style: buy far puts each week",
                   run_held((LegSpec("PE", "BUY", delta=0.05),)), True),
 )
+
+_PUT_SPREAD = (Leg(0, "PE", "SELL"), Leg(0, "PE", "BUY"))
+
+
+def run_far_put_spread(
+    short_delta: float, wing_points: int, days_before: int = _LATE_ENTRY_DAYS,
+) -> Callable[[Market], list[TradeResult]]:
+    """`far_put_write` with a bought put a fixed distance below, so the loss is capped.
+
+    Forward-only: this form was fixed after both halves of the history had been read, so only
+    sessions after it was frozen can test it. Not one of the studied `GLOBAL_RULES`.
+    """
+    def run(market: Market) -> list[TradeResult]:
+        results = []
+        for book in market.books:
+            session = _entry_session(book, days_before)
+            if session is None:
+                continue
+            decided_at = _at(session, _ENTRY_TIME)
+            spot = spot_from_closed_bars(book, decided_at)
+            sold = (strike_at_delta(book, "PE", decided_at, spot, short_delta)
+                    if spot is not None else None)
+            # No wing listed at that distance means no trade, never a naked put.
+            if sold is None or (sold - wing_points, "PE") not in book.bars:
+                continue
+            # A far wing may print no bar at the decision; the strikes stay fixed for three more.
+            for attempt in range(_ENTRY_RETRIES + 1):
+                result = simulate(book, _PUT_SPREAD, [sold, sold - wing_points],
+                                  decided_at + _BAR * attempt, _at(book.expiry, _SQUARE_OFF_BAR),
+                                  market.half_spread_pct, quiet_exit=True)
+                if result is not None:
+                    results.append(result)
+                    break
+        return results
+    return run

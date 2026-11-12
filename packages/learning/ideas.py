@@ -192,7 +192,9 @@ rupees per trade, and trades_per_session (0-1). Overstating the effect only wast
 
 def _summary(session: Session) -> str:
     lines = []
-    for row in session.scalars(select(LearningHypothesis).order_by(LearningHypothesis.key)):
+    # The prompt describes the condor family only, so other kinds would mislead the model.
+    for row in session.scalars(select(LearningHypothesis).where(
+            LearningHypothesis.kind == "rich_condor").order_by(LearningHypothesis.key)):
         check = row.latest_check or {}
         lines.append(f"- {row.key} [{row.stage}] {json.dumps(row.params, sort_keys=True)}: "
                      f"{check.get('trades', 0)} trades, average {check.get('average')}")

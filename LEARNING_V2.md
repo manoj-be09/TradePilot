@@ -67,7 +67,7 @@ Kept from v1: frozen versions, the append-only decision trail, champion/challeng
 
 ## Known limits
 
-- **One strategy family.** The generator and runner cover only `rich_condor` night holds, which the next-session exit supports. Other kinds can be scored in shadow, but the runner cannot trade them yet.
+- **One traded family.** The generator and runner cover only `rich_condor` night holds, which the next-session exit supports. A second kind, `far_put_spread`, is scored in shadow only: a 5-delta put sold about three days before expiry with a bought put a fixed distance below, held to the expiry-day square-off. The runner cannot trade it yet.
 - **VIX coverage.** VIX comes only from the recorder, so sessions before recording began have no VIX. A VIX filter fails closed on those sessions, which only affects backtests.
 - **Shadow results wait for the expiry.** The sessions left to expiry are counted from the book's own bars, so a session is scored only once its expiry's bars run to expiry day. Results for an expiry that is still trading arrive up to a week late. A session missing from the book next to a weekend or holiday is still not counted.
 - **Greek caps are fixed.** The caps (delta 40 index points, vega ₹3,000 a point) are starting values, not fitted ones.

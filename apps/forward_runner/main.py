@@ -231,6 +231,8 @@ async def run_cycle(
             and row.request_data.get("strategy_version_id") in frozen
         }
         for version_id in plan.version_ids:
+            if version_id in plan.stopped_version_ids:
+                continue
             version = session.get(StrategyVersion, version_id)
             if version is None or version.user_id != user.id:
                 logger.error("Frozen strategy version %s is missing", version_id)
@@ -284,11 +286,18 @@ async def serve(plan_path: Path, interval_seconds: float, once: bool) -> None:
     async def arm(body: PaperTradeCreateRequest, user: User, session: Session, key: str) -> Any:
         return await arm_paper_deployment(body, user, session, key)
 
-    plan = load_plan(plan_path)
     factory = build_session_factory()
     provider = get_market_data_provider()
     while True:
-        status = await run_cycle(factory, provider, plan, arm)
+        try:
+            # Read every cycle, so a version the owner stops is skipped without a restart.
+            plan = load_plan(plan_path)
+        except (OSError, ValueError, KeyError) as error:
+            # Missing, mid-edit or invalid: arm nothing rather than run an older plan.
+            logger.error("The plan could not be read: %s", type(error).__name__)
+            status = "NO_PLAN"
+        else:
+            status = await run_cycle(factory, provider, plan, arm)
         logger.info("Cycle: %s", status)
         if once or status == "FINISHED":
             return

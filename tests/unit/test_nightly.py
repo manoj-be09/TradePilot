@@ -21,6 +21,7 @@ from packages.database.models import (
     PaperDeployment,
     PaperOrder,
     PaperTrade,
+    StrategyVersion,
     User,
 )
 from packages.database.sqlite_backup import BackupError, backup_database
@@ -192,6 +193,26 @@ def test_the_report_says_why_armed_strategies_have_no_trade(factory):
     text = render_markdown(report)
     assert "not a full sample" in text and "per-trade risk cap" in text
     assert "strip" not in text
+
+
+def test_the_report_names_what_the_owner_stopped_and_keeps_its_trades(factory):
+    with factory() as session:
+        account = _account(session)
+        _trade(session, account, Decimal("-300"), 0, key="iron_condor")
+        session.add(StrategyVersion(
+            id=FROZEN, user_id=account.user_id, name="Forward · Iron condor", version_number=1,
+            definition={"template_key": "iron_condor"}, definition_hash="x",
+        ))
+        session.commit()
+        stopped = ForwardPlan(EMAIL, (FROZEN,), PLAN.start, PLAN.end,
+                              stopped_version_ids=(FROZEN,), stopped_note="Costs exceed its range.")
+        report = build_report(session, stopped, account, date(2026, 11, 13))
+        running = build_report(session, PLAN, account, date(2026, 11, 13))
+    assert report.stopped == ("iron_condor",)
+    text = render_markdown(report)
+    assert "Stopped by the owner and no longer armed (1): iron condor." in text
+    assert "Costs exceed its range." in text and "| iron condor | 1 |" in text
+    assert "Stopped by the owner" not in render_markdown(running)
 
 
 def _order(session, trade, action, flow, price):

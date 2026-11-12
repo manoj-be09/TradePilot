@@ -344,6 +344,11 @@ def test_point_in_time_features_and_filters_fail_closed():
     assert not passes([{"feature": "vix", "min": 15}], values)
     # Unreadable means no trade.
     assert not passes([{"feature": "term_gap", "max": 2}], values)
+    # A book that stops before its expiry cannot say how long is left, so the gap is unread.
+    cut = _book(tuple(day for day in _SESSIONS if day <= _TODAY))
+    whole = features_at(_FULL, _FULL, decided_at, _past(), None, Context())
+    assert whole["term_gap"] == pytest.approx(1.0)
+    assert features_at(cut, _FULL, decided_at, _past(), None, Context())["term_gap"] is None
     by_day = session_features(Market([_FULL], 0.0), time(9, 20), Context())
     assert by_day[_TODAY]["realised_vol"] == pytest.approx(values["realised_vol"])
 

@@ -79,7 +79,7 @@ def _implied_vol(book: Book, decided_at: datetime) -> float | None:
     call = _last_closed(book, strike, "CE", decided_at)
     put = _last_closed(book, strike, "PE", decided_at)
     sessions = sessions_until_expiry(book, decided_at)
-    if call is None or put is None or sessions <= 0:
+    if call is None or put is None or sessions is None or sessions <= 0:
         return None
     move = (call + put) / (_STRADDLE_PER_MOVE * spot)
     return move / sqrt(sessions / _SESSIONS_A_YEAR)

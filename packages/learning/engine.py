@@ -28,6 +28,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from packages.backtesting.candidate_algorithms import CURRENT_LOT
+from packages.backtesting.global_strategies import run_far_put_spread
 from packages.backtesting.published_strategies import Market, TradeResult
 from packages.backtesting.rich_premium import WING_POINTS, run_rich_condor
 from packages.backtesting.rule_engine import EngineRule
@@ -103,7 +104,21 @@ def _condor_bounds(params: dict[str, Any], result: TradeResult) -> tuple[float, 
             max(result.credit, 1.0))
 
 
-KINDS: dict[str, Kind] = {"rich_condor": Kind(_rich_condor, _condor_bounds)}
+def _far_put_spread(params: dict[str, Any], market: Market) -> list[TradeResult]:
+    return run_far_put_spread(params["short_delta"], params["wing_points"],
+                              params["days_before"])(market)
+
+
+def _put_spread_bounds(params: dict[str, Any], result: TradeResult) -> tuple[float, float]:
+    return (params["wing_points"] * CURRENT_LOT - result.credit + result.charges + LOSS_SLACK,
+            max(result.credit, 1.0))
+
+
+# Only `rich_condor` can be paper traded (`tradable_rules`); the rest are scored in shadow.
+KINDS: dict[str, Kind] = {
+    "rich_condor": Kind(_rich_condor, _condor_bounds),
+    "far_put_spread": Kind(_far_put_spread, _put_spread_bounds),
+}
 
 
 def load_hypotheses(path: Path) -> list[Hypothesis]:

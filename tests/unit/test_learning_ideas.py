@@ -45,6 +45,18 @@ def _parent(session: Session, trades: int = 25, value: float = 2_000.0) -> Learn
     return row
 
 
+def test_the_llm_is_shown_only_the_condor_family(session):
+    _parent(session)
+    session.add(LearningHypothesis(
+        key="far_put", family="far_put", kind="far_put_spread",
+        params={"short_delta": 0.05, "wing_points": 300, "days_before": 3},
+        forward_from=date(2026, 11, 2), origin="HUMAN", override=True, rationale="r",
+        preregistration={}, stage="SHADOW", stage_since=_NOW, latest_check={}, created_at=_NOW))
+    session.flush()
+    shown = ideas._summary(session)
+    assert "night_a" in shown and "far_put" not in shown
+
+
 def test_neighbours_move_one_parameter_one_step_inside_the_ranges():
     found = dict(ideas.neighbours(_PARAMS))
     assert set(found) == {"short_delta0.1", "short_delta0.2", "threshold1", "threshold1.2",

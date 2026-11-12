@@ -11,6 +11,7 @@ from packages.backtesting.global_strategies import (
     choose_strikes,
     hedge_result,
     option_delta,
+    run_far_put_spread,
     run_held,
     run_straddle_momentum,
     run_weekend_straddle,
@@ -154,3 +155,21 @@ def test_naked_rules_are_labelled_because_paper_trading_cannot_arm_them():
         "weekly_put_write", "far_put_write", "near_strangle", "delta_hedged_straddle",
         "weekend_straddle",
     }
+
+
+def test_far_put_spread_buys_a_wing_a_fixed_distance_below_and_is_never_naked():
+    book = Book(_EXPIRY, _merge(
+        _chain(_ENTRY, (9, 15), {**_PRICES, (21500, "PE"): 1.0}),
+        _chain(_ENTRY, (9, 20), {**{key: 150.0 for key in _PRICES},
+                                 (21800, "PE"): 6.0, (21500, "PE"): 1.0}),
+        # The far wing prints nothing on expiry day, like a quiet contract.
+        _chain(_EXPIRY, (15, 5), {**{key: 1.0 for key in _PRICES}, (21800, "PE"): 0.5}),
+    ))
+    [trade] = run_far_put_spread(0.05, 300, days_before=7)(Market([book], 0.0))
+    assert trade.session == _ENTRY and trade.expiry == _EXPIRY
+    # Sold 21800 at 6.00 and bought 21500 at 1.00.
+    assert trade.credit == pytest.approx(5 * 65)
+    # The sold put ends at 0.50; the quiet wing counts as worthless, one tick.
+    assert trade.gross_pnl == pytest.approx((6 - 0.5 - (1 - 0.05)) * 65)
+    # No put listed 400 points below means no trade at all.
+    assert run_far_put_spread(0.05, 400, days_before=7)(Market([book], 0.0)) == []

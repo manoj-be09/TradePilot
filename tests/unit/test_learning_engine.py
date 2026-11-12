@@ -221,3 +221,17 @@ def test_a_machine_idea_without_a_backtest_is_rejected_and_spends_nothing(sessio
     assert session.scalars(select(LearningObservation)).all() == []
     [event] = session.scalars(select(LearningEvent)).all()
     assert event.reason == "BACKTEST_SCREEN" and "backtest trades" in event.summary
+
+
+def test_a_far_put_spread_is_scored_in_shadow_but_never_handed_to_the_runner(session, monkeypatch):
+    results = [TradeResult(_START, _START + timedelta(days=3), 180.0, 60.0, 300.0)]
+    monkeypatch.setattr(engine, "run_far_put_spread", lambda *args: lambda market: results)
+    params = {"short_delta": 0.05, "wing_points": 300, "days_before": 3}
+    run_learning(session, _MARKET, _NOW, [Hypothesis(
+        key="far", family="far_put", kind="far_put_spread", params=params, forward_from=_START,
+        origin="HUMAN", rationale="test", preregistration=_STRONG, override=True)])
+    [seen] = session.scalars(select(LearningObservation)).all()
+    assert float(seen.net_pnl) == 120.0 and float(seen.max_gain) == 300.0
+    # Worst case: the wing's width on one lot, less the credit, plus charges and exit slack.
+    assert float(seen.max_loss) == 300 * 65 - 300.0 + 60.0 + 1_000.0
+    assert engine.tradable_rules(session) == []

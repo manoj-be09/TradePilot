@@ -69,6 +69,7 @@ Kept from v1: frozen versions, the append-only decision trail, champion/challeng
 
 - **One strategy family.** The generator and runner cover only `rich_condor` night holds, which the next-session exit supports. Other kinds can be scored in shadow, but the runner cannot trade them yet.
 - **VIX coverage.** VIX comes only from the recorder, so sessions before recording began have no VIX. A VIX filter fails closed on those sessions, which only affects backtests.
+- **Shadow results wait for the expiry.** The sessions left to expiry are counted from the book's own bars, so a session is scored only once its expiry's bars run to expiry day. Results for an expiry that is still trading arrive up to a week late. A session missing from the book next to a weekend or holiday is still not counted.
 - **Greek caps are fixed.** The caps (delta 40 index points, vega ₹3,000 a point) are starting values, not fitted ones.
 - **LLM data sharing.** With a key, LLM ideas send aggregate simulated results to the Anthropic API; the local Ollama model keeps them on this machine. With neither, LLM ideas are off.
 

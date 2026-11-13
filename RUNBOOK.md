@@ -157,3 +157,12 @@ their far strikes with `scripts/import-far-strikes.py --first-expiry 2026-11-01`
 `DATABASE_URL="sqlite:///./work/nifty-local.db"` and `PYTHONPATH=.`. The extra database is private and stays out of git. Once the expiries and far strikes are imported, the nightly job (`apps/nightly/main.py`) runs the research rule engine over them after 16:30 IST when `work/history-wide.db` exists; its decisions are on Research under "Research rule engine". `python -m apps.nightly.main --once` runs it at once.
 
 Night condor override (owner's choice, 3 November 2026): the supervisor's `night-runner` paper trades both night condors in their own account. Set it up once with `python -m apps.night_runner.main --setup --user-email <email>`, which creates that user with an unknown password and writes `work/night-override.json`; set a password with `python -m apps.api.reset_password` to view its trades. Without that file the runner exits cleanly and stays off; delete it to turn the override off. It needs the Upstox token for candles and the chain, logs to `work/logs/night-runner.log`, and keeps its private candle cache in `work/night-history.db`. If past sessions are missing it logs "Past sessions are incomplete" and trades nothing that day.
+
+## Extra forward accounts and promoted templates
+
+Each extra plan runs on its own account and only once its file exists; restart the stack after creating one. To set one up after the close (all need `DATABASE_URL="sqlite:///./work/nifty-local.db"` and `PYTHONPATH=.`):
+
+1. `python -m apps.forward_runner.main --propose --user-email <email> --create-user [--templates a,b,c]` saves 1-lot versions from current quotes and arms nothing.
+2. `python -m apps.forward_runner.main --freeze --user-email <email> --plan work/forward-<name>-paper.json --weeks <n>` freezes them. Add `--promoted-only` for `work/forward-promoted-paper.json`, so a template is armed only while the research rule engine holds it promoted.
+
+The nightly job scores the template rules after 16:30 IST from the imported 5-minute history (`template_rules` in its log line). Their stages are on Research under "Research rule engine". Simulated paper only, not investment advice.

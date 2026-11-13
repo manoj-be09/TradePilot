@@ -19,7 +19,7 @@ places no order, arms nothing and never touches a paper account. Not investment 
 """
 
 from collections.abc import Callable, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from math import sqrt
@@ -29,9 +29,12 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from packages.backtesting.history_backtest import BacktestConfig, ExpiryHistory, run_backtest
 from packages.backtesting.published_strategies import Market, TradeResult
 from packages.backtesting.rich_premium import run_rich_condor
 from packages.database.models import ResearchRuleEvent, ResearchRuleVersion, ResearchShadowTrade
+from packages.paper_trading.session import exchange_today
+from packages.paper_trading.strategies import STRATEGIES
 
 ENGINE_POLICY_ID = "research-rule-engine-v1"
 # Every rule tried on this history, rounded up: about 12,400 option rules, 36 trend rules and a
@@ -78,6 +81,52 @@ ENGINE_RULES = (
         "into_expiry": True,
     }),
 )
+
+# Each same-expiry paper template, with its own entry and exit rules, is a rule too (owner,
+# 10 November 2026). It is armed the way the forward runner arms it: seven days before expiry
+# at 09:20. Only sessions after it was frozen count. Calendars can't be replayed on history.
+TEMPLATE_PREFIX = "template:"
+TEMPLATE_FORWARD_FROM = date(2026, 11, 10)
+TEMPLATE_RULES = tuple(
+    EngineRule(f"{TEMPLATE_PREFIX}{strategy.key}", 1, TEMPLATE_FORWARD_FROM, {
+        "template": strategy.key, "template_version": strategy.version,
+        "entry_days": 7, "entry_time": "09:20",
+    }, override=False)
+    for strategy in STRATEGIES
+)
+
+
+def template_runner(
+    histories: Sequence[ExpiryHistory], base: BacktestConfig,
+) -> Callable[[EngineRule, Market | None], list[TradeResult]]:
+    """Replay a template rule over imported expiries with its real rules; `base` carries the
+    account's per-trade limit, spreads, margin and square-off."""
+    by_key = {strategy.key: strategy for strategy in STRATEGIES}
+
+    def run(rule: EngineRule, _market: Market | None) -> list[TradeResult]:
+        strategy = by_key.get(rule.params["template"])
+        if strategy is None or strategy.version != rule.params["template_version"]:
+            return []  # the template changed; this version has nothing more to say
+        report = run_backtest(histories, replace(
+            base, strategy=strategy, template_rules=True,
+            entry_days_before_expiry=rule.params["entry_days"],
+            entry_time=time.fromisoformat(rule.params["entry_time"]),
+        ))
+        return [TradeResult(exchange_today(trade.entry_at), trade.expiry,
+                            float(trade.gross_pnl), float(trade.charges))
+                for trade in report.trades]
+
+    return run
+
+
+def promoted_templates(session: Session) -> set[str]:
+    """Templates whose rule version the engine has promoted, so a promoted account may arm."""
+    return {
+        row.params["template"] for row in session.scalars(select(ResearchRuleVersion).where(
+            ResearchRuleVersion.rule_key.startswith(TEMPLATE_PREFIX),
+            ResearchRuleVersion.stage == "PAPER_APPROVED",
+        ))
+    }
 
 
 @dataclass(frozen=True)
@@ -210,15 +259,20 @@ def _move(
 
 
 def run_engine(
-    session: Session, market: Market, now: datetime,
+    session: Session, market: Market | None, now: datetime,
     rules: Sequence[EngineRule] = ENGINE_RULES,
-    runner: Callable[[EngineRule, Market], list[TradeResult]] | None = None,
+    runner: Callable[[EngineRule, Market | None], list[TradeResult]] | None = None,
 ) -> list[str]:
     """Record new shadow trades and apply every due decision. The caller commits.
 
     Returns one line per decision. Safe to rerun: trades are keyed by version and session.
     """
-    run = runner or (lambda rule, data: rule.runner()(data))
+    def default(rule: EngineRule, data: Market | None) -> list[TradeResult]:
+        if data is None:
+            raise ValueError(f"{rule.key} needs the research market")
+        return rule.runner()(data)
+
+    run = runner or default
     states: dict[str, list[_State]] = {}
     for rule in rules:
         row = _register(session, rule, now)

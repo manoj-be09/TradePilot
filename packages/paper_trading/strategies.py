@@ -371,14 +371,16 @@ STRATEGY_REGISTRY = StrategyRegistry(
         StrategyDefinition(
             "inverse_iron_butterfly",
             "Inverse iron butterfly",
-            "Buy the reference-strike put and call and sell the wings two strikes out for a "
+            "Buy the reference-strike put and call and sell the wings six strikes out for a "
             "defined-risk move strategy.",
             (
-                StrategyLeg("PE", "SELL", -2),
+                StrategyLeg("PE", "SELL", -6),
                 StrategyLeg("PE", "BUY", 0),
                 StrategyLeg("CE", "BUY", 0),
-                StrategyLeg("CE", "SELL", 2),
+                StrategyLeg("CE", "SELL", 6),
             ),
+            # 2.0.0: 100-point wings cost nearly their width a week out, leaving little to gain.
+            version="2.0.0",
         ),
         StrategyDefinition(
             "guts",

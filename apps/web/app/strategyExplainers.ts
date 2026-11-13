@@ -328,14 +328,14 @@ export const STRATEGY_EXPLAINERS: Record<string, StrategyExplainer> = {
   },
   inverse_iron_butterfly: {
     idea: "Pay for a straddle and sell options further out to cut the cost: a defined-risk bet that NIFTY moves away from today's level.",
-    how: "Buy a put and a call at NIFTY's strike, and sell a put and a call two strikes (100 points) out on each side.",
+    how: "Buy a put and a call at NIFTY's strike, and sell a put and a call six strikes (300 points) out on each side.",
     example: [
-      "NIFTY at 25,000: buy the 25,000 put and call, sell the 24,900 put and 25,100 call: you pay ₹50, or ₹3,250.",
-      "NIFTY ends below 24,900 or above 25,100: you make ₹3,250. That is the most.",
-      "NIFTY ends at 25,000: you lose ₹3,250. That is the most.",
+      "NIFTY at 25,000: buy the 25,000 put and call for ₹300, sell the 24,700 put and 25,300 call for ₹120: you pay ₹180, or ₹11,700.",
+      "NIFTY ends below 24,700 or above 25,300: you make ₹120 a unit, or ₹7,800. That is the most.",
+      "NIFTY ends at 25,000: you lose ₹11,700. That is the most.",
     ],
     helps: "A clear move either way before expiry.",
-    risk: "A quiet market. It needs a move of more than half the wing width just to break even.",
+    risk: "A quiet market. It needs a move of more than the ₹180 paid, about 0.7%, just to break even.",
   },
   call_calendar: {
     idea: "Sell this week's call and buy the same call for next week. You gain as this week's call loses value faster than next week's.",

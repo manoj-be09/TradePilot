@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from apps.api.paper_schemas import PaperTradeCreateRequest
 from apps.api.services.strategy_eligibility import StrategyNotEligible
 from apps.api.strategy_schemas import StrategyVersionCreateRequest
+from packages.backtesting.rule_engine import promoted_templates
 from packages.database.models import PaperDeployment, StrategyVersion, User
 from packages.database.session import build_session_factory
 from packages.market_data.contracts import (
@@ -55,7 +56,8 @@ FROZEN_NAME_PREFIX = "Forward · "
 Arm = Callable[[PaperTradeCreateRequest, User, Session, str], Awaitable[Any]]
 
 
-def freeze(session: Session, user_email: str, start: date, weeks: int) -> ForwardPlan:
+def freeze(session: Session, user_email: str, start: date, weeks: int,
+           promoted_only: bool = False) -> ForwardPlan:
     """Pin the latest 1-lot forward version of each template for this user."""
     user = session.scalar(select(User).where(User.email == user_email))
     if user is None:
@@ -74,6 +76,7 @@ def freeze(session: Session, user_email: str, start: date, weeks: int) -> Forwar
         version_ids=tuple(latest[key].id for key in sorted(latest)),
         start=start,
         end=start + timedelta(weeks=weeks),
+        promoted_only=promoted_only,
     )
 
 
@@ -222,6 +225,9 @@ async def run_cycle(
         # One attempt per strategy per expiry, whatever became of it: a cancelled or rejected
         # one stays that way, so the period's sample is not padded by retries.
         frozen = {str(item) for item in plan.version_ids}
+        # A promoted plan arms a template only while the rule engine holds it promoted; a
+        # demoted one stops getting new entries, and its open trades exit by their own rules.
+        allowed = promoted_templates(session) if plan.promoted_only else None
         attempted = {
             row.request_data.get("strategy_key")
             for row in session.scalars(select(PaperDeployment).where(
@@ -238,6 +244,8 @@ async def run_cycle(
                 continue
             definition = version.definition
             if definition["template_key"] in attempted:
+                continue
+            if allowed is not None and definition["template_key"] not in allowed:
                 continue
             try:
                 body = PaperTradeCreateRequest(
@@ -336,6 +344,8 @@ def main() -> None:
                         help="With --propose: create the account if it does not exist")
     parser.add_argument("--start", type=date.fromisoformat)
     parser.add_argument("--weeks", type=int, default=6)
+    parser.add_argument("--promoted-only", action="store_true",
+                        help="With --freeze: arm only templates the rule engine has promoted")
     args = parser.parse_args()
     if args.propose:
         if not args.user_email:
@@ -351,7 +361,8 @@ def main() -> None:
         if not args.user_email:
             parser.error("--freeze needs --user-email")
         with build_session_factory()() as session:
-            plan = freeze(session, args.user_email, args.start or exchange_today(), args.weeks)
+            plan = freeze(session, args.user_email, args.start or exchange_today(), args.weeks,
+                          args.promoted_only)
         save_new_plan(args.plan, plan)
         logger.info("Frozen %d versions, %s to %s", len(plan.version_ids), plan.start, plan.end)
         return

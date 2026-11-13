@@ -267,3 +267,28 @@ def test_next_expiry_skips_today_and_nearest_strike_handles_empty():
     assert next_expiry([TODAY, EXPIRY], TODAY) == EXPIRY
     assert next_expiry([TODAY], TODAY) is None
     assert nearest_strike([], Decimal("1")) is None
+
+
+def test_a_promoted_plan_arms_only_what_the_rule_engine_holds_promoted(world, tmp_path):
+    from dataclasses import replace
+
+    from packages.database.models import ResearchRuleVersion
+
+    factory, plan = world
+    promoted = replace(plan, promoted_only=True)
+    calls = []
+    assert _cycle(factory, promoted, _Provider(), _recording_arm(calls)) == "OK"
+    assert calls == []  # nothing promoted yet
+    with factory() as session:
+        for key, stage in (("long_put", "PAPER_APPROVED"), ("bear_call_spread", "DEMOTED")):
+            session.add(ResearchRuleVersion(
+                rule_key=f"template:{key}", version=1, params={"template": key},
+                forward_from=date(2026, 11, 10), stage=stage, stage_since=NOW,
+                latest_check={}, created_at=NOW))
+        session.commit()
+    assert _cycle(factory, promoted, _Provider(), _recording_arm(calls)) == "OK"
+    assert [body.strategy_key for body, _ in calls] == ["long_put"]
+    path = tmp_path / "promoted.json"
+    save_new_plan(path, promoted)
+    assert load_plan(path).promoted_only is True
+    assert "promoted_only" not in plan.to_json()  # older plans read and write as before

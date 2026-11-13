@@ -14,6 +14,8 @@ class ForwardPlan:
     version_ids: tuple[UUID, ...]
     start: date
     end: date
+    # Arm only the versions whose template the research rule engine has promoted.
+    promoted_only: bool = False
 
     def to_json(self) -> str:
         return json.dumps({
@@ -21,6 +23,7 @@ class ForwardPlan:
             "version_ids": [str(item) for item in self.version_ids],
             "start": self.start.isoformat(),
             "end": self.end.isoformat(),
+            **({"promoted_only": True} if self.promoted_only else {}),
         }, indent=2)
 
     @classmethod
@@ -31,6 +34,7 @@ class ForwardPlan:
             version_ids=tuple(UUID(item) for item in data["version_ids"]),
             start=date.fromisoformat(data["start"]),
             end=date.fromisoformat(data["end"]),
+            promoted_only=data.get("promoted_only", False) is True,
         )
 
 

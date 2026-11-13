@@ -94,6 +94,17 @@ def test_each_break_before_expiry_counts_as_one_more_session():
     assert sessions_until_expiry(book, _at(_SESSIONS[6], 9, 20)) == pytest.approx(3 - 5 / 375)
 
 
+def test_a_book_that_stops_before_its_expiry_cannot_count_the_sessions_left():
+    # Bars stop on Tuesday, two sessions before expiry, as a recorded book does mid-week.
+    live = _book(sessions=_SESSIONS[:7])
+    decided = _at(_SESSIONS[6], 9, 20)
+    assert sessions_until_expiry(live, decided) is None
+    past = session_moves(Market([_book()], 0.0))[:6]
+    assert read_richness(live, decided, past) is None
+    # So no rule scores a session until its expiry's bars are all in.
+    assert run_rich_condor(0.3, 0.0, False)(Market([live], 0.0)) == []
+
+
 def test_richness_is_implied_move_over_forecast_move():
     book = _book()
     market = Market([book], 0.0)

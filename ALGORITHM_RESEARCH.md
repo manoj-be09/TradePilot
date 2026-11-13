@@ -242,3 +242,11 @@ The primary form failed its one run: the average was close to zero and t was far
 - **What this changes.** The expectation for `very_rich_night_condor` falls: its recorded results may belong to that period. This was a rougher form sharing about half its days with the rule, so it does not disprove the intraday rule. It stays forward-only and unproven, and paper trading is unchanged. No setting will change because of this run.
 
 Data notes: 30 March 2021 is not on the archive and was left out. The count rule dropped five special sessions and left two Muhurat sessions in the calendar (24 October 2022 and 12 November 2023); no primary trade fell on them.
+
+## Hedged far put spread, forward-only, fixed on 12 November 2026
+
+`far_put_write` is the one rule that passed, and paper trading cannot arm it because the put is naked. `run_far_put_spread` in `global_strategies.py` is the same entry and exit with a bought put a fixed distance below, so the loss is capped: a 5-delta put sold at 09:20 on the first session within three days of expiry, a put 300 points below it bought, both held to the expiry-day square-off. A 300-point wing on one lot keeps the largest loss inside the ₹20,000 per-trade limit. A wing that prints no bar on expiry day counts as worthless; a week with no put listed at that distance has no trade.
+
+**It is forward-only.** This form was fixed after both halves of the history had been read for the naked rule and for a private look at hedged forms, so no past session can test it. The learning loop scores it in shadow as kind `far_put_spread` once a hypothesis for it is added to the private hypothesis file. The night runner cannot trade it.
+
+**What the hedge does not fix.** The weaknesses listed for `far_put_write` still apply: no large fall hit a held trade in the sample, premiums are small against real bid/ask, and with Tuesday expiries the trade is held about one day. The wing caps the loss and also gives up a large share of the premium, so one full loss takes back years of wins. Numbers stay in private `work/`.

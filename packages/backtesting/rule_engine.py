@@ -267,7 +267,12 @@ def run_engine(
 
     Returns one line per decision. Safe to rerun: trades are keyed by version and session.
     """
-    run = runner or (lambda rule, data: rule.runner()(data))
+    def default(rule: EngineRule, data: Market | None) -> list[TradeResult]:
+        if data is None:
+            raise ValueError(f"{rule.key} needs the research market")
+        return rule.runner()(data)
+
+    run = runner or default
     states: dict[str, list[_State]] = {}
     for rule in rules:
         row = _register(session, rule, now)

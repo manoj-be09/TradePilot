@@ -80,6 +80,10 @@ def freeze(session: Session, user_email: str, start: date, weeks: int,
     )
 
 
+# Multipliers for a template's stop, target and trail; a trail of None switches it off.
+ExitScale = tuple[Decimal, Decimal, Decimal | None]
+NO_SCALE: ExitScale = (Decimal(1), Decimal(1), Decimal(1))
+_CENT = Decimal("0.01")
 CreateVersion = Callable[[StrategyVersionCreateRequest, User, Session], Awaitable[Any]]
 
 
@@ -87,12 +91,14 @@ async def propose(
     session: Session, user: User, provider: MarketDataProvider, create: CreateVersion,
     today: date, templates: frozenset[str] | None = None,
     extra_conditions: tuple[dict[str, str], ...] = (),
+    exit_scale: ExitScale = NO_SCALE,
 ) -> tuple[list[str], list[str]]:
     """Save a 1-lot version of each template, with exits sized from the next expiry's quotes.
 
     Returns the templates saved and those skipped because quotes or a finite loss are missing.
     Saving arms nothing. `templates` limits it to those keys, for a separate account;
-    `extra_conditions` are added to every saved version's entry rules.
+    `extra_conditions` are added to every saved version's entry rules, and `exit_scale`
+    multiplies its stop, target and trail.
     """
     contracts = await provider.get_option_contracts("NIFTY")
     expiry = next_expiry(sorted({item.expiry for item in contracts}), today)
@@ -152,7 +158,8 @@ async def propose(
             if policy is None:
                 skipped.append(strategy.key)
                 continue
-            await create(_version_request(strategy, policy, extra_conditions), user, session)
+            await create(_version_request(strategy, policy, extra_conditions, exit_scale),
+                         user, session)
             saved.append(strategy.key)
             continue
         payoff = calculate_expiry_payoff(PayoffRequest(
@@ -168,20 +175,28 @@ async def propose(
         if policy is None:
             skipped.append(strategy.key)
             continue
-        await create(_version_request(strategy, policy, extra_conditions), user, session)
+        await create(_version_request(strategy, policy, extra_conditions, exit_scale),
+                         user, session)
         saved.append(strategy.key)
     return saved, skipped
 
 
 def _version_request(strategy: StrategyDefinition, policy: TemplatePolicy,
                      extra_conditions: tuple[dict[str, str], ...] = (),
+                     exit_scale: ExitScale = NO_SCALE,
                      ) -> StrategyVersionCreateRequest:
+    stop, target, trail = exit_scale
+    target_profit = (policy.target_profit * target).quantize(_CENT)
     return StrategyVersionCreateRequest(
         name=f"{FROZEN_NAME_PREFIX}{strategy.name} · {strategy.version} · 1L",
         strategy_key=strategy.key, expected_template_version=strategy.version, lots=1,
         entry_conditions=[*policy.entry_conditions, *extra_conditions],
-        stop_loss_amount=policy.stop_loss,
-        target_profit_amount=policy.target_profit, trailing_stop_amount=policy.trailing_stop,
+        stop_loss_amount=(policy.stop_loss * stop).quantize(_CENT),
+        target_profit_amount=target_profit,
+        # An armed strategy must carry a trail. "off" sets it to the target, which closes the
+        # trade before a trail that size could start.
+        trailing_stop_amount=(target_profit if trail is None
+                              else (policy.trailing_stop * trail).quantize(_CENT)),
     )
 
 
@@ -309,7 +324,8 @@ async def serve(plan_path: Path, interval_seconds: float, once: bool) -> None:
 
 async def _propose_command(user_email: str, templates: frozenset[str] | None,
                            create_user: bool,
-                           extra_conditions: tuple[dict[str, str], ...] = ()) -> None:
+                           extra_conditions: tuple[dict[str, str], ...] = (),
+                           exit_scale: ExitScale = NO_SCALE) -> None:
     from apps.api.auth import Role, hash_password
     from apps.api.main import create_strategy_version
     from packages.market_data.provider import get_market_data_provider
@@ -327,7 +343,7 @@ async def _propose_command(user_email: str, templates: frozenset[str] | None,
             raise ValueError("No account has that email")
         saved, skipped = await propose(
             session, user, get_market_data_provider(), create_strategy_version, exchange_today(),
-            templates, extra_conditions,
+            templates, extra_conditions, exit_scale,
         )
     logger.info("Saved %d forward versions; skipped %s", len(saved), skipped or "none")
 
@@ -348,6 +364,9 @@ def main() -> None:
     parser.add_argument(
         "--condition", action="append", default=[], metavar="METRIC:OPERATOR:THRESHOLD",
         help="With --propose: add this entry condition to every saved version (repeatable)")
+    parser.add_argument(
+        "--exit-scale", metavar="STOP:TARGET:TRAIL",
+        help="With --propose: multiply each saved version's exits, e.g. 1:2:2; TRAIL may be off")
     parser.add_argument("--create-user", action="store_true",
                         help="With --propose: create the account if it does not exist")
     parser.add_argument("--start", type=date.fromisoformat)
@@ -368,7 +387,18 @@ def main() -> None:
                                    strict=True)) for item in args.condition)
         except ValueError:
             parser.error("--condition needs METRIC:OPERATOR:THRESHOLD")
-        asyncio.run(_propose_command(args.user_email, templates, args.create_user, extra))
+        scale = NO_SCALE
+        if args.exit_scale:
+            try:
+                stop, target, trail = args.exit_scale.split(":")
+                scale = (Decimal(stop), Decimal(target),
+                         None if trail == "off" else Decimal(trail))
+            except (ArithmeticError, ValueError):
+                parser.error("--exit-scale needs STOP:TARGET:TRAIL")
+            if any(value is not None and value <= 0 for value in scale):
+                parser.error("--exit-scale multipliers must be above zero")
+        asyncio.run(_propose_command(args.user_email, templates, args.create_user, extra,
+                                     scale))
         return
     if args.freeze:
         if not args.user_email:

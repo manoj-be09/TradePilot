@@ -44,3 +44,37 @@ def test_vix_condition_waits_without_a_recorded_minute_then_passes_with_one(
     vix, days = opened.json()["entry_rule_snapshot"]["results"]
     assert (vix["actual"], vix["passed"]) == ("17.40", True)
     assert days["passed"] is True
+
+
+def test_an_iv_against_realized_volatility_rule_reads_daily_candles_only_when_used(
+    client, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from packages.paper_trading import market_context
+
+    market_context._rv_cache.clear()
+    provider = FakeUpstoxProvider()
+    calls = []
+
+    async def daily(key, start, end, interval):
+        calls.append(interval)
+        return [SimpleNamespace(timestamp=end - timedelta(days=d), close=Decimal(25000))
+                for d in range(15, 0, -1)]
+
+    provider.get_historical = daily
+    monkeypatch.setattr("apps.api.main.get_market_data_provider", lambda: provider)
+    headers = _token(client)
+    plain = client.post("/paper/trades", headers={**headers, "Idempotency-Key": str(uuid4())},
+                        json={"strategy_key": "long_call", "expiry": provider.expiry.isoformat(),
+                              "reference_strike": "25000", "lots": 1})
+    assert plain.status_code == 201 and calls == []
+    refused = client.post("/paper/trades", headers={**headers, "Idempotency-Key": str(uuid4())},
+                          json={"strategy_key": "long_put", "expiry": provider.expiry.isoformat(),
+                                "reference_strike": "25000", "lots": 1, "entry_conditions": [
+                                    {"metric": "realized_vol_10d_pct", "operator": "GT",
+                                     "threshold": "1"}]})
+    assert refused.status_code == 409  # flat closes: 0% realized volatility
+    result = refused.json()["detail"]["conditions"][0]
+    assert (result["actual"], result["passed"]) == ("0.00", False)
+    assert calls == ["1d"]

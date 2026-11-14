@@ -127,3 +127,18 @@ def test_a_calendar_is_proposed_only_when_named_and_priced_by_its_debit():
                                    frozenset({"calendar_put_spread"})))
     assert saved == ["calendar_put_spread"]
     assert put_requests[0].stop_loss_amount > Decimal("130.00")
+
+
+def test_extra_conditions_are_added_to_every_saved_version():
+    requests = []
+
+    async def create(body, _user, _session):
+        requests.append(body)
+
+    extra = ({"metric": "iv_minus_rv_points", "operator": "LTE", "threshold": "0"},)
+    saved, _ = asyncio.run(propose(None, object(), _Provider(), create, TODAY,
+                                   frozenset({"long_straddle", "long_put"}), extra))
+    assert sorted(saved) == ["long_put", "long_straddle"]
+    for body in requests:
+        assert ("iv_minus_rv_points", "LTE", Decimal(0)) in {
+            (item.metric, item.operator, item.threshold) for item in body.entry_conditions}

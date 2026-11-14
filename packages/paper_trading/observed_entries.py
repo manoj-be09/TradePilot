@@ -20,7 +20,7 @@ _METRICS: frozenset[str] = frozenset({
     "atm_iv_skew_put_minus_call_points", "atm_iv_pct", "largest_call_oi_share_pct",
     "largest_put_oi_share_pct", "median_relative_spread_pct", "underlying_spot",
     "india_vix", "india_vix_change_pct", "nifty_change_pct", "nifty_range_pct",
-    "minutes_since_open", "days_to_expiry",
+    "minutes_since_open", "days_to_expiry", "realized_vol_10d_pct", "iv_minus_rv_points",
 })
 _OPERATORS = frozenset({"GT", "GTE", "LT", "LTE"})
 

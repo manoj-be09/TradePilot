@@ -200,7 +200,12 @@ from packages.paper_trading.margin import (
     is_expiry_day,
     years_to_expiry,
 )
-from packages.paper_trading.market_context import clock_metrics, recorded_index_metrics
+from packages.paper_trading.market_context import (
+    VOLATILITY_METRICS,
+    clock_metrics,
+    recorded_index_metrics,
+    volatility_metrics,
+)
 from packages.paper_trading.observed_entries import replay_observed_entries
 from packages.paper_trading.observed_exits import replay_observed_exits
 from packages.paper_trading.official_index_close import (
@@ -2984,6 +2989,10 @@ async def _open_paper_trade_with_provider(
         **clock_metrics(chain.as_of, body.expiry),
         **recorded_index_metrics(session, chain.as_of),
     }
+    if any(condition.metric in VOLATILITY_METRICS for condition in body.entry_conditions):
+        # One provider call a day, made only when a rule needs it.
+        rule_metrics.update(await volatility_metrics(
+            provider, chain.as_of, rule_metrics["atm_iv_pct"]))
     entry_conditions = [
         EntryCondition(
             metric=condition.metric,

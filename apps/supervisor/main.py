@@ -30,6 +30,9 @@ EXTRA_PLANS = {
     "range-runner": Path("work/forward-range-paper.json"),
     "multi-runner": Path("work/forward-multi-paper.json"),
     "promoted-runner": Path("work/forward-promoted-paper.json"),
+    # The kept long-volatility templates and the range condor, entered only when at-the-money
+    # IV is cheap (or, for the condor, rich) against NIFTY's realized volatility.
+    "ivrv-runner": Path("work/forward-ivrv-paper.json"),
 }
 
 

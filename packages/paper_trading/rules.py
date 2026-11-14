@@ -18,6 +18,8 @@ RuleMetric = Literal[
     "nifty_range_pct",
     "minutes_since_open",
     "days_to_expiry",
+    "realized_vol_10d_pct",
+    "iv_minus_rv_points",
 ]
 RuleOperator = Literal["GT", "GTE", "LT", "LTE"]
 

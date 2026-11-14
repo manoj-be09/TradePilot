@@ -163,6 +163,6 @@ Night condor override (owner's choice, 3 November 2026): the supervisor's `night
 Each extra plan runs on its own account and only once its file exists; restart the stack after creating one. To set one up after the close (all need `DATABASE_URL="sqlite:///./work/nifty-local.db"` and `PYTHONPATH=.`):
 
 1. `python -m apps.forward_runner.main --propose --user-email <email> --create-user [--templates a,b,c]` saves 1-lot versions from current quotes and arms nothing.
-2. `python -m apps.forward_runner.main --freeze --user-email <email> --plan work/forward-<name>-paper.json --weeks <n>` freezes them. Add `--promoted-only` for `work/forward-promoted-paper.json`, so a template is armed only while the research rule engine holds it promoted.
+2. `python -m apps.forward_runner.main --freeze --user-email <email> --plan work/forward-<name>-paper.json --weeks <n>` freezes them. With `--propose`, `--condition METRIC:OPERATOR:THRESHOLD` (repeatable) adds an entry condition to every saved version, as the IV-against-realized-volatility account does. Add `--promoted-only` for `work/forward-promoted-paper.json`, so a template is armed only while the research rule engine holds it promoted.
 
 The nightly job scores the template rules after 16:30 IST from the imported 5-minute history (`template_rules` in its log line). Their stages are on Research under "Research rule engine". Simulated paper only, not investment advice.

@@ -86,11 +86,13 @@ CreateVersion = Callable[[StrategyVersionCreateRequest, User, Session], Awaitabl
 async def propose(
     session: Session, user: User, provider: MarketDataProvider, create: CreateVersion,
     today: date, templates: frozenset[str] | None = None,
+    extra_conditions: tuple[dict[str, str], ...] = (),
 ) -> tuple[list[str], list[str]]:
     """Save a 1-lot version of each template, with exits sized from the next expiry's quotes.
 
     Returns the templates saved and those skipped because quotes or a finite loss are missing.
-    Saving arms nothing. `templates` limits it to those keys, for a separate account.
+    Saving arms nothing. `templates` limits it to those keys, for a separate account;
+    `extra_conditions` are added to every saved version's entry rules.
     """
     contracts = await provider.get_option_contracts("NIFTY")
     expiry = next_expiry(sorted({item.expiry for item in contracts}), today)
@@ -150,7 +152,7 @@ async def propose(
             if policy is None:
                 skipped.append(strategy.key)
                 continue
-            await create(_version_request(strategy, policy), user, session)
+            await create(_version_request(strategy, policy, extra_conditions), user, session)
             saved.append(strategy.key)
             continue
         payoff = calculate_expiry_payoff(PayoffRequest(
@@ -166,17 +168,19 @@ async def propose(
         if policy is None:
             skipped.append(strategy.key)
             continue
-        await create(_version_request(strategy, policy), user, session)
+        await create(_version_request(strategy, policy, extra_conditions), user, session)
         saved.append(strategy.key)
     return saved, skipped
 
 
 def _version_request(strategy: StrategyDefinition, policy: TemplatePolicy,
+                     extra_conditions: tuple[dict[str, str], ...] = (),
                      ) -> StrategyVersionCreateRequest:
     return StrategyVersionCreateRequest(
         name=f"{FROZEN_NAME_PREFIX}{strategy.name} · {strategy.version} · 1L",
         strategy_key=strategy.key, expected_template_version=strategy.version, lots=1,
-        entry_conditions=policy.entry_conditions, stop_loss_amount=policy.stop_loss,
+        entry_conditions=[*policy.entry_conditions, *extra_conditions],
+        stop_loss_amount=policy.stop_loss,
         target_profit_amount=policy.target_profit, trailing_stop_amount=policy.trailing_stop,
     )
 
@@ -304,7 +308,8 @@ async def serve(plan_path: Path, interval_seconds: float, once: bool) -> None:
 
 
 async def _propose_command(user_email: str, templates: frozenset[str] | None,
-                           create_user: bool) -> None:
+                           create_user: bool,
+                           extra_conditions: tuple[dict[str, str], ...] = ()) -> None:
     from apps.api.auth import Role, hash_password
     from apps.api.main import create_strategy_version
     from packages.market_data.provider import get_market_data_provider
@@ -322,7 +327,7 @@ async def _propose_command(user_email: str, templates: frozenset[str] | None,
             raise ValueError("No account has that email")
         saved, skipped = await propose(
             session, user, get_market_data_provider(), create_strategy_version, exchange_today(),
-            templates,
+            templates, extra_conditions,
         )
     logger.info("Saved %d forward versions; skipped %s", len(saved), skipped or "none")
 
@@ -340,6 +345,9 @@ def main() -> None:
     parser.add_argument("--freeze", action="store_true", help="Freeze a new period and exit")
     parser.add_argument("--user-email")
     parser.add_argument("--templates", help="With --propose: comma-separated template keys only")
+    parser.add_argument(
+        "--condition", action="append", default=[], metavar="METRIC:OPERATOR:THRESHOLD",
+        help="With --propose: add this entry condition to every saved version (repeatable)")
     parser.add_argument("--create-user", action="store_true",
                         help="With --propose: create the account if it does not exist")
     parser.add_argument("--start", type=date.fromisoformat)
@@ -355,7 +363,12 @@ def main() -> None:
         unknown = templates - known if templates else set()
         if unknown:
             parser.error(f"Unknown templates: {sorted(unknown)}")
-        asyncio.run(_propose_command(args.user_email, templates, args.create_user))
+        try:
+            extra = tuple(dict(zip(("metric", "operator", "threshold"), item.split(":"),
+                                   strict=True)) for item in args.condition)
+        except ValueError:
+            parser.error("--condition needs METRIC:OPERATOR:THRESHOLD")
+        asyncio.run(_propose_command(args.user_email, templates, args.create_user, extra))
         return
     if args.freeze:
         if not args.user_email:

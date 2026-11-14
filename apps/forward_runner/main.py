@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from apps.api.paper_schemas import PaperTradeCreateRequest
 from apps.api.services.strategy_eligibility import StrategyNotEligible
 from apps.api.strategy_schemas import StrategyVersionCreateRequest
+from packages.backtesting.rule_engine import promoted_templates
 from packages.database.models import PaperDeployment, StrategyVersion, User
 from packages.database.session import build_session_factory
 from packages.market_data.contracts import (
@@ -55,7 +56,8 @@ FROZEN_NAME_PREFIX = "Forward · "
 Arm = Callable[[PaperTradeCreateRequest, User, Session, str], Awaitable[Any]]
 
 
-def freeze(session: Session, user_email: str, start: date, weeks: int) -> ForwardPlan:
+def freeze(session: Session, user_email: str, start: date, weeks: int,
+           promoted_only: bool = False) -> ForwardPlan:
     """Pin the latest 1-lot forward version of each template for this user."""
     user = session.scalar(select(User).where(User.email == user_email))
     if user is None:
@@ -74,20 +76,29 @@ def freeze(session: Session, user_email: str, start: date, weeks: int) -> Forwar
         version_ids=tuple(latest[key].id for key in sorted(latest)),
         start=start,
         end=start + timedelta(weeks=weeks),
+        promoted_only=promoted_only,
     )
 
 
+# Multipliers for a template's stop, target and trail; a trail of None switches it off.
+ExitScale = tuple[Decimal, Decimal, Decimal | None]
+NO_SCALE: ExitScale = (Decimal(1), Decimal(1), Decimal(1))
+_CENT = Decimal("0.01")
 CreateVersion = Callable[[StrategyVersionCreateRequest, User, Session], Awaitable[Any]]
 
 
 async def propose(
     session: Session, user: User, provider: MarketDataProvider, create: CreateVersion,
     today: date, templates: frozenset[str] | None = None,
+    extra_conditions: tuple[dict[str, str], ...] = (),
+    exit_scale: ExitScale = NO_SCALE,
 ) -> tuple[list[str], list[str]]:
     """Save a 1-lot version of each template, with exits sized from the next expiry's quotes.
 
     Returns the templates saved and those skipped because quotes or a finite loss are missing.
-    Saving arms nothing. `templates` limits it to those keys, for a separate account.
+    Saving arms nothing. `templates` limits it to those keys, for a separate account;
+    `extra_conditions` are added to every saved version's entry rules, and `exit_scale`
+    multiplies its stop, target and trail.
     """
     contracts = await provider.get_option_contracts("NIFTY")
     expiry = next_expiry(sorted({item.expiry for item in contracts}), today)
@@ -147,7 +158,8 @@ async def propose(
             if policy is None:
                 skipped.append(strategy.key)
                 continue
-            await create(_version_request(strategy, policy), user, session)
+            await create(_version_request(strategy, policy, extra_conditions, exit_scale),
+                         user, session)
             saved.append(strategy.key)
             continue
         payoff = calculate_expiry_payoff(PayoffRequest(
@@ -163,18 +175,28 @@ async def propose(
         if policy is None:
             skipped.append(strategy.key)
             continue
-        await create(_version_request(strategy, policy), user, session)
+        await create(_version_request(strategy, policy, extra_conditions, exit_scale),
+                         user, session)
         saved.append(strategy.key)
     return saved, skipped
 
 
 def _version_request(strategy: StrategyDefinition, policy: TemplatePolicy,
+                     extra_conditions: tuple[dict[str, str], ...] = (),
+                     exit_scale: ExitScale = NO_SCALE,
                      ) -> StrategyVersionCreateRequest:
+    stop, target, trail = exit_scale
+    target_profit = (policy.target_profit * target).quantize(_CENT)
     return StrategyVersionCreateRequest(
         name=f"{FROZEN_NAME_PREFIX}{strategy.name} · {strategy.version} · 1L",
         strategy_key=strategy.key, expected_template_version=strategy.version, lots=1,
-        entry_conditions=policy.entry_conditions, stop_loss_amount=policy.stop_loss,
-        target_profit_amount=policy.target_profit, trailing_stop_amount=policy.trailing_stop,
+        entry_conditions=[*policy.entry_conditions, *extra_conditions],
+        stop_loss_amount=(policy.stop_loss * stop).quantize(_CENT),
+        target_profit_amount=target_profit,
+        # An armed strategy must carry a trail. "off" sets it to the target, which closes the
+        # trade before a trail that size could start.
+        trailing_stop_amount=(target_profit if trail is None
+                              else (policy.trailing_stop * trail).quantize(_CENT)),
     )
 
 
@@ -222,6 +244,9 @@ async def run_cycle(
         # One attempt per strategy per expiry, whatever became of it: a cancelled or rejected
         # one stays that way, so the period's sample is not padded by retries.
         frozen = {str(item) for item in plan.version_ids}
+        # A promoted plan arms a template only while the rule engine holds it promoted; a
+        # demoted one stops getting new entries, and its open trades exit by their own rules.
+        allowed = promoted_templates(session) if plan.promoted_only else None
         attempted = {
             row.request_data.get("strategy_key")
             for row in session.scalars(select(PaperDeployment).where(
@@ -240,6 +265,8 @@ async def run_cycle(
                 continue
             definition = version.definition
             if definition["template_key"] in attempted:
+                continue
+            if allowed is not None and definition["template_key"] not in allowed:
                 continue
             try:
                 body = PaperTradeCreateRequest(
@@ -305,7 +332,9 @@ async def serve(plan_path: Path, interval_seconds: float, once: bool) -> None:
 
 
 async def _propose_command(user_email: str, templates: frozenset[str] | None,
-                           create_user: bool) -> None:
+                           create_user: bool,
+                           extra_conditions: tuple[dict[str, str], ...] = (),
+                           exit_scale: ExitScale = NO_SCALE) -> None:
     from apps.api.auth import Role, hash_password
     from apps.api.main import create_strategy_version
     from packages.market_data.provider import get_market_data_provider
@@ -323,7 +352,7 @@ async def _propose_command(user_email: str, templates: frozenset[str] | None,
             raise ValueError("No account has that email")
         saved, skipped = await propose(
             session, user, get_market_data_provider(), create_strategy_version, exchange_today(),
-            templates,
+            templates, extra_conditions, exit_scale,
         )
     logger.info("Saved %d forward versions; skipped %s", len(saved), skipped or "none")
 
@@ -341,10 +370,18 @@ def main() -> None:
     parser.add_argument("--freeze", action="store_true", help="Freeze a new period and exit")
     parser.add_argument("--user-email")
     parser.add_argument("--templates", help="With --propose: comma-separated template keys only")
+    parser.add_argument(
+        "--condition", action="append", default=[], metavar="METRIC:OPERATOR:THRESHOLD",
+        help="With --propose: add this entry condition to every saved version (repeatable)")
+    parser.add_argument(
+        "--exit-scale", metavar="STOP:TARGET:TRAIL",
+        help="With --propose: multiply each saved version's exits, e.g. 1:2:2; TRAIL may be off")
     parser.add_argument("--create-user", action="store_true",
                         help="With --propose: create the account if it does not exist")
     parser.add_argument("--start", type=date.fromisoformat)
     parser.add_argument("--weeks", type=int, default=6)
+    parser.add_argument("--promoted-only", action="store_true",
+                        help="With --freeze: arm only templates the rule engine has promoted")
     args = parser.parse_args()
     if args.propose:
         if not args.user_email:
@@ -354,13 +391,30 @@ def main() -> None:
         unknown = templates - known if templates else set()
         if unknown:
             parser.error(f"Unknown templates: {sorted(unknown)}")
-        asyncio.run(_propose_command(args.user_email, templates, args.create_user))
+        try:
+            extra = tuple(dict(zip(("metric", "operator", "threshold"), item.split(":"),
+                                   strict=True)) for item in args.condition)
+        except ValueError:
+            parser.error("--condition needs METRIC:OPERATOR:THRESHOLD")
+        scale = NO_SCALE
+        if args.exit_scale:
+            try:
+                stop, target, trail = args.exit_scale.split(":")
+                scale = (Decimal(stop), Decimal(target),
+                         None if trail == "off" else Decimal(trail))
+            except (ArithmeticError, ValueError):
+                parser.error("--exit-scale needs STOP:TARGET:TRAIL")
+            if any(value is not None and value <= 0 for value in scale):
+                parser.error("--exit-scale multipliers must be above zero")
+        asyncio.run(_propose_command(args.user_email, templates, args.create_user, extra,
+                                     scale))
         return
     if args.freeze:
         if not args.user_email:
             parser.error("--freeze needs --user-email")
         with build_session_factory()() as session:
-            plan = freeze(session, args.user_email, args.start or exchange_today(), args.weeks)
+            plan = freeze(session, args.user_email, args.start or exchange_today(), args.weeks,
+                          args.promoted_only)
         save_new_plan(args.plan, plan)
         logger.info("Frozen %d versions, %s to %s", len(plan.version_ids), plan.start, plan.end)
         return

@@ -14,6 +14,8 @@ class ForwardPlan:
     version_ids: tuple[UUID, ...]
     start: date
     end: date
+    # Arm only the versions whose template the research rule engine has promoted.
+    promoted_only: bool = False
     # Frozen versions the owner stopped mid-period: never armed again, still reported.
     stopped_version_ids: tuple[UUID, ...] = ()
     stopped_note: str = ""
@@ -28,6 +30,7 @@ class ForwardPlan:
             "version_ids": [str(item) for item in self.version_ids],
             "start": self.start.isoformat(),
             "end": self.end.isoformat(),
+            **({"promoted_only": True} if self.promoted_only else {}),
         }
         if self.stopped_version_ids:
             data["stopped_version_ids"] = [str(item) for item in self.stopped_version_ids]
@@ -42,6 +45,7 @@ class ForwardPlan:
             version_ids=tuple(UUID(item) for item in data["version_ids"]),
             start=date.fromisoformat(data["start"]),
             end=date.fromisoformat(data["end"]),
+            promoted_only=data.get("promoted_only", False) is True,
             stopped_version_ids=tuple(UUID(item) for item in data.get("stopped_version_ids", [])),
             stopped_note=data.get("stopped_note", ""),
         )

@@ -364,7 +364,9 @@ type RuleMetric =
   | "nifty_change_pct"
   | "nifty_range_pct"
   | "minutes_since_open"
-  | "days_to_expiry";
+  | "days_to_expiry"
+  | "realized_vol_10d_pct"
+  | "iv_minus_rv_points";
 
 type RuleOperator = "GT" | "GTE" | "LT" | "LTE";
 
@@ -401,9 +403,11 @@ const ENTRY_RULE_METRICS: { key: RuleMetric; label: string; unit: string }[] = [
   { key: "nifty_range_pct", label: "NIFTY high-low range today", unit: "% of previous close" },
   { key: "minutes_since_open", label: "Minutes since 09:15 open", unit: "minutes" },
   { key: "days_to_expiry", label: "Calendar days to expiry", unit: "days" },
+  { key: "realized_vol_10d_pct", label: "NIFTY realized volatility, 10 sessions", unit: "% a year" },
+  { key: "iv_minus_rv_points", label: "At-the-money IV minus realized volatility", unit: "points" },
 ];
 // Read on the server at entry from the recorder's minute snapshots and the clock.
-const SERVER_ONLY_METRICS = new Set<RuleMetric>(["india_vix", "india_vix_change_pct", "nifty_change_pct", "nifty_range_pct", "minutes_since_open", "days_to_expiry"]);
+const SERVER_ONLY_METRICS = new Set<RuleMetric>(["india_vix", "india_vix_change_pct", "nifty_change_pct", "nifty_range_pct", "minutes_since_open", "days_to_expiry", "realized_vol_10d_pct", "iv_minus_rv_points"]);
 
 function operatorLabel(operator: RuleOperator): string {
   return { GT: ">", GTE: "≥", LT: "<", LTE: "≤" }[operator];

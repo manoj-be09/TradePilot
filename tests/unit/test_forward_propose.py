@@ -127,3 +127,41 @@ def test_a_calendar_is_proposed_only_when_named_and_priced_by_its_debit():
                                    frozenset({"calendar_put_spread"})))
     assert saved == ["calendar_put_spread"]
     assert put_requests[0].stop_loss_amount > Decimal("130.00")
+
+
+def test_extra_conditions_are_added_to_every_saved_version():
+    requests = []
+
+    async def create(body, _user, _session):
+        requests.append(body)
+
+    extra = ({"metric": "iv_minus_rv_points", "operator": "LTE", "threshold": "0"},)
+    saved, _ = asyncio.run(propose(None, object(), _Provider(), create, TODAY,
+                                   frozenset({"long_straddle", "long_put"}), extra))
+    assert sorted(saved) == ["long_put", "long_straddle"]
+    for body in requests:
+        assert ("iv_minus_rv_points", "LTE", Decimal(0)) in {
+            (item.metric, item.operator, item.threshold) for item in body.entry_conditions}
+
+
+def test_exit_scale_multiplies_the_saved_exits_and_can_switch_the_trail_off():
+    def run(scale=None):
+        requests = []
+
+        async def create(body, _user, _session):
+            requests.append(body)
+
+        args = () if scale is None else ((), scale)
+        asyncio.run(propose(None, object(), _Provider(), create, TODAY,
+                            frozenset({"iron_condor"}), *args))
+        return requests[0]
+
+    base = run()
+    scaled = run((Decimal("1.5"), Decimal(2), Decimal(2)))
+    assert scaled.stop_loss_amount == (base.stop_loss_amount * Decimal("1.5")).quantize(
+        Decimal("0.01"))
+    assert scaled.target_profit_amount == base.target_profit_amount * 2
+    assert scaled.trailing_stop_amount == base.trailing_stop_amount * 2
+    off = run((Decimal(1), Decimal("1.5"), None))
+    # The target closes the trade before a trail of the same size can start.
+    assert off.trailing_stop_amount == off.target_profit_amount > base.target_profit_amount

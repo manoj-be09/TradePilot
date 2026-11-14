@@ -152,3 +152,42 @@ def test_drift_demotes_when_results_fall_well_below_the_shadow_record():
     assert demotion_reason(before, [10.0 + i % 5 for i in range(10)]) == "DRIFT"
     assert demotion_reason(before, [3000.0, -1200.0] * 5) is None
     assert demotion_reason(before, [100.0, -30_000.0]) == "WORST_TRADE"
+
+
+def test_every_same_expiry_template_is_a_rule_frozen_from_10_november():
+    from packages.backtesting.rule_engine import TEMPLATE_RULES
+    from packages.paper_trading.strategies import STRATEGIES
+
+    assert [rule.key for rule in TEMPLATE_RULES] == [f"template:{s.key}" for s in STRATEGIES]
+    assert {rule.forward_from for rule in TEMPLATE_RULES} == {date(2026, 11, 10)}
+    assert not any(rule.override for rule in TEMPLATE_RULES)  # nothing trades unpromoted
+
+
+def test_template_rules_are_scored_from_replayed_expiries_and_promotion_is_visible(
+        session, monkeypatch):
+    from packages.backtesting import rule_engine
+    from packages.backtesting.history_backtest import BacktestConfig
+    from packages.paper_trading.strategies import get_strategy
+
+    seen = []
+
+    def fake_backtest(histories, config):
+        seen.append((config.strategy.key, config.template_rules, config.entry_time))
+        trade = type("T", (), {"entry_at": _at(date(2026, 11, 11)), "expiry": date(2026, 11, 17),
+                               "gross_pnl": 500, "charges": 100})
+        return type("R", (), {"trades": [trade]})
+
+    monkeypatch.setattr(rule_engine, "run_backtest", fake_backtest)
+    rule = next(r for r in rule_engine.TEMPLATE_RULES if r.key == "template:long_put")
+    runner = rule_engine.template_runner([], BacktestConfig(strategy=get_strategy("long_put")))
+    run_engine(session, None, _at(date(2026, 11, 12)), [rule], runner)
+    trade = session.scalar(select(ResearchShadowTrade))
+    assert (trade.session, float(trade.net_pnl)) == (date(2026, 11, 11), 400.0)
+    assert seen[0][:2] == ("long_put", True)
+    assert rule_engine.promoted_templates(session) == set()
+    session.scalar(select(ResearchRuleVersion)).stage = "PAPER_APPROVED"
+    assert rule_engine.promoted_templates(session) == {"long_put"}
+    # A template whose definition changed stops adding evidence to the old version.
+    changed = EngineRule(rule.key, 1, rule.forward_from,
+                         {**rule.params, "template_version": "9.9.9"}, override=False)
+    assert runner(changed, None) == []

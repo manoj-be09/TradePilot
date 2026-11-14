@@ -1,7 +1,8 @@
 """Run with python -m apps.nightly.main; after each close it backs up and checks the paper run.
 
 Each day after 16:30 IST it makes a verified database backup, checks the paper ledger,
-writes a forward report to work/forward-reports and runs the research rule engine and the v2
+writes a forward report to work/forward-reports and runs the research rule engine (night
+condors and every same-expiry paper template) and the v2
 learning loop (when work/learning/hypotheses.json exists) over the imported history. A failed
 step is logged and the next step still runs. A ledger mismatch
 already pauses new paper cash actions by itself; this job only reads the account, and places
@@ -19,6 +20,7 @@ import sys
 import time as clock
 from collections.abc import Callable
 from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -29,13 +31,22 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from apps.api.settings import get_settings
 from packages.backtesting.book_loader import load_books, recorded_spread
+from packages.backtesting.history_backtest import BacktestConfig
 from packages.backtesting.published_strategies import Market
-from packages.backtesting.rule_engine import run_engine
+from packages.backtesting.rule_engine import (
+    TEMPLATE_FORWARD_FROM,
+    TEMPLATE_RULES,
+    run_engine,
+    template_runner,
+)
+from packages.backtesting.spread_model import calibrate_spreads
 from packages.broker_upstox.ledger import expected_positions
 from packages.broker_upstox.portfolio import PortfolioReader, reconcile_positions
 from packages.database.models import PaperAccount, User
 from packages.database.session import build_session_factory
 from packages.database.sqlite_backup import BackupError, backup_database
+from packages.history.loader import load_histories
+from packages.history.spreads import recorded_option_quotes
 from packages.learning.engine import link_paper_trades, load_hypotheses, run_learning
 from packages.learning.execution import calibrate, current
 from packages.learning.features import Context
@@ -45,6 +56,7 @@ from packages.learning.report import write_weekly
 from packages.market_data.contracts import MarketDataProviderError
 from packages.paper_trading.forward_plan import ForwardPlan, load_plan
 from packages.paper_trading.forward_report import build_report, render_markdown
+from packages.paper_trading.strategies import STRATEGIES
 
 logger = logging.getLogger("nightly")
 IST = ZoneInfo("Asia/Kolkata")
@@ -59,6 +71,8 @@ WIDE_HISTORY_NAME = "history-wide.db"
 # Private: the v2 hypotheses and their pre-registered effects stay out of the repository.
 HYPOTHESES = Path("work/learning/hypotheses.json")
 RECORDED_LOOKBACK = timedelta(days=60)
+# Used where the recorder has too few quotes in a premium band, as the template backtests do.
+TEMPLATE_HALF_SPREAD_PCT = Decimal("0.25")
 
 
 def disk_free_gb(path: Path) -> float:
@@ -98,6 +112,30 @@ def run_rule_engine(factory: sessionmaker[Session], wide: Path, now: datetime) -
     for decision in decisions:
         logger.warning("Rule engine: %s", decision)
     return f"{len(decisions)} decision(s)"
+
+
+def run_template_rules(factory: sessionmaker[Session], now: datetime) -> str:
+    """Score each paper template on expiries imported since it was frozen; places nothing."""
+    settings = get_settings()
+    today = now.astimezone(IST).date()
+    with factory() as session:
+        histories, _ = load_histories(session, interval="5m", start=TEMPLATE_FORWARD_FROM,
+                                      end=today)
+        base = BacktestConfig(
+            strategy=STRATEGIES[0], half_spread_pct=TEMPLATE_HALF_SPREAD_PCT,
+            spread_model=calibrate_spreads(recorded_option_quotes(
+                session, start=today - RECORDED_LOOKBACK, end=today), TEMPLATE_HALF_SPREAD_PCT),
+            max_trade_risk=Decimal(settings.initial_paper_capital)
+            * settings.paper_max_trade_risk_pct / 100,
+            square_off_minutes_before_close=settings.paper_expiry_square_off_minutes_before_close,
+            margin_parameters=settings.paper_margin_parameters,
+        )
+        decisions = run_engine(session, None, now, TEMPLATE_RULES,
+                               template_runner(histories, base))
+        session.commit()
+    for decision in decisions:
+        logger.warning("Rule engine: %s", decision)
+    return f"{len(histories)} expiries, {len(decisions)} decision(s)"
 
 
 IMPORT_LOOKBACK_DAYS = 45
@@ -227,6 +265,14 @@ def run_once(
     except Exception as error:  # noqa: BLE001 - one failed step must not stop the others
         logger.error("Rule engine failed: %s", type(error).__name__)
         results["rule_engine"] = "FAILED"
+    try:
+        results["template_rules"] = (
+            run_template_rules(factory, now)
+            if now.astimezone(IST).time() >= RUN_AFTER else "SKIPPED_BEFORE_CLOSE"
+        )
+    except Exception as error:  # noqa: BLE001 - one failed step must not stop the others
+        logger.error("Template rules failed: %s", type(error).__name__)
+        results["template_rules"] = "FAILED"
     try:
         results["learning"] = (
             run_learning_loop(factory, database.parent / WIDE_HISTORY_NAME, HYPOTHESES, now)

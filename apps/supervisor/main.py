@@ -33,6 +33,8 @@ EXTRA_PLANS = {
     # The kept long-volatility templates and the range condor, entered only when at-the-money
     # IV is cheap (or, for the condor, rich) against NIFTY's realized volatility.
     "ivrv-runner": Path("work/forward-ivrv-paper.json"),
+    # The strip and the range condor with the wider exits a 14 Nov 2026 study nearly adopted.
+    "exits-runner": Path("work/forward-exits-paper.json"),
 }
 
 

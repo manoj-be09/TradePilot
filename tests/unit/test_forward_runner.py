@@ -1,6 +1,7 @@
 """The forward runner arms each frozen version once per expiry and fails closed."""
 
 import asyncio
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
@@ -12,6 +13,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import apps.forward_runner.main as runner
 from apps.api.paper_schemas import PaperTradeCreateRequest
 from apps.api.services.strategy_eligibility import StrategyNotEligible
 from apps.forward_runner.main import freeze, run_cycle
@@ -261,6 +263,47 @@ def test_a_frozen_plan_round_trips_and_cannot_be_overwritten(tmp_path):
     assert load_plan(path) == plan
     with pytest.raises(FileExistsError):
         save_new_plan(path, plan)
+
+
+def test_a_version_the_owner_stopped_is_never_armed_again(world):
+    factory, plan = world
+    stopped = replace(plan, stopped_version_ids=plan.version_ids[:1],
+                      stopped_note="Costs exceed its range")
+    calls = []
+    assert _cycle(factory, stopped, _Provider(), _recording_arm(calls)) == "OK"
+    assert [body.strategy_key for body, _ in calls] == ["long_put"]
+
+
+def test_a_plan_keeps_its_stopped_versions_and_refuses_one_it_never_froze(tmp_path):
+    first, second = uuid4(), uuid4()
+    plan = ForwardPlan(EMAIL, (first, second), date(2026, 10, 30), date(2026, 12, 11),
+                       stopped_version_ids=(second,), stopped_note="Costs exceed its range")
+    path = tmp_path / "plan.json"
+    save_new_plan(path, plan)
+    assert load_plan(path) == plan
+    # A plan with nothing stopped is written exactly as before.
+    assert "stopped" not in ForwardPlan(EMAIL, (first,), plan.start, plan.end).to_json()
+    with pytest.raises(ValueError):
+        ForwardPlan(EMAIL, (first,), plan.start, plan.end, stopped_version_ids=(second,))
+
+
+def test_the_plan_is_read_again_each_cycle_and_an_unreadable_one_arms_nothing(
+        world, tmp_path, monkeypatch):
+    factory, plan = world
+    seen = []
+
+    async def cycle(_factory, _provider, current, _arm):
+        seen.append(current)
+        return "OK"
+
+    monkeypatch.setattr(runner, "run_cycle", cycle)
+    monkeypatch.setattr(runner, "build_session_factory", lambda: factory)
+    path = tmp_path / "plan.json"
+    asyncio.run(runner.serve(path, 0.0, once=True))
+    assert seen == []
+    path.write_text(plan.to_json(), encoding="utf-8")
+    asyncio.run(runner.serve(path, 0.0, once=True))
+    assert seen == [plan]
 
 
 def test_next_expiry_skips_today_and_nearest_strike_handles_empty():

@@ -16,6 +16,7 @@ from packages.database.models import (
     PaperDeployment,
     PaperOrder,
     PaperTrade,
+    StrategyVersion,
 )
 from packages.paper_trading.costs import summarize_costs
 from packages.paper_trading.forward_plan import ForwardPlan
@@ -56,6 +57,9 @@ class ForwardReport:
     rows: tuple[StrategyRow, ...]
     freshness: dict[str, Any] = field(default_factory=dict)
     unfilled: tuple[UnfilledRow, ...] = ()
+    # Templates the owner stopped mid-period, and why; their earlier trades stay in `rows`.
+    stopped: tuple[str, ...] = ()
+    stopped_note: str = ""
 
     @property
     def total_realized(self) -> Decimal:
@@ -179,12 +183,17 @@ def build_report(
         ))
     legs = [leg for order in orders for leg in order.fill_snapshot.get("fills", [])]
     ledger = reconcile_account(session, account)
+    stopped = tuple(sorted(
+        str(version.definition["template_key"]) for version in session.scalars(
+            select(StrategyVersion).where(StrategyVersion.id.in_(plan.stopped_version_ids)))
+    )) if plan.stopped_version_ids else ()
     return ForwardReport(
         as_of=as_of, start=plan.start, end=plan.end, ledger_status=ledger.status,
         ledger_issues=ledger.issue_count,
         rows=tuple(sorted(rows, key=lambda row: row.realized_pnl, reverse=True)),
         freshness=summarize_ages(legs),
         unfilled=_unfilled(session, deployments),
+        stopped=stopped, stopped_note=plan.stopped_note,
     )
 
 
@@ -206,6 +215,16 @@ def render_markdown(report: ForwardReport) -> str:
         "Charges use the backtests' schedule (brokerage, STT, exchange, SEBI, stamp duty, GST) on "
         "each filled leg. They are not reviewed against an account statement, and they are not "
         "the illustrative charges shown on Trade.",
+    ]
+    if report.stopped:
+        names = ", ".join(key.replace("_", " ") for key in report.stopped)
+        lines += [
+            "",
+            f"Stopped by the owner and no longer armed ({len(report.stopped)}): {names}.",
+            *([report.stopped_note] if report.stopped_note else []),
+            "Their earlier trades stay in the table.",
+        ]
+    lines += [
         "",
         "| Strategy | Armed | Waiting | Open | Closed | Won | Realized | Charges | After charges "
         "| Worst drawdown |",

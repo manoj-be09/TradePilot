@@ -111,6 +111,8 @@ A pause for missing P&L means a saved trade is incomplete. Treat it like a ledge
 
 The runner arms each frozen strategy version once per expiry, for the nearest expiry after today, at the strike nearest the index. It goes through the same checks as the web app, and the worker rechecks entry rules and risk limits before any simulated fill. A strategy you cancel stays cancelled for that expiry.
 
+To stop a frozen strategy for the rest of a period, add its version id to `stopped_version_ids` in the plan file, with a `stopped_note` saying why. The runner reads the plan every cycle and never arms that version again, and a plan it cannot read arms nothing. Open positions keep their exits. The nightly report names what was stopped and keeps its earlier trades. Cancel any entry of it that is still waiting.
+
 Save fresh 1-lot rules from current quotes with `--propose` (during market hours; this arms nothing), then freeze a period once (this refuses to overwrite `work/forward-paper.json`; the file is private and not committed). A restart means archiving that file and freezing again:
 
 ```bash

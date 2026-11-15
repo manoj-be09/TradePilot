@@ -36,6 +36,8 @@ EXTRA_PLANS = {
     # The strip and the range condor with the wider exits a 14 Nov 2026 study nearly adopted.
     "exits-runner": Path("work/forward-exits-paper.json"),
 }
+# The hedged far put spread on its own account, traded forward on the owner's word (15 Nov 2026).
+FAR_PUT_CONFIG = Path("work/far-put-paper.json")
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,8 @@ def local_services(python: str) -> list[Service]:
         *(Service(name, _script("start-forward-runner-local.ps1", "-Plan", plan.as_posix()))
           for name, plan in EXTRA_PLANS.items() if plan.exists()),
         Service("night-runner", _script("start-night-runner-local.ps1")),
+        *([Service("far-put-runner", (python, "-u", "-m", "apps.far_put_runner.main"))]
+          if FAR_PUT_CONFIG.exists() else []),
         Service("recorder", (python, "-u", "-m", "apps.recorder.main",
                              "--data-dir", "work/recorder-data")),
         Service("alert-relay", (python, "-u", "-m", "apps.alert_relay.main")),

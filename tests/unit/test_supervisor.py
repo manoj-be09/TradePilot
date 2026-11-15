@@ -119,6 +119,7 @@ def test_one_crash_does_not_touch_the_other_services():
 
 def test_the_local_set_includes_every_process_the_paper_period_needs(monkeypatch, tmp_path):
     monkeypatch.setattr(supervisor_main, "EXTRA_PLANS", {"range-runner": tmp_path / "x.json"})
+    monkeypatch.setattr(supervisor_main, "FAR_PUT_CONFIG", tmp_path / "far.json")
     names = {service.name for service in local_services("python")}
     assert names == {"api", "web", "worker", "forward-runner", "night-runner", "recorder",
                      "alert-relay", "nightly"}
@@ -132,6 +133,15 @@ def test_a_second_forward_period_runs_only_once_its_plan_exists(monkeypatch, tmp
     range_runner = next(item for item in local_services("python") if item.name == "range-runner")
     assert range_runner.command[-2:] == ("-Plan", plan.as_posix())
     assert "promoted-runner" not in {item.name for item in local_services("python")}
+
+
+def test_the_far_put_runner_runs_only_once_its_config_exists(monkeypatch, tmp_path):
+    config = tmp_path / "far-put-paper.json"
+    monkeypatch.setattr(supervisor_main, "FAR_PUT_CONFIG", config)
+    assert "far-put-runner" not in {item.name for item in local_services("python")}
+    config.write_text("{}", encoding="utf-8")
+    runner = next(item for item in local_services("python") if item.name == "far-put-runner")
+    assert runner.command == ("python", "-u", "-m", "apps.far_put_runner.main")
 
 
 def test_a_real_process_is_logged_to_its_own_file_and_its_exit_code_seen(tmp_path):

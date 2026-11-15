@@ -1,0 +1,19 @@
+# Paper trading stack as a systemd service; install.sh fills in USER and DIR.
+# Simulated paper trading only: live trading stays off unless the owner changes .env by hand.
+[Unit]
+Description=TradePilot local paper stack
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=__DIR__
+ExecStart=__DIR__/.venv/bin/python -u -m apps.supervisor.main
+Restart=always
+RestartSec=10
+# Stop every child the supervisor started, not just the supervisor.
+KillMode=control-group
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

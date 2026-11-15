@@ -1,15 +1,17 @@
 """Run with python -m apps.supervisor.main; keeps the local paper processes running.
 
-Starts the API, web app, paper worker, forward runner, night runner, recorder, alert relay
-and nightly job, each with its own log under work/logs, and restarts one that crashes, waiting
-longer after each crash. A clean exit (code 0) is left alone: the relay is idle without Telegram
-settings, the night runner without its override config, and the forward runner finishes at the
-end of its period. It only starts this repository's own programs.
+Starts the API, web app, paper worker, forward runner, night runner, recorder, alert relay,
+nightly job and heartbeat, each with its own log under work/logs, and restarts one that crashes,
+waiting longer after each crash. A clean exit (code 0) is left alone: the relay and heartbeat are
+idle without their settings, the night runner without its override config, and the forward runner
+finishes at the end of its period. Runs on Windows (PowerShell scripts) or a Linux host.
+It only starts this repository's own programs.
 """
 
 import argparse
 import logging
 import os
+import shlex
 import signal
 import subprocess  # nosec B404
 import sys
@@ -53,21 +55,48 @@ def _script(name: str, *args: str) -> tuple[str, ...]:
     )
 
 
-def local_services(python: str) -> list[Service]:
+def _posix(python: str) -> dict[str, tuple[str, ...]]:
+    """The same programs as the PowerShell scripts, for a Linux host; exec keeps one process."""
+    python = shlex.quote(python)
+    init = f"{python} -m apps.api.init_local_db"
+    return {
+        "api": ("sh", "-c", f"{init} && exec {python} -m uvicorn apps.api.main:app "
+                "--host 127.0.0.1 --port 8000"),
+        "web": ("sh", "-c", "cd apps/web && NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 "
+                "exec npm run dev -- --hostname 127.0.0.1 --port 3000"),
+        "worker": ("sh", "-c", f"{init} && exec {python} -m apps.paper_worker.main"),
+        "night-runner": ("sh", "-c", f"exec {python} -u -m apps.night_runner.main"),
+    }
+
+
+def _forward(python: str, windows: bool, plan: str = "work/forward-paper.json") -> tuple[str, ...]:
+    if windows:
+        return _script("start-forward-runner-local.ps1",
+                       *(() if plan == "work/forward-paper.json" else ("-Plan", plan)))
+    return (python, "-u", "-m", "apps.forward_runner.main", "--plan", plan)
+
+
+def local_services(python: str, windows: bool = sys.platform == "win32") -> list[Service]:
+    posix = _posix(python)
+
+    def run(name: str, script: str, *args: str) -> Service:
+        return Service(name, _script(script, *args) if windows else posix[name])
+
     return [
-        Service("api", _script("start-api-local.ps1", "-NoReload")),
-        Service("web", _script("start-web-local.ps1")),
-        Service("worker", _script("start-paper-worker-local.ps1")),
-        Service("forward-runner", _script("start-forward-runner-local.ps1")),
-        *(Service(name, _script("start-forward-runner-local.ps1", "-Plan", plan.as_posix()))
+        run("api", "start-api-local.ps1", "-NoReload"),
+        run("web", "start-web-local.ps1"),
+        run("worker", "start-paper-worker-local.ps1"),
+        Service("forward-runner", _forward(python, windows)),
+        *(Service(name, _forward(python, windows, plan.as_posix()))
           for name, plan in EXTRA_PLANS.items() if plan.exists()),
-        Service("night-runner", _script("start-night-runner-local.ps1")),
+        run("night-runner", "start-night-runner-local.ps1"),
         *([Service("far-put-runner", (python, "-u", "-m", "apps.far_put_runner.main"))]
           if FAR_PUT_CONFIG.exists() else []),
         Service("recorder", (python, "-u", "-m", "apps.recorder.main",
                              "--data-dir", "work/recorder-data")),
         Service("alert-relay", (python, "-u", "-m", "apps.alert_relay.main")),
         Service("nightly", (python, "-u", "-m", "apps.nightly.main")),
+        Service("heartbeat", (python, "-u", "-m", "apps.heartbeat.main")),
     ]
 
 

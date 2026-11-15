@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     telegram_bot_token: SecretStr | None = None
     telegram_chat_id: str | None = None
     telegram_alert_user_email: str | None = None
+    # Optional outside watchdog (apps/heartbeat): a healthchecks.io-style ping URL. It alerts the
+    # phone when pings stop, so it still works when this machine is off.
+    heartbeat_url: SecretStr | None = None
     cors_origins: str = (
         "http://127.0.0.1:3000,http://localhost:3000,"
         "http://127.0.0.1:3010,http://localhost:3010"

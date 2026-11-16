@@ -122,7 +122,7 @@ def test_the_local_set_includes_every_process_the_paper_period_needs(monkeypatch
     monkeypatch.setattr(supervisor_main, "FAR_PUT_CONFIG", tmp_path / "far.json")
     names = {service.name for service in local_services("python")}
     assert names == {"api", "web", "worker", "forward-runner", "night-runner", "recorder",
-                     "alert-relay", "nightly"}
+                     "alert-relay", "nightly", "heartbeat"}
 
 
 def test_a_second_forward_period_runs_only_once_its_plan_exists(monkeypatch, tmp_path):
@@ -130,7 +130,8 @@ def test_a_second_forward_period_runs_only_once_its_plan_exists(monkeypatch, tmp
     plan.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(supervisor_main, "EXTRA_PLANS", {
         "range-runner": plan, "promoted-runner": tmp_path / "missing.json"})
-    range_runner = next(item for item in local_services("python") if item.name == "range-runner")
+    range_runner = next(item for item in local_services("python", windows=True)
+                        if item.name == "range-runner")
     assert range_runner.command[-2:] == ("-Plan", plan.as_posix())
     assert "promoted-runner" not in {item.name for item in local_services("python")}
 
@@ -170,5 +171,23 @@ def test_the_supervisor_logs_to_stdout_and_its_own_file_never_stderr(tmp_path, c
 
 def test_the_supervised_api_never_auto_reloads():
     # A uvicorn reload sends Ctrl+C to the shared console, which stopped every service.
-    [api] = [service for service in local_services("python") if service.name == "api"]
+    [api] = [service for service in local_services("python", windows=True)
+             if service.name == "api"]
     assert api.command[-2:] == ("scripts/start-api-local.ps1", "-NoReload")
+
+
+def test_a_linux_host_runs_the_same_programs_without_powershell(monkeypatch, tmp_path):
+    plan = tmp_path / "forward-range-paper.json"
+    plan.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(supervisor_main, "EXTRA_PLANS", {"range-runner": plan})
+    windows = local_services("/opt/tp/python", windows=True)
+    linux = {item.name: item.command for item in local_services("/opt/tp/python", windows=False)}
+    assert set(linux) == {item.name for item in windows}
+    assert not any("powershell" in " ".join(command) for command in linux.values())
+    assert linux["forward-runner"][-2:] == ("--plan", "work/forward-paper.json")
+    assert linux["range-runner"][-2:] == ("--plan", plan.as_posix())
+    assert "init_local_db && exec /opt/tp/python -m uvicorn" in linux["api"][-1]
+    assert "--reload" not in linux["api"][-1]
+    assert "init_local_db && exec /opt/tp/python -m apps.paper_worker.main" in linux["worker"][-1]
+    assert [item.command for item in windows if item.name == "forward-runner"] == [
+        supervisor_main._script("start-forward-runner-local.ps1")]

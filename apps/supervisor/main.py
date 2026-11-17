@@ -40,6 +40,8 @@ EXTRA_PLANS = {
 }
 # The hedged far put spread on its own account, traded forward on the owner's word (15 Nov 2026).
 FAR_PUT_CONFIG = Path("work/far-put-paper.json")
+# The buy-the-dip call spread on its own account, on the owner's word (17 Nov 2026).
+DIP_CONFIG = Path("work/dip-spread-paper.json")
 
 
 @dataclass(frozen=True)
@@ -92,6 +94,8 @@ def local_services(python: str, windows: bool = sys.platform == "win32") -> list
         run("night-runner", "start-night-runner-local.ps1"),
         *([Service("far-put-runner", (python, "-u", "-m", "apps.far_put_runner.main"))]
           if FAR_PUT_CONFIG.exists() else []),
+        *([Service("dip-runner", (python, "-u", "-m", "apps.dip_runner.main"))]
+          if DIP_CONFIG.exists() else []),
         Service("recorder", (python, "-u", "-m", "apps.recorder.main",
                              "--data-dir", "work/recorder-data")),
         Service("alert-relay", (python, "-u", "-m", "apps.alert_relay.main")),

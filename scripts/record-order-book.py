@@ -1,6 +1,6 @@
-"""Record NIFTY futures order-book pressure once a second during market hours,
+"""Record NIFTY futures order-book pressure every 2 seconds during market hours,
 so 'buyers vs sellers' can be tested against the next candle's colour. Read-only quote GETs.
-One JSON line per second: [time, nifty, fut_ltp, fut_volume, oi, total_buy, total_sell,
+One JSON line per reading: [time, nifty, fut_ltp, fut_volume, oi, total_buy, total_sell,
 depth5_buy_qty, depth5_sell_qty, depth5_buy_orders, depth5_sell_orders, best_bid, best_ask].
 Missing or failed quotes are skipped, never filled in. Stops after 15:30 IST."""
 import asyncio
@@ -51,7 +51,9 @@ async def main() -> None:
             continue
         except (MarketDataProviderError, KeyError, IndexError, TypeError) as e:
             print(now.time(), "skip", type(e).__name__, str(e)[:80], flush=True)
-        await asyncio.sleep(max(0.0, 1 - (datetime.now(IST) - now).total_seconds()))
+        # every 2 s: Upstox allows about 2000 requests per 30 minutes, and the game's own
+        # ticker uses roughly 1800 of those while it runs
+        await asyncio.sleep(max(0.0, 2 - (datetime.now(IST) - now).total_seconds()))
     print("done", n, "rows", flush=True)
 
 

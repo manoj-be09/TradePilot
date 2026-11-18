@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
@@ -6,7 +7,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from test_paper_trading import FakeUpstoxProvider, _token
 
-from packages.database.models import PaperOrder, PaperTrade
+from apps.api.services.expiry_settlement import settle_expired_trades
+from packages.database.models import AuditEvent, PaperAccount, PaperOrder, PaperTrade
 from packages.market_data.contracts import (
     DiscoveredInstrument,
     ExchangeSession,
@@ -17,6 +19,7 @@ from packages.paper_trading.official_index_close import (
     OfficialIndexClose,
     archive_url,
 )
+from packages.paper_trading.transactions import assert_consistent_ledger
 
 
 def test_expired_paper_option_requires_preview_and_confirmed_source(client, monkeypatch):
@@ -273,3 +276,74 @@ def test_nse_archive_confirmation_rechecks_fingerprint_before_paper_cash(client,
 
     monkeypatch.setattr("apps.api.main.fetch_nifty_close", unavailable)
     assert client.post(endpoint, headers=headers, json=body).status_code == 200
+
+
+def test_nightly_settles_expired_nifty_trades_at_the_nse_archive_close(client, monkeypatch):
+    provider = FakeUpstoxProvider()
+    monkeypatch.setattr("apps.api.main.get_market_data_provider", lambda: provider)
+    headers = _token(client)
+    ids = []
+    for _ in range(3):
+        opened = client.post("/paper/trades", headers={
+            **headers, "Idempotency-Key": f"entry_{uuid4().hex}",
+        }, json={
+            "strategy_key": "long_call", "expiry": provider.expiry.isoformat(),
+            "reference_strike": "25000", "lots": 1,
+        })
+        assert opened.status_code == 201, opened.text
+        ids.append(UUID(opened.json()["id"]))
+    settles, later_leg, active = ids
+    expired = date.today() - timedelta(days=1)
+    factory = client.app.state.test_session_factory
+    with factory() as session:
+        for trade_id in (settles, later_leg):
+            session.get(PaperTrade, trade_id).expiry = expired
+        trade = session.get(PaperTrade, later_leg)
+        # A calendar's later leg has time value, so intrinsic settlement must refuse it.
+        trade.legs = {"items": [{**leg, "expiry": "2099-01-01"} for leg in trade.legs["items"]]}
+        session.commit()
+
+    async def unpublished(_day):
+        raise OfficialCloseUnavailable("NSE daily index archive is unavailable.")
+
+    waiting = asyncio.run(settle_expired_trades(factory, unpublished))
+    assert len(waiting) == 2 and all("waits for NSE's close" in line for line in waiting)
+    with factory() as session:
+        assert len(list(session.scalars(select(PaperOrder)))) == 3
+
+    async def published(day):
+        assert day == expired
+        return OfficialIndexClose(
+            close=Decimal("25100.00"), source_url=archive_url(expired),
+            sha256="a" * 64, retrieved_at=datetime.now(ZoneInfo("Asia/Kolkata")),
+        )
+
+    first = asyncio.run(settle_expired_trades(factory, published))
+    assert any(f"trade {settles}" in line
+               and "settled at NSE close 25100.00: realized -25.00" in line for line in first)
+    assert any(f"trade {later_leg}" in line
+               and "left for review: A leg on a later expiry" in line for line in first)
+    second = asyncio.run(settle_expired_trades(factory, published))
+    assert len(second) == 1 and f"trade {later_leg}" in second[0]
+    with factory() as session:
+        trade = session.get(PaperTrade, settles)
+        assert (trade.status, trade.exit_reason, trade.realized_pnl) == (
+            "CLOSED", "EXPIRY_SETTLEMENT", Decimal("-25.00"))
+        assert session.get(PaperTrade, later_leg).status == "OPEN"
+        assert session.get(PaperTrade, active).status == "OPEN"
+        closes = list(session.scalars(select(PaperOrder).where(PaperOrder.action == "CLOSE")))
+        assert len(closes) == 1 and closes[0].trade_id == settles
+        assert closes[0].net_cash_flow == Decimal("2500.00")
+        assert closes[0].fill_snapshot["quality_status"] == "AUTO_RECORDED"
+        assert closes[0].fill_snapshot["settlement_reference"] == {
+            "settlement_date": expired.isoformat(), "final_index_value": "25100.00",
+            "source_reference": archive_url(expired), "archive_sha256": "a" * 64,
+        }
+        audit = session.scalar(select(AuditEvent).where(
+            AuditEvent.event_type == "paper.trade.expiry_settlement_recorded"))
+        assert audit.details["quality_status"] == "AUTO_RECORDED"
+        assert_consistent_ledger(session, session.get(PaperAccount, trade.account_id))
+    assert client.get("/paper/account", headers=headers).json()["cash_balance"] == "994925.00"
+    strategy = next(row for row in client.get("/paper/strategies", headers=headers).json()
+                    if row["key"] == "long_call")
+    assert strategy["qualified_automated_trade_count"] == 0

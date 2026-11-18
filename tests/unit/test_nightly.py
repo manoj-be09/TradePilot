@@ -351,3 +351,21 @@ def test_the_learning_loop_judges_owner_and_generated_ideas_and_reports_on_frida
     assert "| night_v1 | HUMAN | SHADOW | 1 |" in written and "not" in written.lower()
     # A rerun records nothing twice.
     assert nightly.run_learning_loop(factory, wide, owner, friday) == "0 decision(s)"
+
+
+def test_expiry_settlement_is_logged_and_a_failure_never_stops_the_loop(
+    factory, monkeypatch, caplog,
+):
+    async def settled(_factory):
+        return ["trade 1 (2026-11-17) settled at NSE close 25387.40: realized 240.50"]
+
+    async def broken(_factory):
+        raise RuntimeError("unexpected")
+
+    with caplog.at_level("INFO", logger="nightly"):
+        monkeypatch.setattr(nightly, "settle_expired_trades", settled)
+        nightly.settle_expired(factory)
+        monkeypatch.setattr(nightly, "settle_expired_trades", broken)
+        nightly.settle_expired(factory)
+    assert "Expiry settlement: trade 1 (2026-11-17) settled at NSE close" in caplog.text
+    assert "Expiry settlement failed: RuntimeError" in caplog.text

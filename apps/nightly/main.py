@@ -5,8 +5,9 @@ writes a forward report to work/forward-reports and runs the research rule engin
 condors and every same-expiry paper template) and the v2
 learning loop (when work/learning/hypotheses.json exists) over the imported history. A failed
 step is logged and the next step still runs. A ledger mismatch
-already pauses new paper cash actions by itself; this job only reads the account, and places
-no orders.
+already pauses new paper cash actions by itself. Every 30 minutes it also settles NIFTY paper
+trades still open after their expiry at NSE's archived official close; otherwise it only reads
+the account, and it places no broker orders.
 """
 
 import argparse
@@ -29,6 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
+from apps.api.services.expiry_settlement import settle_expired_trades
 from apps.api.settings import get_settings
 from packages.backtesting.book_loader import load_books, recorded_spread
 from packages.backtesting.history_backtest import BacktestConfig
@@ -73,6 +75,8 @@ HYPOTHESES = Path("work/learning/hypotheses.json")
 RECORDED_LOOKBACK = timedelta(days=60)
 # Used where the recorder has too few quotes in a premium band, as the template backtests do.
 TEMPLATE_HALF_SPREAD_PCT = Decimal("0.25")
+# NSE posts the expiry-day archive that evening; a trade counts as expired from midnight.
+SETTLE_EVERY = timedelta(minutes=30)
 
 
 def disk_free_gb(path: Path) -> float:
@@ -301,6 +305,15 @@ def run_once(
     return results
 
 
+def settle_expired(factory: sessionmaker[Session]) -> None:
+    """Settle paper trades left open after expiry; a failed attempt waits for the next one."""
+    try:
+        for line in asyncio.run(settle_expired_trades(factory)):
+            logger.info("Expiry settlement: %s", line)
+    except Exception as error:  # noqa: BLE001 - the nightly loop must keep running
+        logger.error("Expiry settlement failed: %s", type(error).__name__)
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
@@ -314,12 +327,16 @@ def main() -> None:
     today = datetime.now(timezone.utc).astimezone(IST).date()
     if (REPORTS / f"{today.isoformat()}.md").exists() and any(BACKUPS.glob(f"*{today:%Y%m%d}*.db")):
         last_run = today
+    last_settled: datetime | None = None
     while True:
         now = datetime.now(timezone.utc)
         if args.once or due(now, last_run):
             results = run_once(factory, plan, DATABASE, BACKUPS, REPORTS, now)
             logger.info("Nightly: %s", results)
             last_run = now.astimezone(IST).date()
+        if args.once or last_settled is None or now - last_settled >= SETTLE_EVERY:
+            settle_expired(factory)
+            last_settled = now
         # Keeps running after the forward period: the rule engine needs months of sessions.
         if args.once:
             return

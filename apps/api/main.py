@@ -87,6 +87,7 @@ from apps.api.schemas import (
     VerificationPendingResponse,
     VerifyEmailRequest,
 )
+from apps.api.services.expiry_settlement import record_settlement
 from apps.api.services.futures_paper import MAX_WAITING_PAPER_STRATEGIES, monitor_futures_exits
 from apps.api.services.paper_monitor import monitor_exits
 from apps.api.services.strategy_eligibility import StrategyNotEligible, eligibility_refusal
@@ -4116,52 +4117,14 @@ async def reconcile_paper_expiry_settlement(
             return _paper_trade_response(trade)
         raise HTTPException(409, "Paper trade was already closed with different settlement data")
     _require_consistent_paper_ledger(session, account)
-    preview, calculation = _expiry_settlement_preview(trade, body)
-    reference = {
+    _, calculation = _expiry_settlement_preview(trade, body)
+    record_settlement(session, account, trade, calculation, {
         "settlement_date": body.settlement_date.isoformat(),
         "final_index_value": str(body.final_index_value.quantize(_CENT)),
         "source_reference": body.source_reference,
         **({"archive_sha256": body.archive_sha256} if body.archive_sha256 else {}),
-    }
-    trade.realized_pnl = calculation.realized_pnl
-    trade.status = "CLOSED"
-    trade.exit_reason = "EXPIRY_SETTLEMENT"
-    trade.closed_at = datetime.now(timezone.utc)
-    account.cash_balance = (
-        account.cash_balance + calculation.settlement_cash_flow
-    ).quantize(_CENT, rounding=ROUND_HALF_UP)
-    account.updated_at = datetime.now(timezone.utc)
-    session.add(PaperOrder(
-        account_id=account.id,
-        trade_id=trade.id,
-        user_id=user.id,
-        action="CLOSE",
-        status="EXECUTED",
-        net_cash_flow=calculation.settlement_cash_flow,
-        created_at=datetime.now(timezone.utc),
-        fill_snapshot={
-            "paper_only": True,
-            "quality_status": "OPERATOR_RECORDED",
-            "modeled_costs": {"coverage": "UNAVAILABLE",
-                              "reason": "Expiry settlement charges are not modeled"},
-            "calculation_version": ("nifty-index-cash-intrinsic-v1" if trade.underlying == "NIFTY"
-                                    else "nse-index-cash-intrinsic-v1"),
-            "underlying": trade.underlying,
-            "settlement_reference": reference,
-            "fills": [vars(leg) | {
-                "strike": str(leg.strike),
-                "intrinsic_value": str(leg.intrinsic_value),
-                "cash_flow": str(leg.cash_flow),
-            } for leg in calculation.legs],
-            "method": "Operator-recorded NIFTY index-option expiry cash intrinsic; no broker fill",
-        },
-    ))
-    session.add(AuditEvent(
-        actor_user_id=user.id,
-        event_type="paper.trade.expiry_settlement_recorded",
-        details={"trade_id": str(trade.id), **reference,
-                 "realized_pnl": str(preview.realized_pnl)},
-    ))
+    }, quality_status="OPERATOR_RECORDED",
+        method="Operator-recorded NIFTY index-option expiry cash intrinsic; no broker fill")
     session.commit()
     return _paper_trade_response(trade)
 

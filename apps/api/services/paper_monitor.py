@@ -268,7 +268,8 @@ async def monitor_exits(
         if expiry_has_passed(expiry):
             warnings.append(
                 f"Exit checks for {expiry} stopped: open positions are unresolved after expiry; "
-                "settlement requires manual reconciliation. No synthetic exit was recorded."
+                "they await settlement at NSE's official close (nightly job) or by review. "
+                "No synthetic exit was recorded."
             )
         else:
             active_groups.append((underlying, expiry))
@@ -480,7 +481,7 @@ async def monitor_exits(
             session.rollback()
             warnings.append(
                 f"Exit check for trade {trade.id} stopped as expiry passed during evaluation; "
-                "settlement requires manual reconciliation."
+                "it awaits settlement at NSE's official close (nightly job) or by review."
             )
             _record_skipped_exit_checks(
                 session, user_id, [snapshot.id], provider, lease,

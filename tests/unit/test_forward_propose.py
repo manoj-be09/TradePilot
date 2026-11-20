@@ -165,3 +165,28 @@ def test_exit_scale_multiplies_the_saved_exits_and_can_switch_the_trail_off():
     off = run((Decimal(1), Decimal("1.5"), None))
     # The target closes the trade before a trail of the same size can start.
     assert off.trailing_stop_amount == off.target_profit_amount > base.target_profit_amount
+
+
+def test_a_sensex_proposal_reads_sensex_quotes_and_pins_the_index():
+    seen = []
+
+    class _Sensex(_Provider):
+        async def get_option_contracts(self, _underlying="NIFTY", _expiry=None):
+            seen.append(_underlying)
+            return await super().get_option_contracts(_underlying)
+
+        async def get_option_chain(self, _underlying, expiry):
+            seen.append(_underlying)
+            return await super().get_option_chain(_underlying, expiry)
+
+    requests = []
+
+    async def create(body, _user, _session):
+        requests.append(body)
+
+    saved, _ = asyncio.run(propose(None, object(), _Sensex(), create, TODAY,
+                                   frozenset({"long_straddle", "strip"}), underlying="SENSEX"))
+    assert sorted(saved) == ["long_straddle", "strip"] and set(seen) == {"SENSEX"}
+    assert {item.underlying for item in requests} == {"SENSEX"}
+    nifty, _, _ = _run(_Provider())
+    assert {item.underlying for item in nifty} == {None}

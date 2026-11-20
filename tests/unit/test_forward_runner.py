@@ -335,3 +335,56 @@ def test_a_promoted_plan_arms_only_what_the_rule_engine_holds_promoted(world, tm
     save_new_plan(path, promoted)
     assert load_plan(path).promoted_only is True
     assert "promoted_only" not in plan.to_json()  # older plans read and write as before
+
+
+class _SensexProvider(_Provider):
+    def __init__(self):
+        super().__init__()
+        self.seen = []
+
+    async def get_nfo_session(self, _day):
+        raise AssertionError("A SENSEX plan must use its own BFO session")
+
+    async def get_index_option_session(self, underlying, _day):
+        self.seen.append(("session", underlying))
+        return ExchangeSession("BFO", NOW.replace(hour=3), NOW.replace(hour=10))
+
+    async def get_option_contracts(self, _underlying="NIFTY", _expiry=None):
+        self.seen.append(("contracts", _underlying))
+        return await super().get_option_contracts(_underlying)
+
+    async def get_option_chain(self, _underlying, expiry):
+        self.seen.append(("chain", _underlying))
+        return await super().get_option_chain(_underlying, expiry)
+
+
+def test_a_sensex_plan_arms_on_the_bfo_session_from_its_own_chain(world):
+    factory, plan = world
+    provider = _SensexProvider()
+    calls = []
+    assert _cycle(factory, replace(plan, underlying="SENSEX"), provider,
+                  _recording_arm(calls)) == "OK"
+    assert provider.seen == [("session", "SENSEX"), ("contracts", "SENSEX"), ("chain", "SENSEX")]
+    assert [body.underlying for body, _ in calls] == ["SENSEX", "SENSEX"]
+
+
+def test_freeze_pins_only_the_versions_of_the_plans_index(world):
+    factory, plan = world
+    with factory() as session:
+        user_id = session.scalar(select(User.id))
+        sensex = _version(user_id, "strip")
+        sensex.definition = {**sensex.definition, "option_index": {"symbol": "SENSEX"}}
+        session.add(sensex)
+        session.commit()
+        pinned = freeze(session, EMAIL, date(2026, 11, 20), 4, underlying="SENSEX")
+        assert (pinned.version_ids, pinned.underlying) == ((sensex.id,), "SENSEX")
+        assert set(freeze(session, EMAIL, date(2026, 11, 20), 4).version_ids) == set(
+            plan.version_ids)
+
+
+def test_a_sensex_plan_round_trips_and_a_nifty_plan_file_is_unchanged(tmp_path):
+    plan = ForwardPlan(EMAIL, (uuid4(),), date(2026, 11, 20), date(2026, 12, 18),
+                       underlying="SENSEX")
+    save_new_plan(tmp_path / "sensex.json", plan)
+    assert load_plan(tmp_path / "sensex.json") == plan
+    assert "underlying" not in replace(plan, underlying="NIFTY").to_json()

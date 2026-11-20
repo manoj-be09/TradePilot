@@ -277,3 +277,39 @@ def test_scheduled_replay_records_compatible_saved_version(client, monkeypatch):
     assert result.status_code == 200, result.text
     assert result.json()["strategy_version_id"] == version["id"]
     assert result.json()["strategy_definition_hash"] == version["definition_hash"]
+
+
+def test_a_frozen_sensex_version_arms_as_the_forward_runner_rebuilds_it(client, monkeypatch):
+    headers = _headers(client, "sensex-forward@example.com")
+    provider = FakeUpstoxProvider()
+    monkeypatch.setattr("apps.api.main.get_market_data_provider", lambda: provider)
+    monkeypatch.setattr("apps.api.main.ENTRY_SPREAD_MULTIPLE", 0)
+    index = OptionIndex(symbol="SENSEX", instrument_key="BSE_INDEX|SENSEX",
+                        name="SENSEX", exchange="BSE", derivatives_exchange="BFO")
+
+    async def resolve(underlying):
+        assert underlying == "SENSEX"
+        return index
+
+    monkeypatch.setattr("apps.api.main.resolve_option_index", resolve)
+    created = client.post("/strategies/versions", headers=headers, json=_definition(
+        underlying="SENSEX", trailing_stop_amount="100", entry_conditions=[
+            {"metric": "median_relative_spread_pct", "operator": "LTE", "threshold": "10"}],
+    ))
+    assert created.status_code == 201, created.text
+    definition = created.json()["definition"]
+    # The same fields apps.forward_runner.main.run_cycle sends for a SENSEX plan.
+    armed = client.post("/paper/deployments", headers={
+        **headers, "Idempotency-Key": str(uuid4()),
+    }, json={
+        "underlying": "SENSEX", "strategy_version_id": created.json()["id"],
+        "strategy_key": definition["template_key"],
+        "expected_template_version": definition["template_version"],
+        "expiry": provider.expiry.isoformat(), "reference_strike": "25000",
+        "lots": definition["lots"], "entry_conditions": definition["entry_conditions"],
+        "stop_loss_amount": definition["stop_loss_amount"],
+        "target_profit_amount": definition["target_profit_amount"],
+        "trailing_stop_amount": definition["trailing_stop_amount"],
+    })
+    assert armed.status_code == 201, armed.text
+    assert armed.json()["underlying"] == "SENSEX"

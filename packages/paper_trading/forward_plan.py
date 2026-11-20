@@ -19,6 +19,8 @@ class ForwardPlan:
     # Frozen versions the owner stopped mid-period: never armed again, still reported.
     stopped_version_ids: tuple[UUID, ...] = ()
     stopped_note: str = ""
+    # The option index the period trades; its frozen versions pin the same index.
+    underlying: str = "NIFTY"
 
     def __post_init__(self) -> None:
         if not set(self.stopped_version_ids) <= set(self.version_ids):
@@ -31,6 +33,7 @@ class ForwardPlan:
             "start": self.start.isoformat(),
             "end": self.end.isoformat(),
             **({"promoted_only": True} if self.promoted_only else {}),
+            **({"underlying": self.underlying} if self.underlying != "NIFTY" else {}),
         }
         if self.stopped_version_ids:
             data["stopped_version_ids"] = [str(item) for item in self.stopped_version_ids]
@@ -48,6 +51,7 @@ class ForwardPlan:
             promoted_only=data.get("promoted_only", False) is True,
             stopped_version_ids=tuple(UUID(item) for item in data.get("stopped_version_ids", [])),
             stopped_note=data.get("stopped_note", ""),
+            underlying=data.get("underlying", "NIFTY"),
         )
 
 

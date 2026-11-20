@@ -37,6 +37,8 @@ EXTRA_PLANS = {
     "ivrv-runner": Path("work/forward-ivrv-paper.json"),
     # The strip and the range condor with the wider exits a 14 Nov 2026 study nearly adopted.
     "exits-runner": Path("work/forward-exits-paper.json"),
+    # The main account's 8 kept templates on SENSEX options (owner, 20 Nov 2026).
+    "sensex-runner": Path("work/forward-sensex-paper.json"),
 }
 # The hedged far put spread on its own account, traded forward on the owner's word (15 Nov 2026).
 FAR_PUT_CONFIG = Path("work/far-put-paper.json")

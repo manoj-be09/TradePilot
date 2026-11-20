@@ -5,6 +5,7 @@ expiry after today, at the strike nearest the index. Arming goes through the sam
 function as the web app, so the kill switch, ledger check, demotion, waiting limit and
 frozen-rule comparison all still apply; the worker rechecks entry rules and risk limits
 before any simulated fill. It places no broker orders. Freeze a period once with --freeze.
+A plan trades one option index: NIFTY unless it names another, such as SENSEX on BFO.
 """
 
 import argparse
@@ -57,8 +58,8 @@ Arm = Callable[[PaperTradeCreateRequest, User, Session, str], Awaitable[Any]]
 
 
 def freeze(session: Session, user_email: str, start: date, weeks: int,
-           promoted_only: bool = False) -> ForwardPlan:
-    """Pin the latest 1-lot forward version of each template for this user."""
+           promoted_only: bool = False, underlying: str = "NIFTY") -> ForwardPlan:
+    """Pin the latest 1-lot forward version of each template for this user and index."""
     user = session.scalar(select(User).where(User.email == user_email))
     if user is None:
         raise ValueError("No account has that email")
@@ -67,7 +68,9 @@ def freeze(session: Session, user_email: str, start: date, weeks: int,
         StrategyVersion.user_id == user.id,
     ).order_by(StrategyVersion.created_at, StrategyVersion.version_number))
     for version in versions:
-        if version.name.startswith(FROZEN_NAME_PREFIX) and version.definition.get("lots") == 1:
+        pinned = (version.definition.get("option_index") or {}).get("symbol", "NIFTY")
+        if (version.name.startswith(FROZEN_NAME_PREFIX) and version.definition.get("lots") == 1
+                and pinned == underlying):
             latest[version.definition["template_key"]] = version
     if not latest:
         raise ValueError("No saved 1-lot forward versions to freeze; run --propose first")
@@ -77,6 +80,7 @@ def freeze(session: Session, user_email: str, start: date, weeks: int,
         start=start,
         end=start + timedelta(weeks=weeks),
         promoted_only=promoted_only,
+        underlying=underlying,
     )
 
 
@@ -91,20 +95,20 @@ async def propose(
     session: Session, user: User, provider: MarketDataProvider, create: CreateVersion,
     today: date, templates: frozenset[str] | None = None,
     extra_conditions: tuple[dict[str, str], ...] = (),
-    exit_scale: ExitScale = NO_SCALE,
+    exit_scale: ExitScale = NO_SCALE, underlying: str = "NIFTY",
 ) -> tuple[list[str], list[str]]:
     """Save a 1-lot version of each template, with exits sized from the next expiry's quotes.
 
     Returns the templates saved and those skipped because quotes or a finite loss are missing.
     Saving arms nothing. `templates` limits it to those keys, for a separate account;
     `extra_conditions` are added to every saved version's entry rules, and `exit_scale`
-    multiplies its stop, target and trail.
+    multiplies its stop, target and trail. A non-NIFTY `underlying` pins its index.
     """
-    contracts = await provider.get_option_contracts("NIFTY")
+    contracts = await provider.get_option_contracts(underlying)
     expiry = next_expiry(sorted({item.expiry for item in contracts}), today)
     if expiry is None:
         raise ValueError("No upcoming expiry is listed")
-    chain = await provider.get_option_chain("NIFTY", expiry)
+    chain = await provider.get_option_chain(underlying, expiry)
     if chain.underlying_spot is None or (chain.quality and chain.quality.status == "FAIL"):
         raise ValueError("The option chain has no usable index price or failed quality checks")
     quotes = {(item.strike, item.option_type): item.quote for item in chain.contracts}
@@ -124,7 +128,7 @@ async def propose(
         if templates is not None and strategy.key not in templates:
             continue
         if strategy.expiry_scope == "MULTI_EXPIRY" and later_quotes is None and later:
-            later_chain = await provider.get_option_chain("NIFTY", later[0])
+            later_chain = await provider.get_option_chain(underlying, later[0])
             later_quotes = {(item.strike, item.option_type): item.quote
                             for item in later_chain.contracts}
         legs: list[PayoffLeg] = []
@@ -158,12 +162,12 @@ async def propose(
             if policy is None:
                 skipped.append(strategy.key)
                 continue
-            await create(_version_request(strategy, policy, extra_conditions, exit_scale),
-                         user, session)
+            await create(_version_request(strategy, policy, extra_conditions, exit_scale,
+                                          underlying), user, session)
             saved.append(strategy.key)
             continue
         payoff = calculate_expiry_payoff(PayoffRequest(
-            underlying="NIFTY", multiplier=Decimal(lot_size), price_min=Decimal(0),
+            underlying=underlying, multiplier=Decimal(lot_size), price_min=Decimal(0),
             price_max=max(chain.underlying_spot, *(leg.strike for leg in legs)) * 2,
             grid_points=2, legs=legs,
         ))
@@ -175,21 +179,23 @@ async def propose(
         if policy is None:
             skipped.append(strategy.key)
             continue
-        await create(_version_request(strategy, policy, extra_conditions, exit_scale),
-                         user, session)
+        await create(_version_request(strategy, policy, extra_conditions, exit_scale,
+                                      underlying), user, session)
         saved.append(strategy.key)
     return saved, skipped
 
 
 def _version_request(strategy: StrategyDefinition, policy: TemplatePolicy,
                      extra_conditions: tuple[dict[str, str], ...] = (),
-                     exit_scale: ExitScale = NO_SCALE,
+                     exit_scale: ExitScale = NO_SCALE, underlying: str = "NIFTY",
                      ) -> StrategyVersionCreateRequest:
     stop, target, trail = exit_scale
     target_profit = (policy.target_profit * target).quantize(_CENT)
     return StrategyVersionCreateRequest(
         name=f"{FROZEN_NAME_PREFIX}{strategy.name} · {strategy.version} · 1L",
         strategy_key=strategy.key, expected_template_version=strategy.version, lots=1,
+        # NIFTY versions keep their old definition; any other index is pinned in it.
+        underlying=None if underlying == "NIFTY" else underlying,
         entry_conditions=[*policy.entry_conditions, *extra_conditions],
         stop_loss_amount=(policy.stop_loss * stop).quantize(_CENT),
         target_profit_amount=target_profit,
@@ -214,14 +220,15 @@ async def run_cycle(
     if today < plan.start:
         return "NOT_STARTED"
     try:
-        market = await provider.get_nfo_session(today)
+        market = (await provider.get_nfo_session(today) if plan.underlying == "NIFTY"
+                  else await provider.get_index_option_session(plan.underlying, today))
         if market is None or not market.start <= moment <= market.end:
             return "CLOSED"
-        contracts = await provider.get_option_contracts("NIFTY")
+        contracts = await provider.get_option_contracts(plan.underlying)
         expiry = next_expiry(sorted({item.expiry for item in contracts}), today)
         if expiry is None:
             return "NO_EXPIRY"
-        chain = await provider.get_option_chain("NIFTY", expiry)
+        chain = await provider.get_option_chain(plan.underlying, expiry)
     except (MarketDataUnavailable, MarketDataProviderError) as error:
         logger.warning("Market data unavailable: %s", type(error).__name__)
         return "NO_DATA"
@@ -270,6 +277,7 @@ async def run_cycle(
                 continue
             try:
                 body = PaperTradeCreateRequest(
+                    underlying=plan.underlying,
                     strategy_key=definition["template_key"],
                     strategy_version_id=version.id,
                     expected_template_version=definition["template_version"],
@@ -334,7 +342,7 @@ async def serve(plan_path: Path, interval_seconds: float, once: bool) -> None:
 async def _propose_command(user_email: str, templates: frozenset[str] | None,
                            create_user: bool,
                            extra_conditions: tuple[dict[str, str], ...] = (),
-                           exit_scale: ExitScale = NO_SCALE) -> None:
+                           exit_scale: ExitScale = NO_SCALE, underlying: str = "NIFTY") -> None:
     from apps.api.auth import Role, hash_password
     from apps.api.main import create_strategy_version
     from packages.market_data.provider import get_market_data_provider
@@ -352,7 +360,7 @@ async def _propose_command(user_email: str, templates: frozenset[str] | None,
             raise ValueError("No account has that email")
         saved, skipped = await propose(
             session, user, get_market_data_provider(), create_strategy_version, exchange_today(),
-            templates, extra_conditions, exit_scale,
+            templates, extra_conditions, exit_scale, underlying,
         )
     logger.info("Saved %d forward versions; skipped %s", len(saved), skipped or "none")
 
@@ -382,6 +390,8 @@ def main() -> None:
     parser.add_argument("--weeks", type=int, default=6)
     parser.add_argument("--promoted-only", action="store_true",
                         help="With --freeze: arm only templates the rule engine has promoted")
+    parser.add_argument("--underlying", type=str.upper, default="NIFTY",
+                        help="With --propose and --freeze: the option index, e.g. SENSEX")
     args = parser.parse_args()
     if args.propose:
         if not args.user_email:
@@ -407,14 +417,14 @@ def main() -> None:
             if any(value is not None and value <= 0 for value in scale):
                 parser.error("--exit-scale multipliers must be above zero")
         asyncio.run(_propose_command(args.user_email, templates, args.create_user, extra,
-                                     scale))
+                                     scale, args.underlying))
         return
     if args.freeze:
         if not args.user_email:
             parser.error("--freeze needs --user-email")
         with build_session_factory()() as session:
             plan = freeze(session, args.user_email, args.start or exchange_today(), args.weeks,
-                          args.promoted_only)
+                          args.promoted_only, args.underlying)
         save_new_plan(args.plan, plan)
         logger.info("Frozen %d versions, %s to %s", len(plan.version_ids), plan.start, plan.end)
         return

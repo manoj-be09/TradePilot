@@ -167,5 +167,6 @@ Each extra plan runs on its own account and only once its file exists; restart t
 
 1. `python -m apps.forward_runner.main --propose --user-email <email> --create-user [--templates a,b,c]` saves 1-lot versions from current quotes and arms nothing.
 2. `python -m apps.forward_runner.main --freeze --user-email <email> --plan work/forward-<name>-paper.json --weeks <n>` freezes them. With `--propose`, `--condition METRIC:OPERATOR:THRESHOLD` (repeatable) adds an entry condition to every saved version, as the IV-against-realized-volatility account does. Add `--promoted-only` for `work/forward-promoted-paper.json`, so a template is armed only while the research rule engine holds it promoted.
+3. For an index other than NIFTY, pass the same `--underlying SENSEX` to both steps. The versions pin the index and the plan records it, so the runner reads that index's chain on its own session. The supervisor's `sensex-runner` runs `work/forward-sensex-paper.json`, which carries the main account's 8 kept templates on SENSEX (owner, 20 Nov 2026).
 
 The nightly job scores the template rules after 16:30 IST from the imported 5-minute history (`template_rules` in its log line). Their stages are on Research under "Research rule engine". Simulated paper only, not investment advice.

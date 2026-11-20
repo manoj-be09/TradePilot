@@ -65,8 +65,9 @@ def record_settlement(
             "quality_status": quality_status,
             "modeled_costs": {"coverage": "UNAVAILABLE",
                               "reason": "Expiry settlement charges are not modeled"},
-            "calculation_version": ("nifty-index-cash-intrinsic-v1" if trade.underlying == "NIFTY"
-                                    else "nse-index-cash-intrinsic-v1"),
+            "calculation_version": {
+                "NIFTY": "nifty-index-cash-intrinsic-v1", "SENSEX": "bse-index-cash-intrinsic-v1",
+            }.get(trade.underlying, "nse-index-cash-intrinsic-v1"),
             "underlying": trade.underlying,
             "settlement_reference": reference,
             "fills": [vars(leg) | {

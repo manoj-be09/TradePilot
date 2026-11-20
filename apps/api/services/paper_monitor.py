@@ -267,9 +267,12 @@ async def monitor_exits(
                                      for trade in matching_trades}):
         if expiry_has_passed(expiry):
             warnings.append(
-                f"Exit checks for {expiry} stopped: open positions are unresolved after expiry; "
-                "they await settlement at NSE's official close (nightly job) or by review. "
-                "No synthetic exit was recorded."
+                f"Exit checks for {underlying} {expiry} stopped: open positions are unresolved "
+                "after expiry; " + (
+                    "they await settlement at NSE's official close (nightly job) or by review."
+                    if underlying == "NIFTY" else
+                    "record their settlement on Trade at the official index close."
+                ) + " No synthetic exit was recorded."
             )
         else:
             active_groups.append((underlying, expiry))

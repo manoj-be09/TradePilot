@@ -54,10 +54,10 @@ Durations assume one developer working with AI coding agents. They are estimates
 
 ### Phase 0 — Reset scope and hygiene (1 week)
 
-Goal: a smaller, clearer codebase that only does NIFTY F&O.
+Goal: a smaller, clearer codebase that only does NIFTY F&O and SENSEX options.
 
 1. **Remove equity scope.** Delete `apps/api/equity_routes.py`, `apps/api/services/equity_runtime.py`, `packages/paper_trading/equity*.py`, `packages/regime/equity_policy_trials.py`, `apps/web/app/EquityStrategies.tsx` and their tests; add one Alembic migration dropping the 5 `Equity*` tables (export their data first if it matters). Remove NSE stock search from the chart.
-2. **Remove multi-index paths.** Hard-scope option execution to NIFTY; delete `paper_index_execution_enabled` branches and index-switching UI.
+2. **Trim multi-index paths.** Option execution covers NIFTY and SENSEX (the owner added SENSEX on 20 Nov 2026); other indexes stay behind `paper_index_execution_enabled` until one is wanted.
 3. **Rename** `packages/regime` → `packages/research` (keep `classifier.py`/`outlook.py` as `packages/research/regime/`).
 4. **Repo hygiene.** Delete all `.pytest-*` directories and `work/`; add them to `.gitignore`; configure pytest `--basetemp` under one ignored folder. Add a pre-commit hook for ruff and file-size warnings (>800 lines).
 5. **Process reset.** Replace `BUILD_PROGRESS.md` with a ≤100-line `STATUS.md` (what works, what's next, known limits). Move history to `docs/archive/`. Commit rule: code changes only, evidence lives in CI artifacts; no "Record …" commits.

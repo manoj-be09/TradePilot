@@ -290,6 +290,8 @@ async def security_headers(
 AdminUser = Annotated[User, Depends(require_roles(Role.ADMIN))]
 _CENT = Decimal("0.01")
 ENTRY_SPREAD_MULTIPLE = 2
+# Paper-traded without PAPER_INDEX_EXECUTION_ENABLED (SENSEX on the owner's word, 20 Nov 2026).
+PAPER_OPTION_INDEXES = frozenset({"NIFTY", "SENSEX"})
 
 
 def _new_auth_session(
@@ -2492,7 +2494,8 @@ async def arm_paper_deployment(
         raise HTTPException(422, "Expiry test positions require explicit direct entry")
     if not get_settings().paper_trading_enabled:
         raise HTTPException(503, "Paper trading is disabled")
-    if body.underlying != "NIFTY" and not get_settings().paper_index_execution_enabled:
+    if (body.underlying not in PAPER_OPTION_INDEXES
+            and not get_settings().paper_index_execution_enabled):
         raise HTTPException(409, "Index-specific automatic arming is not enabled yet")
     try:
         index = await resolve_option_index(body.underlying)
@@ -2839,7 +2842,7 @@ async def _open_paper_trade_with_provider(
         )
     if not settings.paper_trading_enabled:
         raise HTTPException(status_code=503, detail="Paper trading is disabled by configuration")
-    if body.underlying != "NIFTY" and not settings.paper_index_execution_enabled:
+    if body.underlying not in PAPER_OPTION_INDEXES and not settings.paper_index_execution_enabled:
         raise HTTPException(409, "Index-specific paper execution is not enabled yet")
     try:
         index = await resolve_option_index(body.underlying)
@@ -3868,16 +3871,18 @@ def paper_worker_status(user: CurrentUser, session: SessionDep,
 
 
 def _require_supported_expired_index(trade: PaperTrade) -> None:
-    if trade.underlying not in NSE_INDEX_NAMES or not expiry_has_passed(trade.expiry):
-        raise HTTPException(409, "Only an expired supported NSE index trade can be settled")
+    # SENSEX has no archive here, so it settles only at an operator-entered BSE close.
+    if (trade.underlying not in NSE_INDEX_NAMES and trade.underlying != "SENSEX"
+            or not expiry_has_passed(trade.expiry)):
+        raise HTTPException(409, "Only an expired supported index trade can be settled")
     if trade.underlying != "NIFTY":
         try:
             index = saved_option_index(
                 trade.underlying, trade.entry_rule_snapshot,
                 [str(leg["instrument_key"]) for leg in trade.legs["items"]],
             )
-            if index.exchange != "NSE":
-                raise PaperSessionError("Official NSE close requires a pinned NSE index")
+            if index.exchange != ("BSE" if trade.underlying == "SENSEX" else "NSE"):
+                raise PaperSessionError("Settlement requires the trade's pinned exchange index")
         except PaperSessionError as error:
             raise HTTPException(409, str(error)) from error
 

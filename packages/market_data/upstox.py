@@ -476,6 +476,17 @@ class UpstoxMarketDataProvider:
                 "Upstox quote response contained invalid values"
             ) from error
 
+    async def get_quote_items(self, instrument_keys: list[str]) -> dict[str, dict[str, Any]]:
+        """Full read-only quotes for several instruments in one GET, keyed by instrument key.
+
+        Raw provider fields (ohlc, volume, oi, average_price, total buy/sell quantity); an
+        instrument missing from the response is simply absent from the result.
+        """
+        data = await self._get("/v3/market-quote/quotes",
+                               {"instrument_key": ",".join(instrument_keys)})
+        return {item["instrument_token"]: item for item in data.values()
+                if isinstance(item, dict) and item.get("instrument_token") in instrument_keys}
+
     async def get_historical(
         self, instrument_token: str, start: datetime, end: datetime, interval: str
     ) -> list[HistoricalBar]:

@@ -14,6 +14,7 @@ from packages.market_data.contracts import (
     ExchangeSession,
     HistoricalBar,
 )
+from packages.market_data.index_catalog import OptionIndex
 from packages.paper_trading.official_index_close import (
     OfficialCloseUnavailable,
     OfficialIndexClose,
@@ -347,3 +348,57 @@ def test_nightly_settles_expired_nifty_trades_at_the_nse_archive_close(client, m
     strategy = next(row for row in client.get("/paper/strategies", headers=headers).json()
                     if row["key"] == "long_call")
     assert strategy["qualified_automated_trade_count"] == 0
+
+
+def test_sensex_settles_only_at_an_operator_entered_bse_close(client, monkeypatch):
+    provider = FakeUpstoxProvider()
+    for contract in provider.contracts:
+        contract.instrument_key = contract.instrument_key.replace("NSE_FO|", "BSE_FO|")
+    monkeypatch.setattr("apps.api.main.get_market_data_provider", lambda: provider)
+    index = OptionIndex(symbol="SENSEX", instrument_key="BSE_INDEX|SENSEX", name="SENSEX",
+                        exchange="BSE", derivatives_exchange="BFO")
+
+    async def resolve(_underlying):
+        return index
+
+    async def bfo_session(_underlying, _day):
+        return ExchangeSession("BFO", provider.session_open, provider.session_close)
+
+    monkeypatch.setattr("apps.api.main.resolve_option_index", resolve)
+    monkeypatch.setattr(provider, "get_index_option_session", bfo_session)
+    headers = _token(client)
+    opened = client.post("/paper/trades", headers={
+        **headers, "Idempotency-Key": f"entry_{uuid4().hex}",
+    }, json={
+        "underlying": "SENSEX", "strategy_key": "long_call",
+        "expiry": provider.expiry.isoformat(), "reference_strike": "25000", "lots": 1,
+    })
+    assert opened.status_code == 201, opened.text
+    trade_id = opened.json()["id"]
+    expired = date.today() - timedelta(days=1)
+    factory = client.app.state.test_session_factory
+    with factory() as session:
+        session.get(PaperTrade, UUID(trade_id)).expiry = expired
+        session.commit()
+
+    async def nse_archive(_day):
+        raise AssertionError("SENSEX must never settle from the NSE archive")
+
+    assert asyncio.run(settle_expired_trades(factory, nse_archive)) == []
+    official = client.get(
+        f"/paper/trades/{trade_id}/expiry-settlement/official-preview", headers=headers)
+    assert official.status_code == 200 and official.json()["status"] == "unavailable"
+    settled = client.post(f"/paper/trades/{trade_id}/expiry-settlement", headers=headers, json={
+        "settlement_date": expired.isoformat(), "final_index_value": "25100.00",
+        "source_reference": "BSE SENSEX closing value for the expiry", "confirmed_final": True,
+    })
+    assert settled.status_code == 200, settled.text
+    assert (settled.json()["exit_reason"], settled.json()["realized_pnl"]) == (
+        "EXPIRY_SETTLEMENT", "-25.00")
+    with factory() as session:
+        close = session.scalar(select(PaperOrder).where(
+            PaperOrder.trade_id == UUID(trade_id), PaperOrder.action == "CLOSE"))
+        assert close.fill_snapshot["calculation_version"] == "bse-index-cash-intrinsic-v1"
+        assert close.fill_snapshot["quality_status"] == "OPERATOR_RECORDED"
+    assert client.get("/paper/account/ledger-reconciliation", headers=headers).json()[
+        "status"] == "MATCHED"

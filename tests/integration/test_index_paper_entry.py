@@ -37,9 +37,11 @@ def test_selected_index_entry_close_and_ledger(
         payload.update(entry_conditions=[{
             "metric": "underlying_spot", "operator": "GT", "threshold": "25000",
         }], stop_loss_amount="100", target_profit_amount="1", trailing_stop_amount="50")
-    blocked = client.post(route, headers=headers, json=payload)
-    assert blocked.status_code == 409, blocked.text
-    monkeypatch.setattr(get_settings(), "paper_index_execution_enabled", True)
+    assert get_settings().paper_index_execution_enabled is False
+    if symbol != "SENSEX":  # SENSEX trades alongside NIFTY; other indexes need the setting
+        blocked = client.post(route, headers=headers, json=payload)
+        assert blocked.status_code == 409, blocked.text
+        monkeypatch.setattr(get_settings(), "paper_index_execution_enabled", True)
     index = OptionIndex(symbol=symbol, instrument_key=exchange + "_INDEX|" + symbol,
                         name=symbol, exchange=exchange, derivatives_exchange=venue)
 

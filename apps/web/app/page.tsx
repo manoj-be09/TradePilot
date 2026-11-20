@@ -1391,8 +1391,10 @@ export default function Home() {
     trade.status === "OPEN" && trade.expiry < indiaCalendarDate(),
   );
   const settlementTrade = expiredPaperTrades.find((trade) => trade.id === settlementTradeId);
-  const settlementSupported = !!settlementTrade &&
+  const nseArchiveSupported = !!settlementTrade &&
     ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"].includes(settlementTrade.underlying);
+  // SENSEX has no archive check here; it settles at the BSE close you enter.
+  const settlementSupported = nseArchiveSupported || settlementTrade?.underlying === "SENSEX";
   const settlementCloseDifference = officialIndexCloseReference?.status === "available"
     && officialIndexCloseReference.trade_id === settlementTrade?.id
     && officialIndexCloseReference.preview?.final_index_value != null
@@ -3278,7 +3280,7 @@ export default function Home() {
               <p className="paper-warning">Expired options need settlement evidence instead of a current quote. Review the selected index’s official close and corrections. Fetching a reference never closes the position.</p>
               {settlementTrade && !settlementSupported ? <p className="paper-warning">Settlement for {settlementTrade.underlying} is not supported yet. This position stays open until its official settlement route is available.</p> : null}
               <div className="settlement-reference-actions">
-                <button className="inline-button" disabled={!settlementSupported || indexCloseBusy} onClick={() => void checkOfficialIndexCloseReference()} type="button">{indexCloseBusy ? "Checking…" : "Check NSE daily close"}</button>
+                <button className="inline-button" disabled={!nseArchiveSupported || indexCloseBusy} onClick={() => void checkOfficialIndexCloseReference()} type="button">{indexCloseBusy ? "Checking…" : "Check NSE daily close"}</button>
                 <button className="inline-button" disabled={settlementTrade?.underlying !== "NIFTY" || indexCloseBusy} onClick={() => void checkIndexCloseReference()} type="button">Check broker candle (NIFTY only)</button>
               </div>
               {officialIndexCloseReference && officialIndexCloseReference.trade_id === settlementTrade?.id && officialIndexCloseReference.status === "available" ? <div className="settlement-reference-result" role="status">
@@ -3304,7 +3306,7 @@ export default function Home() {
                     <input disabled={settlementBusy} min="0.01" onChange={(event) => { setSettlementValue(event.target.value); setSettlementPreview(null); }} placeholder="e.g. 25000.00" required step="0.01" type="number" value={settlementValue} />
                   </label>
                   <label>Official source reference
-                    <input disabled={settlementBusy} maxLength={500} minLength={8} onChange={(event) => { setSettlementSource(event.target.value); setSettlementPreview(null); }} placeholder="NSE report URL or report identifier" required type="text" value={settlementSource} />
+                    <input disabled={settlementBusy} maxLength={500} minLength={8} onChange={(event) => { setSettlementSource(event.target.value); setSettlementPreview(null); }} placeholder={settlementTrade?.underlying === "SENSEX" ? "BSE report URL or report identifier" : "NSE report URL or report identifier"} required type="text" value={settlementSource} />
                   </label>
                 </div>
                 <button className="refresh-button" disabled={settlementBusy || !settlementSupported} type="submit">{settlementBusy ? "Checking…" : "Preview paper settlement"}</button>

@@ -88,6 +88,10 @@ def freeze(session: Session, user_email: str, start: date, weeks: int,
 ExitScale = tuple[Decimal, Decimal, Decimal | None]
 NO_SCALE: ExitScale = (Decimal(1), Decimal(1), Decimal(1))
 _CENT = Decimal("0.01")
+# The whole-chain median spread is set by a chain's illiquid far strikes: SENSEX ran 9-19%
+# (median 13%) on 23 Nov 2026 with at-the-money quotes near 0.3%, against NIFTY's 1.5-3%.
+# Its own limit keeps the rule a spike filter; the per-leg entry gate still applies.
+CHAIN_SPREAD_LIMITS = {"SENSEX": "25.00"}
 CreateVersion = Callable[[StrategyVersionCreateRequest, User, Session], Awaitable[Any]]
 
 
@@ -196,7 +200,11 @@ def _version_request(strategy: StrategyDefinition, policy: TemplatePolicy,
         strategy_key=strategy.key, expected_template_version=strategy.version, lots=1,
         # NIFTY versions keep their old definition; any other index is pinned in it.
         underlying=None if underlying == "NIFTY" else underlying,
-        entry_conditions=[*policy.entry_conditions, *extra_conditions],
+        entry_conditions=[*(
+            {**item, "threshold": CHAIN_SPREAD_LIMITS[underlying]}
+            if item["metric"] == "median_relative_spread_pct" and underlying in CHAIN_SPREAD_LIMITS
+            else item for item in policy.entry_conditions
+        ), *extra_conditions],
         stop_loss_amount=(policy.stop_loss * stop).quantize(_CENT),
         target_profit_amount=target_profit,
         # An armed strategy must carry a trail. "off" sets it to the target, which closes the

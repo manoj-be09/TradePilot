@@ -190,3 +190,23 @@ def test_a_sensex_proposal_reads_sensex_quotes_and_pins_the_index():
     assert {item.underlying for item in requests} == {"SENSEX"}
     nifty, _, _ = _run(_Provider())
     assert {item.underlying for item in nifty} == {None}
+
+
+def test_sensex_versions_get_their_own_chain_spread_limit_and_nifty_keeps_ten():
+    requests = []
+
+    async def create(body, _user, _session):
+        requests.append(body)
+
+    asyncio.run(propose(None, object(), _Provider(), create, TODAY,
+                        frozenset({"long_put", "strip"}), underlying="SENSEX"))
+    nifty, _, _ = _run(_Provider())
+
+    def rules(batch):
+        return {item.strategy_key: {(rule.metric, rule.operator, rule.threshold)
+                                    for rule in item.entry_conditions} for item in batch}
+
+    sensex = rules(requests)
+    assert sensex["strip"] == {("median_relative_spread_pct", "LTE", Decimal("25"))}
+    assert ("put_call_ratio_oi", "LTE", Decimal("1")) in sensex["long_put"]
+    assert ("median_relative_spread_pct", "LTE", Decimal("10")) in rules(nifty)["strip"]

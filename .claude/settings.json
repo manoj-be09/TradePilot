@@ -13,7 +13,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -I C:/Users/manoj/Documents/Codex/TradePilot-GitHub/.claude/hooks/trading_guard.py",
+            "command": "python -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/trading_guard.py\"",
             "timeout": 10
           }
         ]
@@ -23,7 +23,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:/Users/manoj/AppData/Roaming/uv/tools/graphifyy/Scripts/graphify.exe hook-guard search",
+            "command": "if command -v graphify >/dev/null 2>&1; then graphify hook-guard search; fi",
             "timeout": 10
           }
         ]
@@ -33,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:/Users/manoj/AppData/Roaming/uv/tools/graphifyy/Scripts/graphify.exe hook-guard read",
+            "command": "if command -v graphify >/dev/null 2>&1; then graphify hook-guard read; fi",
             "timeout": 10
           }
         ]
